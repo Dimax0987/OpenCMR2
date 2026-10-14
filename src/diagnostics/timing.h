@@ -1,6 +1,7 @@
 #ifndef OPENCMR2_DIAGNOSTICS_TIMING_H
 #define OPENCMR2_DIAGNOSTICS_TIMING_H
 #include "port/diagnostics.h"
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -24,7 +25,7 @@ private:
     uint64_t frameStart = 0, previousStart = 0, tickStart = 0, presentStart = 0;
     Frame current;
     std::vector<Frame> frames;
-    static constexpr size_t maximumFrames = 1000000;
+    static constexpr std::size_t maximumFrames = 1000000;
 };
 void StartProfileFromEnvironment();
 void StopProfile();

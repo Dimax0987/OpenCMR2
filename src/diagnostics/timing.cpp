@@ -26,7 +26,7 @@ bool TimingObserver::Write(const char *path) const {
     FILE *file = fopen(path, "w");
     if (!file) return false;
     fputs("frame,interval_ns,work_ns,tick_ns,present_ns,tick_count\n", file);
-    for (size_t i = 0; i < frames.size(); ++i) {
+    for (std::size_t i = 0; i < frames.size(); ++i) {
         const Frame &f = frames[i];
         fprintf(file, "%zu,%llu,%llu,%llu,%llu,%u\n", i,
                 static_cast<unsigned long long>(f.interval), static_cast<unsigned long long>(f.work),
