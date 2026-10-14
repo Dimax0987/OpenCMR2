@@ -70,6 +70,11 @@ target_link_libraries(frontend_language_test PRIVATE opencmr2_platform)
 add_test(NAME frontend_language COMMAND frontend_language_test)
 set_tests_properties(frontend_language PROPERTIES TIMEOUT 30)
 
+add_executable(saved_game_test saved_game.cpp)
+target_link_libraries(saved_game_test PRIVATE opencmr2_platform)
+add_test(NAME saved_game COMMAND saved_game_test)
+set_tests_properties(saved_game PROPERTIES TIMEOUT 30)
+
 add_executable(bink_decode bink_decode.cpp)
 target_link_libraries(bink_decode PRIVATE opencmr2_bink)
 

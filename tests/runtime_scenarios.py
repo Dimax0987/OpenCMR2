@@ -9,6 +9,10 @@ import subprocess
 import tempfile
 
 SCENARIOS = {
+    'saved-game-create': (500, {'OPENCMR2_PROBE_SAVE_SESSION': '1',
+                                'OPENCMR2_PROBE_EXPECT_MODE': '2'}),
+    'saved-game-load': (500, {'OPENCMR2_PROBE_CURSORS': '88:0,218:1',
+                              'OPENCMR2_PROBE_EXPECT_MODE': '2'}),
     'preliminary-map': (500, {'OPENCMR2_PROBE_EXPAND_MAP': '1'}),
     'arcade-time-trial': (500, {'OPENCMR2_PROBE_CURSORS': '0:2,88:2,29:0',
                               'OPENCMR2_PROBE_EXPECT_CARS': '2',
@@ -63,6 +67,8 @@ def verify(probe, data, output):
         env = {k: v for k, v in os.environ.items() if not k.startswith('OPENCMR2_PROBE_')}
         env.update(OPENCMR2_HEADLESS='1', SDL_VIDEODRIVER='dummy',
                    SDL_AUDIODRIVER='dummy', XDG_DATA_HOME=str(run / 'user'))
+        if name == 'saved-game-load':
+            env['XDG_DATA_HOME'] = str(output / 'saved-game-create' / 'user')
         env.update(settings)
         log_path = run / 'run.log'
         with log_path.open('w') as log:
@@ -75,6 +81,11 @@ def verify(probe, data, output):
         if len(records) != count or records[-1]['tick'] != count - 1:
             raise ValueError(f'{name}: incomplete trace')
         report[name] = {'ticks': count, 'driving_ticks': records[-1]['driving_tick']}
+        if name == 'saved-game-create' and 'probe: saved garage session' not in log:
+            raise ValueError('real garage session was not saved')
+        if name == 'saved-game-load' and not all(
+                f'probe: menu 218 ({count} entries)' in log for count in (2, 1)):
+            raise ValueError('saved session was not selected through the Load menu')
         if name == 'preliminary-map' and 'probe: preliminary map fully expanded' not in log:
             raise ValueError('preliminary map never fully expanded')
         if name in ('finland-results', 'finland-championship-results'):

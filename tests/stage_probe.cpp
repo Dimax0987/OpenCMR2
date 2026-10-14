@@ -21,6 +21,7 @@
 #include "CarPhysics.h"
 #include "NetPlayers.h"
 #include "RallyData.h"
+#include "SavedGame.h"
 #include "Sector.h"
 #include "Mesh.h"
 #include "MeshVertex.h"
@@ -66,6 +67,8 @@ extern Menu *g_pHeaderMenu;
 extern void GameInfo_SetConfiguredCheat(int, int);
 extern void GameInfo_ApplyCheatsForGameMode();
 extern char *Race_GetStagePathBuffer38340();
+extern void SavedGames_LoadRecords();
+extern int SavedGames_GetCount();
 
 static DWORD virtualTime = 1000;
 static DWORD Ticks() { return virtualTime; }
@@ -342,7 +345,11 @@ static void ConfigureMenu(Menu *menu) {
         if (const char *role = getenv("OPENCMR2_PROBE_LAN_ROLE"))
             if (strcmp(role, "guest") == 0) menu->items[3].max = 0; // Ready menu option.
     int forced = ForcedCursor(menu->field_0x4);
-    if (forced >= 0) { menu->cursor = (char)forced; return; }
+    if (forced >= 0) {
+        // Some screens share an id (New/Load and the one-row save list).
+        menu->cursor = (char)(forced < menu->itemCount ? forced : menu->itemCount - 1);
+        return;
+    }
     if (menu == FrontendMenu_GetMain()) menu->cursor = 1;
     else if (menu == FrontendMenu_GetRallyModes()) menu->cursor = 2;
     else if (menu == FrontendMenu_GetTimeTrialDifficulty()) { menu->cursor = 0; menu->items[0].max = 0; }
@@ -444,6 +451,7 @@ int main(int argc, char **argv) {
     int lastMode = -1;
     DWORD serviceOrigin = 0;
     bool mapOpening = false, mapExpanded = false;
+    bool sessionSaved = false;
     const char *lanRole = getenv("OPENCMR2_PROBE_LAN_ROLE");
     const Uint64 lanOrigin = SDL_GetTicks();
     bool lanReady = false;
@@ -459,6 +467,19 @@ int main(int argc, char **argv) {
         // The dummy driver does not focus windows. This test dispatches frames
         // explicitly, so SDL focus and wall time cannot influence its clock.
         const int mode = CGame::GetFrontendResourceMode();
+        // Create the fixture from a real garage session. A second probe run
+        // selects it through the frontend's Load Game menu.
+        if (mode == 2 && !sessionSaved && getenv("OPENCMR2_PROBE_SAVE_SESSION")) {
+            char name[] = "probe session";
+            if (!SavedGames_WriteSessionImage(-1, name)) {
+                fprintf(stderr, "probe: failed to save session\n");
+                return 1;
+            }
+            SavedGames_LoadRecords();
+            if (SavedGames_GetCount() != 1) return 1;
+            sessionSaved = true;
+            fprintf(stderr, "probe: saved garage session\n");
+        }
         if (mode == 3 && !raceOrigin && getenv("OPENCMR2_REFERENCE_CLOCK")) {
             virtualTime = 100000;
             CMain::UpdateFrameTime();
