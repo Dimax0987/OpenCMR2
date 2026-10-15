@@ -1,7 +1,8 @@
 // Gamepads reach the game as DirectInput showed an Xbox controller, and
 // triggers and pedals as DirectInput wheels report pedals: the maximum when
 // released, the minimum when pressed fully (input_sdl.cpp). Uses SDL virtual
-// devices, so no hardware or display is needed.
+// devices, so no hardware or display is needed. The game window never has the
+// keyboard focus here, as under gamescope: controllers must still be read.
 
 #include "port/types.h"
 #include "port/input.h"
@@ -16,6 +17,8 @@
 
 extern void Input_TranslatePedalsToMenuKeys();
 extern void Input_MergeAssignedJoystickButtons(int slot, DeviceInfo *out);
+extern void Input_RescanChangedJoysticks();
+extern unsigned short Input_GetAssignedController();
 
 namespace {
 
@@ -150,10 +153,12 @@ void CheckWheelMenuPedals(InputDevice *wheel, DeviceInfo *info)
 int main()
 {
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
-    if (!SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
+    SDL_Window *window = SDL_CreateWindow("unfocused", 64, 64, SDL_WINDOW_HIDDEN);
+    Check(window != NULL && SDL_GetKeyboardFocus() == NULL, "a game window without the keyboard focus");
     // An Xbox 360 controller: SDL knows its layout, as for a real one.
     SDL_VirtualJoystickDesc desc;
     SDL_INIT_INTERFACE(&desc);
@@ -175,11 +180,13 @@ int main()
     SDL_UpdateJoysticks();
 
     Check(Input_GetJoystickCount() == 1, "one joystick");
+    Check(Input_JoysticksChanged() != FALSE, "a joystick not opened yet is a change");
     InputDevice *device = Input_OpenJoystick(0);
     if (device == NULL) {
         fprintf(stderr, "Input_OpenJoystick failed\n");
         return 1;
     }
+    Check(Input_JoysticksChanged() == FALSE, "no change once every joystick is open");
     InputCaps caps;
     Input_GetCaps(device, &caps);
     Check(caps.axes == 6 && caps.buttons == 10 && caps.povs == 1, "Xbox layout: 6 axes, 10 buttons, 1 POV");
@@ -220,7 +227,23 @@ int main()
 
     char name[64];
     Check(Input_GetObjectName(device, 2 * 4, name, sizeof(name)) && strcmp(name, "Z Axis") == 0, "Z axis named");
+
+    // The game's controller table has room for four devices.
+    SDL_VirtualJoystickDesc extra;
+    SDL_INIT_INTERFACE(&extra);
+    extra.naxes = 2;
+    extra.nbuttons = 4;
+    extra.name = "Virtual Extra Joystick";
+    SDL_JoystickID extras[4];
+    for (SDL_JoystickID &extraId : extras)
+        extraId = SDL_AttachVirtualJoystick(&extra);
+    Check(Input_JoysticksChanged() != FALSE, "a connected joystick is a change");
+    Check(Input_GetJoystickCount() == 4, "at most four joysticks reach the game");
+    for (SDL_JoystickID extraId : extras)
+        SDL_DetachVirtualJoystick(extraId);
+    Check(Input_JoysticksChanged() == FALSE, "disconnecting them restores the opened set");
     Input_CloseDevice(device);
+    Check(Input_JoysticksChanged() != FALSE, "a connected joystick that is not open is a change");
 
     // The game's own detection gives a gamepad throttle on the right trigger
     // (Rz, axis 5) and brake on the left (Z, axis 2), as separate pedals.
@@ -275,8 +298,27 @@ int main()
     SDL_CloseJoystick(virt);
     SDL_DetachVirtualJoystick(id);
 
+    // A wheel connected after startup, or one that reconnects as it leaves
+    // its generic USB mode, is listed once the controls menu is entered.
+    CInput::RebuildAvailableInputDevices();
+    CInput::RefreshControllerConfigurations();
+    const unsigned short before = Input_GetAssignedController();
+    desc.name = "Virtual T150";
+    desc.nbuttons = 13;
+    id = SDL_AttachVirtualJoystick(&desc);
+    Input_RescanChangedJoysticks();
+    Check(Input_GetAssignedController() == before + 1 &&
+          strcmp(CInput::m_controllerInfo[before].name, "Virtual T150") == 0,
+          "a wheel connected later is listed in the controls menu");
+    SDL_DetachVirtualJoystick(id);
+    Input_RescanChangedJoysticks();
+    Check(Input_GetAssignedController() == before && CInput::m_unk0x0059f6b0[0] == NULL,
+          "a disconnected wheel is closed and no longer listed");
+    CInput::DInputReleaseDevices();
+
+    SDL_DestroyWindow(window);
     SDL_Quit();
     if (s_failures == 0)
-        puts("gamepad layout: driving pedals, stick/D-pad menus, buttons and wheel navigation passed");
+        puts("gamepad layout: unfocused input, driving pedals, menus, wheels and hotplug passed");
     return s_failures == 0 ? 0 : 1;
 }

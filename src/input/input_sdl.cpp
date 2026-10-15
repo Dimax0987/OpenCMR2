@@ -3,11 +3,13 @@
 #include "platform/platform.h"
 #include "platform/testing.h"
 #include "port/input.h"
+#include "port/sys.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace {
@@ -42,15 +44,34 @@ struct InputEffect {
 
 namespace {
 
+// The game's controller table: two keyboard configurations, four devices.
+const int kMaxJoysticks = 4;
+
 bool s_initialised;
 const BYTE *s_testKeyboard;
 bool s_heldBack[SDL_SCANCODE_COUNT];
+std::vector<SDL_JoystickID> s_openJoysticks;
 
 void EnsureInit()
 {
     if (!s_initialised) {
+        // The game opened joysticks with DISCL_BACKGROUND. SDL otherwise
+        // drops joystick input while no window has the keyboard focus, which
+        // under gamescope (Steam Deck Game Mode) can be the whole session.
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
         SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC);
         s_initialised = true;
+    }
+}
+
+const char *JoystickKind(SDL_Joystick *joystick, bool gamepad)
+{
+    if (gamepad)
+        return "gamepad";
+    switch (SDL_GetJoystickType(joystick)) {
+    case SDL_JOYSTICK_TYPE_WHEEL: return "wheel";
+    case SDL_JOYSTICK_TYPE_GAMEPAD: return "gamepad without a known layout";
+    default: return "joystick";
     }
 }
 
@@ -220,7 +241,20 @@ extern "C" int Input_GetJoystickCount(void)
     int count = 0;
     SDL_JoystickID *ids = SDL_GetJoysticks(&count);
     SDL_free(ids);
-    return count > 8 ? 8 : count;
+    return count > kMaxJoysticks ? kMaxJoysticks : count;
+}
+
+extern "C" BOOL Input_JoysticksChanged(void)
+{
+    EnsureInit();
+    int count = 0;
+    SDL_JoystickID *ids = SDL_GetJoysticks(&count);
+    std::vector<SDL_JoystickID> present(ids, ids + (count > kMaxJoysticks ? kMaxJoysticks : count));
+    SDL_free(ids);
+    std::vector<SDL_JoystickID> open = s_openJoysticks;
+    std::sort(present.begin(), present.end());
+    std::sort(open.begin(), open.end());
+    return present != open;
 }
 
 extern "C" InputDevice *Input_OpenKeyboard(void)
@@ -249,10 +283,12 @@ extern "C" InputDevice *Input_OpenJoystick(int index)
         SDL_free(ids);
         return NULL;
     }
-    SDL_Gamepad *gamepad = SDL_IsGamepad(ids[index]) ? SDL_OpenGamepad(ids[index]) : NULL;
-    SDL_Joystick *joystick = gamepad ? SDL_GetGamepadJoystick(gamepad) : SDL_OpenJoystick(ids[index]);
+    SDL_JoystickID id = ids[index];
     SDL_free(ids);
+    SDL_Gamepad *gamepad = SDL_IsGamepad(id) ? SDL_OpenGamepad(id) : NULL;
+    SDL_Joystick *joystick = gamepad ? SDL_GetGamepadJoystick(gamepad) : SDL_OpenJoystick(id);
     if (joystick == NULL) {
+        Sys_Log("controller %d: cannot open %s: %s", index, SDL_GetJoystickNameForID(id), SDL_GetError());
         SDL_CloseGamepad(gamepad);
         return NULL;
     }
@@ -266,6 +302,11 @@ extern "C" InputDevice *Input_OpenJoystick(int index)
     snprintf(device->name, sizeof(device->name), "%s", name ? name : "Joystick");
     if (SDL_IsJoystickHaptic(joystick))
         device->haptic = SDL_OpenHapticFromJoystick(joystick);
+    s_openJoysticks.push_back(id);
+    Sys_Log("controller %d: %s (%04x:%04x), %s, %d axes, %d buttons, %d hats%s", index, device->name,
+            SDL_GetJoystickVendor(joystick), SDL_GetJoystickProduct(joystick), JoystickKind(joystick, gamepad != NULL),
+            SDL_GetNumJoystickAxes(joystick), SDL_GetNumJoystickButtons(joystick), SDL_GetNumJoystickHats(joystick),
+            device->haptic != NULL ? ", force feedback" : "");
     return device;
 }
 
@@ -277,6 +318,11 @@ extern "C" void Input_CloseDevice(InputDevice *device)
         Input_DestroyEffect(device->effects.back());
     if (device->haptic != NULL)
         SDL_CloseHaptic(device->haptic);
+    if (device->joystick != NULL) {
+        auto open = std::find(s_openJoysticks.begin(), s_openJoysticks.end(), SDL_GetJoystickID(device->joystick));
+        if (open != s_openJoysticks.end())
+            s_openJoysticks.erase(open);
+    }
     if (device->gamepad != NULL)
         SDL_CloseGamepad(device->gamepad);   // and its joystick
     else if (device->joystick != NULL)

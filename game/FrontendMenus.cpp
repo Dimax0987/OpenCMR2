@@ -589,6 +589,7 @@ unsigned int Input_GetControllerPrimaryFlags(unsigned short slot);
 DWORD Input_GetControllerField11C(unsigned short slot);
 void Input_SetControllerSecondaryFlags(unsigned short slot, unsigned int value);
 void Input_SetControllerPrimaryFlags(unsigned short slot, unsigned int value);
+void Input_RescanChangedJoysticks(void);
 void Input_SetControllerSlotMapping(unsigned short slot, unsigned short index);
 unsigned short Input_GetControllerSlotMapping(unsigned short slot);
 unsigned short Input_GetAssignedController(void);
@@ -638,6 +639,7 @@ void FrontendControls_ShowBindingEntries(Menu *pMenu, int param)
     MenuItem *pItem;
     int i;
 
+    Input_RescanChangedJoysticks();   // PORT
     i = 8;
     pItem = pMenu->items;
     do {

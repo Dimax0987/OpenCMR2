@@ -133,8 +133,10 @@ void CInput::DInputReleaseDevices(void) {
 
     CountAttachedInputDevices();
 
+    // PORT: every open joystick. The original closed as many as were attached
+    // now, which leaves one open after it was disconnected.
     for (i = 0; i < 4; i++) {
-        if (m_unk0x0059f6b0[i] != NULL && i < m_unk0x0059f8cc.field_0x3) {
+        if (m_unk0x0059f6b0[i] != NULL) {
             Input_CloseDevice(m_unk0x0059f6b0[i]);
             m_unk0x0059f6b0[i] = NULL;
         }
@@ -690,6 +692,19 @@ void CInput::RebuildAvailableInputDevices(void)
     SetupKeyboard();
     SetupMouse();
     GetAttachedJoysticks();
+}
+
+// PORT: the original enumerated joysticks once, at startup. Rebuilds the
+// devices when one was connected or disconnected since, so a wheel that
+// switches out of its generic USB mode, or a controller connected later,
+// can be chosen. Called on entering the controls menu.
+void Input_RescanChangedJoysticks(void)
+{
+    if (!Input_JoysticksChanged())
+        return;
+    CInput::ResetForceFeedbackEffectsAlt();
+    CInput::RebuildAvailableInputDevices();
+    CInput::RefreshControllerConfigurations();
 }
 
 // FUNCTION: CMR2 0x0049edd0

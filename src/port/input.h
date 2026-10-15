@@ -72,7 +72,11 @@ typedef struct InputCaps {
 
 /* ---- devices ---------------------------------------------------------------- */
 
+/* Joysticks the game can use: its controller table holds two keyboard
+   configurations and four devices. */
 int Input_GetJoystickCount(void);
+/* Whether joysticks were connected or disconnected since they were opened. */
+BOOL Input_JoysticksChanged(void);
 
 InputDevice *Input_OpenKeyboard(void);
 InputDevice *Input_OpenMouse(void);
