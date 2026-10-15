@@ -524,7 +524,7 @@ extern char g_strPathFormat[];
 // Long country names (FINLAND..JAPAN) and codes (FIN..JAP) of the rally
 // selection file names.
 // GLOBAL: CMR2 0x005192f8
-char *g_unk0x005192f8[9] = { g_str0x00519370, g_str0x00519368, g_str0x00519360, g_str0x00519358,
+char *g_countryNames[9] = { g_str0x00519370, g_str0x00519368, g_str0x00519360, g_str0x00519358,
                              g_str0x00519270, g_str0x00519350, g_str0x00519348, CFrontend::m_strUK,
                              CRegKey::m_skuJapan };
 // GLOBAL: CMR2 0x0051931c
@@ -603,11 +603,11 @@ void Race_BuildSelectionPaths(void)
             sprintf(g_unk0x00538444, g_str0x00519388, CInstallInfo::GetGameHDPath(),
                     g_unk0x0051931c[table[idx]]);
         sprintf(g_unk0x00538548, g_str0x00519378, CInstallInfo::GetTracksDir(),
-                g_unk0x005192f8[table[idx]], g_unk0x0051931c[table[idx]], buf);
+                g_countryNames[table[idx]], g_unk0x0051931c[table[idx]], buf);
         return;
     }
     sprintf(g_unk0x0053823c, g_strPathFormat, CInstallInfo::GetTracksDir(),
-            g_unk0x005192f8[(BYTE)RallyDataCountryIndex()]);
+            g_countryNames[(BYTE)RallyDataCountryIndex()]);
     sprintf(g_unk0x00538340, g_str0x00519450, g_unk0x0053823c,
             g_unk0x0051931c[(BYTE)RallyDataCountryIndex()], (BYTE)RallyDataStageIndex() + 1, buf);
     sprintf((char *)g_unk0x00538130, g_str0x00519444, g_unk0x0053823c,
@@ -683,7 +683,7 @@ void StageObject_ForwardSessionUpdate(void);
 void RallyData_RebuildSectorStaticObjectTables(void);
 void NetRace_ResetPlayerFadeStates(void);
 extern char g_tgaSuffix[];
-extern BYTE *g_unk0x00538234;
+extern BYTE *g_stageTextureHandles;
 extern BYTE *g_unk0x00538238;
 
 // GLOBAL: CMR2 0x0051946c
@@ -766,7 +766,7 @@ BYTE Race_LoadSelectedStage(void)
     StageTiming_InitRaceDriverRecords(1);
     StageObject_ForwardSessionUpdate();
     RallyData_DrawLoadingProgress(0x3c, 1, 0xff);
-    StageObject_SetLighting((const StageLightPreset *)g_unk0x00538238, (const StageLightPreset *)g_unk0x00538234);
+    StageObject_SetLighting((const StageLightPreset *)g_unk0x00538238, (const StageLightPreset *)g_stageTextureHandles);
     RallyData_RebuildSectorStaticObjectTables();
     NetRace_ResetPlayerFadeStates();
     return 1;
@@ -952,12 +952,11 @@ void Race_ResetPlayerCallState(void)
     int i;
     RaceCallRecord *p;
 
-    g_unk0x00537198[0] = 9999;
-    g_raceWrongWayFlags[0] = 0;
-    g_unk0x00537198[1] = 9999;
-    g_raceWrongWayFlags[1] = 0;
-    g_unk0x0053708c[0] = -1;
-    g_unk0x0053708c[1] = -1;
+    for (i = 0; i < 2; i++) {
+        g_unk0x0053708c[i] = -1;
+        g_raceWrongWayFlags[i] = 0;
+        g_unk0x00537198[i] = 9999;
+    }
     memset(g_unk0x005371a4, 0, sizeof(g_unk0x005371a4));
     for (p = g_raceCallRecords; p < &g_raceCallRecords[10]; p += 5) {
         for (i = 0; i < 5; i++) {
@@ -985,7 +984,7 @@ void Race_DrawPlayerMessage(char *pText, int *pColour, int player, int param4, i
 
 // Colour of the race call text (white).
 // GLOBAL: CMR2 0x00517e24
-int g_unk0x00517e24 = -1;
+int g_raceCallTextColour = -1;
 
 // Draws the five call slots of one player: the icon sprite of each call (the
 // countdown wobbles it once the slot is the first one) and the timer text.
@@ -1080,7 +1079,7 @@ void Race_DrawPlayerCallSlots(unsigned int player, int *pViewRect)
     pCallFlag = g_raceWrongWayFlags;
     if (pCallFlag[player] != 0 || InRaceMenu_IsPlayerEditingCarSetup(player) != 0) {
         sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(0x57));
-        Race_DrawPlayerMessage(CFrontend::m_stringDest, &g_unk0x00517e24, player, 1, -1, -1);
+        Race_DrawPlayerMessage(CFrontend::m_stringDest, &g_raceCallTextColour, player, 1, -1, -1);
     }
 
     if (!Race_IsFlag24Clear())
@@ -1227,7 +1226,7 @@ void Font_DrawText(BYTE index, char *text, short x, short y, int *pColour, unsig
 
 // Shadow colour of the race call text (black).
 // GLOBAL: CMR2 0x00517e28
-int g_unk0x00517e28 = 0xff000000;
+int g_raceCallShadowColour = 0xff000000;
 
 // Draws one race message text, centred on the given player's viewport, with an
 // optional dark offset copy underneath. Only one message per frame.
@@ -1282,7 +1281,7 @@ void Race_DrawPlayerMessage(char *pText, int *pColour, int player, int shadow, i
         flags = 0x12;
     }
     if (shadow != 0)
-        Font_DrawText(2, pText, pos + 1, (int)g_pGraphics->resY / 0x60 + 1 + textY, &g_unk0x00517e28, flags);
+        Font_DrawText(2, pText, pos + 1, (int)g_pGraphics->resY / 0x60 + 1 + textY, &g_raceCallShadowColour, flags);
     Font_DrawText(2, pText, pos, (int)g_pGraphics->resY / 0x60 + textY, pColour, flags);
 }
 
@@ -4348,7 +4347,7 @@ char g_str0x005194a8[12] = "2400BLI.hor";
 
 // Handles of the resolved stage texture records.
 // GLOBAL: CMR2 0x00538234
-BYTE *g_unk0x00538234;
+BYTE *g_stageTextureHandles;
 // GLOBAL: CMR2 0x00538238
 BYTE *g_unk0x00538238;
 
@@ -4418,10 +4417,10 @@ void Race_ResolveStageTexturesAndPalettes(void)
         handles[i] = (BYTE *)CGenericFileLoader::FindFile((GenericFile *)StageTiming_GetStageFile3(),
                                                        pNames[i], NULL, NULL, 0);
     StageObject_BlendSettingPairRecords(RallyData_GetPrimaryStageScoreScale(), RallyData_GetSecondaryStageScoreScale(), handles, &g_unk0x00538238,
-                 &g_unk0x00538234);
-    StageObject_SetPairSpeedLimits(g_unk0x00538238, g_unk0x00538234);
-    if (g_unk0x00538238 != NULL && g_unk0x00538234 != NULL) {
-        pPrimary = g_unk0x00538234;
+                 &g_stageTextureHandles);
+    StageObject_SetPairSpeedLimits(g_unk0x00538238, g_stageTextureHandles);
+    if (g_unk0x00538238 != NULL && g_stageTextureHandles != NULL) {
+        pPrimary = g_stageTextureHandles;
         pSecondary = g_unk0x00538238;
         for (i = 0; i < 6; i++) {
             avg = ((int)pSecondary[0x48 + i] + (int)pPrimary[0x48 + i]) / 2;
@@ -4456,7 +4455,7 @@ void RallyRoute_CopyIndexedNodeDirection(unsigned int nodeIndex, FixVector *pOut
 // Set while the node scan near the car's position finds a node whose callouts
 // have not been delivered yet.
 // GLOBAL: CMR2 0x00537354
-int g_unk0x00537354;
+int g_pendingCalloutNodeFound;
 
 // Per-car route/timing update. Keeps the tracked route position
 // g_unk0x0053708c[] in sync with the car's node (best, from RallyData), raises
@@ -4542,22 +4541,22 @@ void Race_UpdateCarRouteAndWrongWayState(int param_1)
     if (g_unk0x00537198[param_1] < best)
         g_raceWrongWayFlags[param_1] = 0;
 
-    g_unk0x00537354 = 0;
+    g_pendingCalloutNodeFound = 0;
     i = g_unk0x0053708c[param_1] + 1;
     if (i <= g_unk0x0053708c[param_1] + 6) {
         do {
             cnt = (unsigned int)RallyData_GetRouteAvailabilityState();
             if ((int)cnt <= i || RallyData_GetAvailableRouteNodeRecord(i)->callId != -1)
-                g_unk0x00537354 = 1;
+                g_pendingCalloutNodeFound = 1;
             i++;
         } while (i <= g_unk0x0053708c[param_1] + 6);
     }
 
     if ((char)((CallbackStateMachine *)StageUI_GetRaceResultTable())->records[param_1].packedState == '\t')
-        g_unk0x00537354 = 1;
+        g_pendingCalloutNodeFound = 1;
 
     if ((g_raceCallRecords[param_1 * 5 + 1].flags & 0x100) != 0)
-        g_unk0x00537354 = 1;
+        g_pendingCalloutNodeFound = 1;
 
     if (Car_IsStateC10Set(param_1) == 0 &&
         (char)((CallbackStateMachine *)StageUI_GetRaceResultTable())->records[param_1].packedState == '\b') {
@@ -4609,7 +4608,7 @@ void Race_UpdateCarRouteAndWrongWayState(int param_1)
     if ((BYTE)flags != 0x19) {
         g_raceCallRecords[param_1 * 5].flags = (flags - 1 ^ flags) & 0xff ^ flags;
     } else {
-        if (g_unk0x00537354 != 0)
+        if (g_pendingCalloutNodeFound != 0)
             g_raceCallRecords[param_1 * 5].flags = (flags - 1 ^ flags) & 0xff ^ flags;
     }
     if ((BYTE)g_raceCallRecords[param_1 * 5].flags == 0) {

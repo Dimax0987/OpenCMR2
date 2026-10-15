@@ -2311,7 +2311,7 @@ struct StageObjectDraw {
 };
 
 extern GfxMatrix g_unk0x00597cc0;
-extern GfxMatrix g_unk0x005207b8;
+extern GfxMatrix g_identityWorldMatrix;
 extern unsigned short g_visibleSectorIndices[];
 GfxMatrix *FixMatrix_ToFloat(GfxMatrix *pOut, FixMatrix *pIn);
 void Graphics_SetShadowGeometryState(int value);
@@ -2320,7 +2320,7 @@ void Game_DrawSortedNodes(int bit);
 
 // Scratch view matrix rebuilt for every cube map face (0x0049d3f0 uses it too).
 // GLOBAL: CMR2 0x0059bd28
-FixMatrix g_unk0x0059bd28;
+FixMatrix g_cubeFaceViewMatrix;
 
 // Renders the scene into the six faces of the cube map the mesh of pNode
 // belongs to: for each face it derives a view matrix from the node's transform,
@@ -2424,23 +2424,23 @@ int Graphics_RenderNodeCubeMapFaces(SceneNode *pNode, int bit)
         forward.y = 0;
         forward.z = face.forward.z;
         FIX_NORMALIZE_INTO(forward, forward);
-        g_unk0x0059bd28.right.x = forward.z;
-        g_unk0x0059bd28.right.y = 0;
-        g_unk0x0059bd28.right.z = -forward.x;
-        g_unk0x0059bd28.rw = 0;
-        g_unk0x0059bd28.up.x = 0;
-        g_unk0x0059bd28.up.y = 0x10000;
-        g_unk0x0059bd28.up.z = 0;
-        g_unk0x0059bd28.uw = 0;
-        g_unk0x0059bd28.forward.x = forward.x;
-        g_unk0x0059bd28.forward.y = 0;
-        g_unk0x0059bd28.forward.z = forward.z;
-        g_unk0x0059bd28.fw = 0;
-        g_unk0x0059bd28.position.x = 0;
-        g_unk0x0059bd28.position.y = 0;
-        g_unk0x0059bd28.position.z = 0;
-        g_unk0x0059bd28.pw = 0x10000;
-        FixMatrix_ToFloat(&g_unk0x00597cc0, &g_unk0x0059bd28);
+        g_cubeFaceViewMatrix.right.x = forward.z;
+        g_cubeFaceViewMatrix.right.y = 0;
+        g_cubeFaceViewMatrix.right.z = -forward.x;
+        g_cubeFaceViewMatrix.rw = 0;
+        g_cubeFaceViewMatrix.up.x = 0;
+        g_cubeFaceViewMatrix.up.y = 0x10000;
+        g_cubeFaceViewMatrix.up.z = 0;
+        g_cubeFaceViewMatrix.uw = 0;
+        g_cubeFaceViewMatrix.forward.x = forward.x;
+        g_cubeFaceViewMatrix.forward.y = 0;
+        g_cubeFaceViewMatrix.forward.z = forward.z;
+        g_cubeFaceViewMatrix.fw = 0;
+        g_cubeFaceViewMatrix.position.x = 0;
+        g_cubeFaceViewMatrix.position.y = 0;
+        g_cubeFaceViewMatrix.position.z = 0;
+        g_cubeFaceViewMatrix.pw = 0x10000;
+        FixMatrix_ToFloat(&g_unk0x00597cc0, &g_cubeFaceViewMatrix);
         Graphics_SetRenderTarget(&CGraphics::m_pTextureManager->textureBuffer2[cubeIndex][i]);
         Gfx_Clear(GFX_CLEAR_ZBUFFER, 0xff000000, 1.0f);
         Gfx_BeginScene();
@@ -2463,7 +2463,7 @@ int Graphics_RenderNodeCubeMapFaces(SceneNode *pNode, int bit)
             pMesh = (Mesh *)pSector->pMesh;
             pObject = (StageObjectDraw *)pSector->pObjects;
             if (pMesh != NULL) {
-                Gfx_SetTransform(GFX_TRANSFORM_WORLD, &g_unk0x005207b8);
+                Gfx_SetTransform(GFX_TRANSFORM_WORLD, &g_identityWorldMatrix);
                 Graphics_DrawMeshLOD(pMesh, 1, 0, 0);
                 while (pObject != NULL) {
                     if (pObject->pMesh->field_0x114 < 0x140000) {
@@ -2491,7 +2491,7 @@ int Graphics_RenderNodeCubeMapFaces(SceneNode *pNode, int bit)
                             pObject->matrix[14] = (float)pObject->offsetZ * CGraphics::m_oneOver65536;
                             Gfx_SetTransform(GFX_TRANSFORM_WORLD, (GfxMatrix *)pObject->matrix);
                         } else {
-                            Gfx_SetTransform(GFX_TRANSFORM_WORLD, &g_unk0x005207b8);
+                            Gfx_SetTransform(GFX_TRANSFORM_WORLD, &g_identityWorldMatrix);
                         }
                         Graphics_DrawMeshLOD(pObject->pMesh, 1, 0, 0);
                     }
@@ -2716,7 +2716,7 @@ float g_unk0x006dfdf8;
 FixMatrix *FloatMatrix_ToFix(FixMatrix *pOut, GfxMatrix *pIn);
 GfxMatrix *FixMatrix_ToFloat(GfxMatrix *pOut, FixMatrix *pIn);
 void Frontend_SetObjectField118(struct Texture *pTexture, int value);
-extern unsigned int g_unk0x006de95c[20];
+extern unsigned int g_carReflectionCubeMaps[20];
 extern unsigned short g_unk0x006dd9bc[2000];
 
 // Draws the triangles of a mesh in contiguous texture runs, with the reserved
@@ -2744,7 +2744,7 @@ void Mesh_DrawEnvMapped(Mesh *pMesh)
     triangleCount = pMesh->triangleCount;
     currentTexture = -1;
     if ((*(BYTE *)&g_pGraphics->field913_0x3bc & 0x80) != 0) {
-        if ((int)g_unk0x006de95c[(pMesh->flags >> 15) & 7] < 0) {
+        if ((int)g_carReflectionCubeMaps[(pMesh->flags >> 15) & 7] < 0) {
             Graphics_DrawCubeMappedShadowTriangles(pMesh);
             return;
         }
@@ -2763,11 +2763,11 @@ void Mesh_DrawEnvMapped(Mesh *pMesh)
         Graphics_SwitchAlphaBlendAndTest(1);
         CGraphics::SetTextureAddressClamp(0);
         Frontend_SetObjectField118(
-            CGraphics::m_pTextureManager->textureBuffer2[g_unk0x006de95c[(pMesh->flags >> 15) & 7]],
+            CGraphics::m_pTextureManager->textureBuffer2[g_carReflectionCubeMaps[(pMesh->flags >> 15) & 7]],
             0xb);
         CGraphics::ApplyTextureStageChange(
-            0, CGraphics::m_pTextureManager->textureBuffer2[g_unk0x006de95c[(pMesh->flags >> 15) & 7]]);
-        if ((g_unk0x005210b8 >= 0 || (int)g_unk0x006de95c[(pMesh->flags >> 15) & 7] >= 0) &&
+            0, CGraphics::m_pTextureManager->textureBuffer2[g_carReflectionCubeMaps[(pMesh->flags >> 15) & 7]]);
+        if ((g_unk0x005210b8 >= 0 || (int)g_carReflectionCubeMaps[(pMesh->flags >> 15) & 7] >= 0) &&
             triangleCount > 0) {
             for (i = 0; i < triangleCount; i++) {
                 textureIndex = pMesh->pTriangles[i].field_0x30;
@@ -3233,7 +3233,7 @@ BYTE Timer_FindFree(void);
 // When set, Timer_Start collapses the range to its end value (the demo
 // replays use it to freeze the interpolated values).
 // GLOBAL: CMR2 0x00816290
-int g_unk0x00816290;
+int g_timersFrozen;
 
 // Starts the timer whose slot index is stored in *pSlot (the previous owner,
 // if any, sends it to shape 5): the value interpolates from start to end over
@@ -3246,7 +3246,7 @@ void Graphics_StartShapedInterpolationTimer(BYTE *pSlot, int shape, int length, 
     int speed;
     int tri;
 
-    if (g_unk0x00816290 != 0) {
+    if (g_timersFrozen != 0) {
         param4 = 0;
         start = end;
         param7 = 0;
@@ -6515,7 +6515,7 @@ BYTE Timer_FindFree(void)
 
 // Cube-map texture ids reserved for the car reflections (-1 when unused).
 // GLOBAL: CMR2 0x006de95c
-unsigned int g_unk0x006de95c[20];
+unsigned int g_carReflectionCubeMaps[20];
 
 // Reserves count cube maps of the given size, then loads the environment
 // texture; returns 0 when it is missing.
@@ -6526,9 +6526,9 @@ int Graphics_ReserveCubeMapsAndLoadEnvironment(char *name, int count, GenericFil
     unsigned short *pTexture;
 
     CGraphics::m_cubeMapSize = size;
-    memset(g_unk0x006de95c, 0xff, sizeof(g_unk0x006de95c));
+    memset(g_carReflectionCubeMaps, 0xff, sizeof(g_carReflectionCubeMaps));
     if ((*(BYTE *)&g_pGraphics->field913_0x3bc & 0x80) != 0 && count > 0) {
-        pId = g_unk0x006de95c;
+        pId = g_carReflectionCubeMaps;
         do {
             *pId++ = *(unsigned short *)Graphics_AllocateCubeMapTextureSlot();
         } while (--count != 0);
@@ -6548,7 +6548,7 @@ extern const float g_netOne;
 
 // Scale applied to the shadow vertex positions (0.5).
 // GLOBAL: CMR2 0x00511424
-extern const float g_unk0x00511424 = 0.5f;
+extern const float g_shadowVertexScale = 0.5f;
 
 // Builds the view * world matrix, uses it to project every mesh vertex (taking
 // the midpoint between the vertex and the next one, 0x30 bytes apart) into the
@@ -6579,12 +6579,12 @@ void Graphics_ProjectMeshVertexMidpoints(Mesh *pMesh)
         for (j = 0; j < 3; j++) {
             int index = pMesh->pTriangles[i].vertexIndex[j];
             float *pVertex = (float *)((BYTE *)pVertexData + index * 0x30);
-            float x = (pVertex[3] + pVertex[0]) * g_unk0x00511424;
-            float y = (pVertex[4] + pVertex[1]) * g_unk0x00511424;
-            float z = (pVertex[5] + pVertex[2]) * g_unk0x00511424;
+            float x = (pVertex[3] + pVertex[0]) * g_shadowVertexScale;
+            float y = (pVertex[4] + pVertex[1]) * g_shadowVertexScale;
+            float z = (pVertex[5] + pVertex[2]) * g_shadowVertexScale;
 
-            pVertex[10] = (z * m31 + y * m21 + x * m11 + g_netOne) * g_unk0x00511424;
-            pVertex[11] = (g_netOne - (z * m32 + y * m22 + x * m12)) * g_unk0x00511424;
+            pVertex[10] = (z * m31 + y * m21 + x * m11 + g_netOne) * g_shadowVertexScale;
+            pVertex[11] = (g_netOne - (z * m32 + y * m22 + x * m12)) * g_shadowVertexScale;
         }
     }
     pVertices = Gfx_LockVertexBuffer(CGraphics::m_pTextureManager->pVertexBuffers[pMesh->vertexBufferIndex]);
@@ -6611,7 +6611,7 @@ void Graphics_DrawCubeMappedShadowTriangles(Mesh *pMesh)
     currentTexture = -1;
     Graphics_SwitchAlphaBlendAndTest(1);
     CGraphics::SetTextureAddressClamp(0);
-    if ((g_unk0x005210b8 < 0 && (int)g_unk0x006de95c[(pMesh->flags >> 15) & 7] < 0) || triangleCount <= 0)
+    if ((g_unk0x005210b8 < 0 && (int)g_carReflectionCubeMaps[(pMesh->flags >> 15) & 7] < 0) || triangleCount <= 0)
         goto done;
     for (i = 0; i < triangleCount; i++) {
         textureIndex = pMesh->pTriangles[i].field_0x30;
@@ -6691,7 +6691,7 @@ Texture *Graphics_FindAndEnsureResidentTexture(char *name)
 // Non-zero while the draw lists are depth sorted before being drawn
 // (0x49cbc0/0x49cc50/0x49cd20).
 // GLOBAL: CMR2 0x005207b4
-int g_unk0x005207b4 = 1;
+int g_depthSortDrawLists = 1;
 
 // Draws the LOD record a mesh is using: takes the whole-triangle-list or the
 // part-list path its flags ask for and binds cull mode, alpha blending and
@@ -6725,7 +6725,7 @@ void Graphics_DrawMeshLOD(Mesh *pMesh, int useParts, int clampTexture, int markT
             Graphics_SetLightingMode(2);
     }
 
-    if (g_unk0x005207b4 != 0)
+    if (g_depthSortDrawLists != 0)
         Graphics_SwitchAlphaBlendAndTest((int)((pLod->flags >> 3) & 1));
     else
         Graphics_SwitchAlphaBlendAndTest(0);

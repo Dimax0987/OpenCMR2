@@ -105,7 +105,7 @@ StageSplitState g_stageSplit;
 short g_unk0x00542418;
 // Split time spread table of the stage (5-byte rows: -, max down, max up).
 // GLOBAL: CMR2 0x0054241c
-char *g_unk0x0054241c;
+char *g_splitSpreadTable;
 
 // FUNCTION: CMR2 0x00456a30
 void StageTiming_SetSplitDisplayFlag(int offset, int unused)
@@ -899,7 +899,7 @@ int StageTiming_GetCarSplitMarker(int car, int index)
 
 // Split times of each car per checkpoint group (8 x 12 x 5).
 // GLOBAL: CMR2 0x0053d1e8
-int g_unk0x0053d1e8[8][12][5];
+int g_carSplitTimes[8][12][5];
 
 int StageTiming_GetCheckpointGroupIndex(int index);
 int StageTiming_GetCheckpointSplitIndex(int index);
@@ -907,7 +907,7 @@ int StageTiming_GetCheckpointField14(int index);
 
 // Leader of each split (row per checkpoint group and split, 8 bytes each).
 // GLOBAL: CMR2 0x0053de1c
-char g_unk0x0053de1c[108][8];
+char g_splitLeaders[108][8];
 
 // Time of the split leader at the given split.
 // FUNCTION: CMR2 0x00448260
@@ -919,10 +919,10 @@ int StageTiming_GetSplitLeaderTime(int index)
     if ((BYTE)RallyData_GetFlag24()) {
         group = StageTiming_GetCheckpointGroupIndex(index);
         split = StageTiming_GetCheckpointSplitIndex(index);
-        return g_unk0x0053d1e8[g_unk0x0053de1c[group * 9 + split][0]][group][split];
+        return g_carSplitTimes[g_splitLeaders[group * 9 + split][0]][group][split];
     }
     split = StageTiming_GetCheckpointField14(index);
-    return g_carStageTiming[g_unk0x0053de1c[split][0]].field_0x4[split];
+    return g_carStageTiming[g_splitLeaders[split][0]].field_0x4[split];
 }
 
 // FUNCTION: CMR2 0x004482d0
@@ -932,7 +932,7 @@ int StageTiming_GetGroupedCheckpointValue(int index, int car)
         int group = StageTiming_GetCheckpointGroupIndex(index);
         int split = StageTiming_GetCheckpointSplitIndex(index);
 
-        return g_unk0x0053d1e8[car][group][split];
+        return g_carSplitTimes[car][group][split];
     }
     return g_carStageTiming[car].field_0x4[StageTiming_GetCheckpointField14(index)];
 }
@@ -1259,12 +1259,12 @@ void StageTiming_InterpolateCarFixedSampleRows(StageTimingSpread *pCar, int *pOu
             pRow += 0x10;
             k = 0x10;
             do {
-                v1 = FixMul(FixMul(pIn[-0x14], rn), *(int *)(g_unk0x0054241c + off - 0x280));
-                v2 = FixMul(FixMul(pIn[-0x14], n), *(int *)(g_unk0x0054241c + off));
-                v3 = FixMul(FixMul(pIn[0], rc), *(int *)(g_unk0x0054241c + off - 0x280));
-                v4 = FixMul(FixMul(pIn[0], f), *(int *)(g_unk0x0054241c + off));
-                v5 = FixMul(pIn[-10], *(int *)(g_unk0x0054241c + off - 0x280));
-                v6 = FixMul(pIn[-10], *(int *)(g_unk0x0054241c + off));
+                v1 = FixMul(FixMul(pIn[-0x14], rn), *(int *)(g_splitSpreadTable + off - 0x280));
+                v2 = FixMul(FixMul(pIn[-0x14], n), *(int *)(g_splitSpreadTable + off));
+                v3 = FixMul(FixMul(pIn[0], rc), *(int *)(g_splitSpreadTable + off - 0x280));
+                v4 = FixMul(FixMul(pIn[0], f), *(int *)(g_splitSpreadTable + off));
+                v5 = FixMul(pIn[-10], *(int *)(g_splitSpreadTable + off - 0x280));
+                v6 = FixMul(pIn[-10], *(int *)(g_splitSpreadTable + off));
                 // the original re-reads pCar+0xa8 here instead of using n
                 v1b = pCar->startBlendFixed + FixMul(rf, pIn[-0x1f]);
                 sum = pCar->startBlendFixed + FixMul(rf, pIn[-0x1e]) + v1b;
@@ -1974,17 +1974,7 @@ BOOL Game_ReleaseSceneResourceBlocks(void);
 // FUNCTION: CMR2 0x00475f80
 void StageObject_InitCarSceneTables(void)
 {
-    BYTE *pTiming;
-    int *pState;
-    Texture **pTexture;
-    SceneNode **pPosition;
-    unsigned int *p;
-
-#define DRIVER_STATE (*(CarDriverPoseState *)(pTiming - (offsetof(CarDriverPoseState, rotation) + offsetof(FixAngles, y))))
-#define WIPER_STATE (*(CarWiperState *)((BYTE *)pState - offsetof(CarWiperState, sweepingForward)))
-#define DASH_TEXTURES (*(CarInteriorDashTextures *)((BYTE *)pTexture - offsetof(CarInteriorDashTextures, digit)))
-#define INTERIOR_NODES (*(CarInteriorNodes *)((BYTE *)pPosition - offsetof(CarInteriorNodes, steeringWheelNode)))
-#define INTERIOR_ARCHIVE (*(GenericFile *)((BYTE *)p - offsetof(GenericFile, fileSize)))
+    int i;
 
     g_carInteriorLoaded[0] = 0;
     memset(g_carDefaultBodyNodes, 0, sizeof(g_carDefaultBodyNodes));
@@ -2001,45 +1991,30 @@ void StageObject_InitCarSceneTables(void)
     g_carInteriorModelBuffers[1] = NULL;
     *(short *)g_carSteeringBlendLastGears = 0;
     *(short *)g_carSteeringBlendFrames = 0x303;
-    pTiming = (BYTE *)&g_carDriverPoseStates[0].rotation.y;
-    pState = &g_carWiperStates[0].sweepingForward;
-    pTexture = &g_carInteriorDashTextures[0].digit;
-    pPosition = &g_carInteriorNodeRows[0].steeringWheelNode;
-    do {
-        DRIVER_STATE.rotation.x = 0;
-        INTERIOR_NODES.driverPoseNode = 0;
-        DRIVER_STATE.rotation.y = 0;
-        INTERIOR_NODES.steeringWheelNode = 0;
-        WIPER_STATE.angle = 0;
-        DRIVER_STATE.rotation.z = 0;
-        INTERIOR_NODES.wiperNodes[0] = 0;
-        WIPER_STATE.sweepingForward = 1;
-        DRIVER_STATE.mountOffset.x = 0;
-        INTERIOR_NODES.wiperNodes[1] = 0;
-        DASH_TEXTURES.revCounter = 0;
-        WIPER_STATE.step = 0;
-        DRIVER_STATE.mountOffset.y = 0x3333;
-        DASH_TEXTURES.digit = 0;
-        WIPER_STATE.mode = 0;
-        DRIVER_STATE.mountOffset.z = 0;
-        pPosition += sizeof(CarInteriorNodes) / sizeof(*pPosition);
-        pTexture += sizeof(CarInteriorDashTextures) / sizeof(*pTexture);
-        pState += sizeof(CarWiperState) / sizeof(*pState);
-        pTiming += sizeof(CarDriverPoseState);
-    } while ((INT_PTR)pPosition < (INT_PTR)&g_carInteriorNodeRows[2].steeringWheelNode);
-    p = &g_carInteriorArchives[0].fileSize;
-    do {
-        INTERIOR_ARCHIVE.buffer = NULL;
-        INTERIOR_ARCHIVE.fileSize = 0;
-        INTERIOR_ARCHIVE.didFileLoad = FALSE;
-        p += sizeof(GenericFile) / sizeof(*p);
-    } while ((INT_PTR)p < (INT_PTR)&g_carInteriorArchives[16].fileSize);
+    for (i = 0; i < 2; i++) {
+        g_carDriverPoseStates[i].rotation.x = 0;
+        g_carInteriorNodeRows[i].driverPoseNode = 0;
+        g_carDriverPoseStates[i].rotation.y = 0;
+        g_carInteriorNodeRows[i].steeringWheelNode = 0;
+        g_carWiperStates[i].angle = 0;
+        g_carDriverPoseStates[i].rotation.z = 0;
+        g_carInteriorNodeRows[i].wiperNodes[0] = 0;
+        g_carWiperStates[i].sweepingForward = 1;
+        g_carDriverPoseStates[i].mountOffset.x = 0;
+        g_carInteriorNodeRows[i].wiperNodes[1] = 0;
+        g_carInteriorDashTextures[i].revCounter = 0;
+        g_carWiperStates[i].step = 0;
+        g_carDriverPoseStates[i].mountOffset.y = 0x3333;
+        g_carInteriorDashTextures[i].digit = 0;
+        g_carWiperStates[i].mode = 0;
+        g_carDriverPoseStates[i].mountOffset.z = 0;
+    }
+    for (i = 0; i < 16; i++) {
+        g_carInteriorArchives[i].buffer = NULL;
+        g_carInteriorArchives[i].fileSize = 0;
+        g_carInteriorArchives[i].didFileLoad = FALSE;
+    }
     CGame::RegisterCallback(Game_ReleaseSceneResourceBlocks, NULL);
-#undef DRIVER_STATE
-#undef WIPER_STATE
-#undef DASH_TEXTURES
-#undef INTERIOR_NODES
-#undef INTERIOR_ARCHIVE
 }
 
 
@@ -3235,7 +3210,7 @@ void StageTiming_SetNodeTreeMeshAlpha(SceneNode *pNode, int alpha, BYTE checkFla
 // Thresholds (first/second-hit window speeds) for the high/front and low/rear
 // halves of a car's eight timing parts.
 // GLOBAL: CMR2 0x0051bfac
-int g_unk0x0051bfac[8] = { 0x3333, 0x3333, 0x3333, 0x3333, 0x1999, 0x1999, 0x1999, 0x1999 };
+int g_timingPartHitThresholds[8] = { 0x3333, 0x3333, 0x3333, 0x3333, 0x1999, 0x1999, 0x1999, 0x1999 };
 // GLOBAL: CMR2 0x0051bfcc
 int g_unk0x0051bfcc[8] = { 0x1999, 0x1999, 0x1999, 0x1999, 0x1999, 0x1999, 0x1999, 0x1999 };
 
@@ -3260,7 +3235,7 @@ void StageTiming_FlagCarPartBreaks(Car *pCar, int param_2)
         for (; i < 8; i++) {
             part = pRecord->breakPartIndex[i];
             if (pRecord->partBroken[i] == 0 || pRecord->partDamaged[i] == 0) {
-                if (pRecord->damageValues[i + 26] > g_unk0x0051bfac[i] && pRecord->partBroken[i] == 0) {
+                if (pRecord->damageValues[i + 26] > g_timingPartHitThresholds[i] && pRecord->partBroken[i] == 0) {
                     StageObject_SetModelSubmeshVisibility(pCar, 2, i);
                     pRecord->partBroken[i] = 1;
                     pRecord->partDamaged[i] = 1;
@@ -4494,9 +4469,9 @@ void StageTiming_BlendCarPaintDecalRows(StageTimingSpread *pCar, int *pOut)
     rc = 0x10000 - ac;
     sum = r8 + rc;
     for (i = 0; i < 0x50; i += 5, pOut++) {
-        d3 = (int)FTOI(__int64, g_unk0x0054241c[i + 3] * CGraphics::m_65536);
-        d4 = (int)FTOI(__int64, g_unk0x0054241c[i + 4] * CGraphics::m_65536);
-        d0 = (int)FTOI(__int64, g_unk0x0054241c[i] * CGraphics::m_65536);
+        d3 = (int)FTOI(__int64, g_splitSpreadTable[i + 3] * CGraphics::m_65536);
+        d4 = (int)FTOI(__int64, g_splitSpreadTable[i + 4] * CGraphics::m_65536);
+        d0 = (int)FTOI(__int64, g_splitSpreadTable[i] * CGraphics::m_65536);
         t1 = FixDiv(pCar->startPositionFixed, t);
         t2 = FixDiv(t - pCar->endPositionFixed, t);
         t3 = 0x10000 - t2 - t1;
@@ -4529,8 +4504,8 @@ void StageTiming_RandomizeComputerTimes(int *pTimes)
     unsigned int r;
 
     for (i = 0; i < 0x50; i += 5, p++) {
-        low = (int)FTOI(__int64, g_unk0x0054241c[i + 2] * CGraphics::m_65536);
-        high = (int)FTOI(__int64, g_unk0x0054241c[i + 1] * g_minus65536);
+        low = (int)FTOI(__int64, g_splitSpreadTable[i + 2] * CGraphics::m_65536);
+        high = (int)FTOI(__int64, g_splitSpreadTable[i + 1] * g_minus65536);
         r = (unsigned int)FTOI(__int64, rand() * CGraphics::m_65536);
         *p += FixMul(FixDiv(r, 0x7fff0000), -low - high) + low;
     }
@@ -4777,7 +4752,7 @@ void StageTiming_RecordPassedCarSplit(int car, int driver)
 
 // Road rumble strength of the two players (from the suspension travel).
 // GLOBAL: CMR2 0x005391f8
-int g_unk0x005391f8[2];
+int g_roadRumbleStrength[2];
 // GLOBAL: CMR2 0x00539270
 int g_unk0x00539270[2];
 // GLOBAL: CMR2 0x0053937c
@@ -4797,7 +4772,7 @@ void ForceFeedback_ComputeSteeringForce(void)
     int force;
     int speed;
 
-    force = g_unk0x005391f8[1] - g_unk0x005391f8[0];
+    force = g_roadRumbleStrength[1] - g_roadRumbleStrength[0];
     if (g_unk0x00539270[0] != 0) {
         pAxis = &g_unk0x0053937c->cornerAxis[0];
         pForward = &g_unk0x0053937c->forward;
@@ -4850,25 +4825,25 @@ void ForceFeedback_ComputeAxleRumble(void)
 
     for (i = 0; i < 2; i++) {
         if (g_unk0x00539270[i] == 0) {
-            g_unk0x005391f8[i] = 0;
+            g_roadRumbleStrength[i] = 0;
         } else {
-            g_unk0x005391f8[i] = p->wheelSurfaceFx[i].extraGrip + p->cornerGrip[i].grip2B;
-            v = g_unk0x005391f8[i];
+            g_roadRumbleStrength[i] = p->wheelSurfaceFx[i].extraGrip + p->cornerGrip[i].grip2B;
+            v = g_roadRumbleStrength[i];
             v = FixMul(p->wheelSurfaceFx[i].drag + p->cornerGrip[i].grip2A, v);
-            g_unk0x005391f8[i] = v;
+            g_roadRumbleStrength[i] = v;
             v = FixMul(v, 0x16e14);
-            g_unk0x005391f8[i] = v;
+            g_roadRumbleStrength[i] = v;
             if (v < 0)
-                g_unk0x005391f8[i] = 0;
-            if (g_unk0x005391f8[i] > 0x9999)
-                g_unk0x005391f8[i] = 0x9999;
+                g_roadRumbleStrength[i] = 0;
+            if (g_roadRumbleStrength[i] > 0x9999)
+                g_roadRumbleStrength[i] = 0x9999;
             p = g_unk0x0053937c;
-            g_unk0x005391f8[i] += p->cornerGrip[i].drag;
-            if (g_unk0x005391f8[i] > 0x10000)
-                g_unk0x005391f8[i] = 0x10000;
+            g_roadRumbleStrength[i] += p->cornerGrip[i].drag;
+            if (g_roadRumbleStrength[i] > 0x10000)
+                g_roadRumbleStrength[i] = 0x10000;
         }
     }
-    g_unk0x00539380 = FixMul(g_unk0x005391f8[1] + g_unk0x005391f8[0], 0x8000);
+    g_unk0x00539380 = FixMul(g_roadRumbleStrength[1] + g_roadRumbleStrength[0], 0x8000);
 }
 
 // Builds the two condition-effect coefficients from the car's velocity,
@@ -5518,7 +5493,7 @@ void OptionPreview_SelectDamageMaterials(int index)
 
 // The network records of the eight cars (up to 0x539b38).
 // GLOBAL: CMR2 0x005393d8
-CarNetRecord g_unk0x005393d8[8];
+CarNetRecord g_carNetRecords[8];
 
 extern NetStats g_localCarStats;
 void NetRace_PackCarState(Car *car);
@@ -5533,7 +5508,7 @@ unsigned int RallyData_GetFlag21(void);
 // FUNCTION: CMR2 0x00424dc0
 void StageTiming_SnapshotCarNetworkPose(Car *car)
 {
-    CarNetRecord *rec = &g_unk0x005393d8[car->index];
+    CarNetRecord *rec = &g_carNetRecords[car->index];
     NetStats *stats;
     int *p = (int *)rec;
     int i;
@@ -5676,7 +5651,7 @@ void StageTiming_LoadSelectedTeamArchive(void)
         }
         memcpy(dest, bufs[index], sizes[index]);
         g_unk0x00541f8c = (BYTE *)dest + sizes[index];
-        g_unk0x0054241c = (char *)dest;
+        g_splitSpreadTable = (char *)dest;
         if (dest != NULL)
             g_unk0x00542604 = 1;
     }
@@ -5739,7 +5714,7 @@ void StageTiming_EstimateRemainingDriverTimes(void)
 
 // Splits of the stage used for the timing display.
 // GLOBAL: CMR2 0x00542c78
-int g_unk0x00542c78;
+int g_timingSplitCount;
 
 // Builds the checkpoint split table of the current stage.
 // match 76%: registers and the shared tail of the two flag tests differ
@@ -5771,7 +5746,7 @@ void StageTiming_BuildCheckpointSplitPositions(void)
     }
     if ((char)RallyData_GetFlag24() != 0 || (char)RallyData_GetFlag25() != 0) {
         g_unk0x00542c74 = (char)RallyData_GetFlag24() != 0 ? 4 : 2;
-        g_unk0x00542c78 = g_unk0x00542c74;
+        g_timingSplitCount = g_unk0x00542c74;
         unit = (int)FTOI(__int64, (double)g_unk0x00542c74 * CGraphics::m_65536);
         if ((char)RallyData_GetFlag24() != 0) {
             scale = FixDiv((int)FTOI(__int64, (double)g_stageCheckpointCount * CGraphics::m_65536), unit);
@@ -5866,13 +5841,13 @@ void StageTiming_RecordAndReorderSplitTime(int car)
     group = StageTiming_GetCheckpointGroupIndex(car);
     index = StageTiming_GetCheckpointSplitIndex(car);
     if ((char)RallyData_GetFlag24() != 0)
-        g_unk0x0053d1e8[car][group][split] = g_unk0x0053d1b0;
+        g_carSplitTimes[car][group][split] = g_unk0x0053d1b0;
     else
         g_carStageTiming[car].field_0x4[split] = g_unk0x0053d1b0;
     if (car < (int)((BYTE)RallyDataState()) || (char)RallyData_GetSelectionFlag27() != 0) {
         g_carStageTiming[car].field_0x84 = 0;
         if ((char)RallyData_GetFlag24() != 0)
-            g_unk0x0053e190[split + car * 9] = g_unk0x0053d1b0 - g_unk0x0053d1e8[car][group][0];
+            g_unk0x0053e190[split + car * 9] = g_unk0x0053d1b0 - g_carSplitTimes[car][group][0];
         else
             g_unk0x0053e190[split + car * 9] = g_unk0x0053d1b0;
     }
@@ -5884,9 +5859,9 @@ void StageTiming_RecordAndReorderSplitTime(int car)
     int old = prev;
     g_carStageTiming[car].field_0x82 = old;
     ((char (*)[9])g_unk0x0053ddb0)[group][index] = prev + 1;
-    ((char (*)[9][8])g_unk0x0053de1c)[group][index][old] = (char)car;
+    ((char (*)[9][8])g_splitLeaders)[group][index][old] = (char)car;
     if (old > 0) {
-        char other = ((char (*)[9][8])g_unk0x0053de1c)[group][index][old - 1];
+        char other = ((char (*)[9][8])g_splitLeaders)[group][index][old - 1];
 
         g_carStageTiming[other].field_0x80 = (char)car;
         g_carStageTiming[other].field_0x83 = 1;
@@ -5953,9 +5928,9 @@ extern double g_fixedDegreesToAngle12;
 unsigned int RallyData_GetFlag31(void);
 unsigned char RallyDataStageIndex(void);
 unsigned char RallyData_GetFlag24(void);
-extern int g_unk0x00542cd4;
+extern int g_startGridSide;
 extern int g_unk0x00542d38[8];
-extern int g_unk0x00542cd8[8][3];
+extern int g_fixedGridStartPositions[8][3];
 int StageObject_Atan2Degrees(int y, int x);
 int RallyTiming_GetChampionshipDriverPosition(int index);
 int NetPlayers_GetSortedPlayerID(int index);
@@ -6028,19 +6003,19 @@ void StageTiming_PlaceEventStartingGrid(char param_1)
                 x -= sinA;
                 z += cosA;
             }
-            g_unk0x00542cd8[i][2] = z + p1[2];
-            g_unk0x00542cd8[i][0] = x + p1[0];
+            g_fixedGridStartPositions[i][2] = z + p1[2];
+            g_fixedGridStartPositions[i][0] = x + p1[0];
         }
         break;
     case 1:
         other = g_unk0x00542c7c[1];
         if (param_1 != 0) {
-            slot = g_unk0x00542cd4;
+            slot = g_startGridSide;
         } else {
             srand(CMain::GetFrameTime());
             slot = rand() <= 0x3fff;
         }
-        g_unk0x00542cd4 = slot;
+        g_startGridSide = slot;
         g_unk0x00542cb0 = slot;
         for (i = 0; i < 2; i++) {
             switch ((slot + i) % 2) {
@@ -6082,8 +6057,8 @@ void StageTiming_PlaceEventStartingGrid(char param_1)
                 x -= sinA;
                 z = cosA + z;
             }
-            g_unk0x00542cd8[slot][2] = z + p1[2];
-            g_unk0x00542cd8[slot][0] = x + p1[0];
+            g_fixedGridStartPositions[slot][2] = z + p1[2];
+            g_fixedGridStartPositions[slot][0] = x + p1[0];
         }
         break;
     case 3:
@@ -6112,7 +6087,7 @@ void StageTiming_PlaceEventStartingGrid(char param_1)
 
 // Per-particle-kind texture handles for the wheel spray / smoke effects.
 // GLOBAL: CMR2 0x005435c8
-Texture *g_unk0x005435c8;
+Texture *g_wheelSprayTextures;
 // GLOBAL: CMR2 0x00543650
 Texture *g_unk0x00543650;
 // GLOBAL: CMR2 0x00543654
@@ -6364,7 +6339,7 @@ void StageTiming_InitEffectParticleTypes(void)
   ParticleEdit_SetSizeRange(0x147a,0xa3d);
   ParticleEdit_CommitCurrentType();
   ParticleEdit_Select(0x18);
-  ParticleEdit_SetTextureParams(g_unk0x005435c8,0xffffc000,0x4000,0x4000,0xffffc000);
+  ParticleEdit_SetTextureParams(g_wheelSprayTextures,0xffffc000,0x4000,0x4000,0xffffc000);
   ParticleEdit_SetMotion(0xc80000,0xccc,0,0x1999,0,1,1);
   ParticleEdit_SetAlphaRamp(0xff,0xff,0,1);
   ParticleEdit_SetSizeRamp(0x1999,0x1999,0);
@@ -7880,8 +7855,8 @@ void StageTiming_LoadEffectParticleTextures(void)
         g_unk0x00543698[i] = LOAD_EFFECT_TEXTURE();
     }
     sprintf(CFrontend::m_stringDest, g_strPathConcat, CInstallInfo::GetTexturesDirectory(), g_strTexSplashDrop);
-    g_unk0x005435c8 = LOAD_EFFECT_TEXTURE();
-    Frontend_SetObjectField118(g_unk0x005435c8, 1);
+    g_wheelSprayTextures = LOAD_EFFECT_TEXTURE();
+    Frontend_SetObjectField118(g_wheelSprayTextures, 1);
     for (i = 0; i < 5; i++) {
         sprintf(CFrontend::m_stringDest, g_strNumberedTga, CInstallInfo::GetTexturesDirectory(), g_strTexRocksGrav, i);
         g_unk0x005436a0[i] = LOAD_EFFECT_TEXTURE();
@@ -8736,12 +8711,12 @@ void StageTiming_HandleCarSplitCrossing(int car)
     if (StageTiming_GetCheckpointField19(car) == 0)
         return;
     if ((char)RallyData_GetSelectionFlag27() == 0) {
-        g_unk0x0053d1e8[car][group][0] = g_unk0x0053d1b0;
+        g_carSplitTimes[car][group][0] = g_unk0x0053d1b0;
         if ((char)RallyData_GetSelectionFlag28() == 0 && CGameInfo::GetConfiguredGameMode() != 12) {
-            base = g_unk0x0053d1e8[car][group - 1][0];
-            pPrev = g_unk0x0053d1e8[car][group - 1];
+            base = g_carSplitTimes[car][group - 1][0];
+            pPrev = g_carSplitTimes[car][group - 1];
             pTime = &g_carStageTiming[car].splitTimes[group];
-            *pTime = g_unk0x0053d1e8[car][group][0] - base;
+            *pTime = g_carSplitTimes[car][group][0] - base;
             for (i = 0; i < 5; i++)
                 g_carStageTiming[car].splits[i] = pPrev[i] - base;
         } else {
@@ -8752,7 +8727,7 @@ void StageTiming_HandleCarSplitCrossing(int car)
                 *pTime = 359999;
             g_carStageTiming[car].splits[0] = 0;
             pOut = &g_carStageTiming[car].splits[1];
-            pPrev = &g_unk0x0053d1e8[car][group][1];
+            pPrev = &g_carSplitTimes[car][group][1];
             for (i = 4; i != 0; i--) {
                 *pOut = *pPrev - g_carStageTiming[car].lastTime;
                 if (*pOut >= 360000)
@@ -9428,7 +9403,7 @@ void StageTiming_RestoreDeviceStageResources(void)
 
 // Random seed for the stage timing shuffles.
 // GLOBAL: CMR2 0x00541f88
-unsigned int g_unk0x00541f88;
+unsigned int g_stageTimingRandomSeed;
 
 // Per-driver timing block: 0xa0 bytes of split samples followed by the four
 // spread parameters of the stage (the two fixed-point ones first).
@@ -9452,8 +9427,8 @@ void StageTiming_InitRaceDriverRecords(char param_1)
         local.endBlendFixed = 0;
     }
     if (param_1 != 0)
-        g_unk0x00541f88 = CMain::GetFrameTime();
-    srand(g_unk0x00541f88);
+        g_stageTimingRandomSeed = CMain::GetFrameTime();
+    srand(g_stageTimingRandomSeed);
     StageTiming_AssignReservedDriverSlots(CGameInfo::GetConfiguredPlayerCount());
     StageTiming_RefreshPaintSamplesAndTimeSpread(&local);
     StageTiming_BuildAndSortCPUSplitTimes(&local);
@@ -9465,8 +9440,8 @@ void StageTiming_InitRaceDriverRecords(char param_1)
             p[0] = 0;
             p += 6;
         } while ((INT_PTR)p < (INT_PTR)(g_unk0x00542528 + 0xd0));
-        g_unk0x00542420[0] = ConvertRawTimeToCentiseconds(*(int *)(g_unk0x0054241c + 0x2d0));
-        g_unk0x00542420[1] = ConvertRawTimeToCentiseconds(*(int *)(g_unk0x0054241c + 0x310));
+        g_unk0x00542420[0] = ConvertRawTimeToCentiseconds(*(int *)(g_splitSpreadTable + 0x2d0));
+        g_unk0x00542420[1] = ConvertRawTimeToCentiseconds(*(int *)(g_splitSpreadTable + 0x310));
         StageTiming_PairPlayerOpponentSlots();
         StageTiming_ClearSplitDisplayFlags();
         return;
