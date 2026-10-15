@@ -848,8 +848,13 @@ void Race_StorePlayerRouteAndClearSlots(int player)
 {
     int i;
 
-    g_unk0x0053708c[player] = RallyData_GetActiveCarRaceRecordField0(Car_Get(player));
-    g_unk0x00537198[player] = RallyData_GetActiveCarRaceRecordField0(Car_Get(player));
+    // PORT: only the two players have these entries. The original writes the
+    // computer cars' positions past both arrays, over neighbouring globals
+    // that differ here; nothing reads entries past the second.
+    if (player < 2) {
+        g_unk0x0053708c[player] = RallyData_GetActiveCarRaceRecordField0(Car_Get(player));
+        g_unk0x00537198[player] = RallyData_GetActiveCarRaceRecordField0(Car_Get(player));
+    }
     for (i = 0; i < 5; i++) {
         g_raceSlotState[i].flags &= 0xfc;
         g_raceSlotState[i].pending = -1;
