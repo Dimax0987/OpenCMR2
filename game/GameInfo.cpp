@@ -1695,6 +1695,16 @@ SceneNode *OptionMenu_GetBackgroundRoot(void)
     return g_unk0x0082b1b4;
 }
 
+// PORT: the service area's car preview projection. The original's X scale
+// fits 4:3 only and stretches the car on wider screens; (4/3) * (resY/resX)
+// is the same at 4:3 and keeps the car's proportions on any other shape, as
+// View_SetPlayerProjection does for the stage.
+static void OptionMenu_SetPreviewProjection(void)
+{
+    CGraphics::SetProjection(FTOI(int, 0x30978 * (4.0 / 3.0) * g_pGraphics->resY / g_pGraphics->resX),
+                             0x4326e, 0xfa0000, 0x10000);
+}
+
 void OptionMenu_CreateBackgroundWorld(void);
 void OptionMenu_LoadArchives(void);
 void OptionPreview_FillTextureSetIndices(void);
@@ -6041,7 +6051,7 @@ void OptionMenu_CreateBackgroundWorld(void)
         pNode->dirty = 1;
     Scene_SetAmbient(colour, 0);
     Scene_CreateLight(2, 0x10000, 0x10000, 0x10000, &lightPosition, &angles, g_unk0x0082b1b4);
-    CGraphics::SetProjection(0x30978, 0x4326e, 0xfa0000, 0x10000);
+    OptionMenu_SetPreviewProjection();
     Game_PrepareScene(g_unk0x0082b1b4, g_unk0x0082b1b0, view, 0);
     CGame::RegisterCallback(OptionMenu_UpdateBackgroundRoot, NULL);
 }
@@ -6596,7 +6606,7 @@ void OptionMenu_DrawBackgroundState(CallbackStateMachine *p1, BYTE state)
     rect[3] = (short)((int)g_pGraphics->resY * 2 / 3);
     CGraphics::ClearTarget();
     CGraphics::ClearZBuffer();
-    CGraphics::SetProjection(0x30978, 0x4326e, 0xfa0000, 0x10000);
+    OptionMenu_SetPreviewProjection();
     OptionMenu_DrawActivePage();
     Game_PrepareScene(g_unk0x0082b1b4, g_unk0x0082b1b0, &rect[0], 0);
     Game_DrawSceneViewport(g_unk0x0082b1b4, g_unk0x0082b1b0, &rect[0], 0, 1);
@@ -6625,7 +6635,7 @@ void OptionMenu_FadeBackgroundToGrey(int param1, int unused)
     CGraphics::SetClearColour(1, colour[0], colour[1], colour[2]);
     CGraphics::ClearTarget();
     CGraphics::ClearZBuffer();
-    CGraphics::SetProjection(0x30978, 0x4326e, 0xfa0000, 0x10000);
+    OptionMenu_SetPreviewProjection();
     // The globals are the root and camera scene nodes; the third argument is a
     // temporary 4-short rectangle covering the middle of the screen.
     Game_PrepareScene(g_unk0x0082b1b4, g_unk0x0082b1b0, rect, 0);
@@ -6653,7 +6663,7 @@ void OptionMenu_FadeToStoredColour(int param1, int unused)
     CGraphics::SetClearColour(1, colour[0], colour[1], colour[2]);
     CGraphics::ClearTarget();
     CGraphics::ClearZBuffer();
-    CGraphics::SetProjection(0x30978, 0x4326e, 0xfa0000, 0x10000);
+    OptionMenu_SetPreviewProjection();
     CMain::GetFrameDelta();
     Game_PrepareScene(g_unk0x0082b1b4, g_unk0x0082b1b0, rect, 0);
     Game_DrawSceneViewport(g_unk0x0082b1b4, g_unk0x0082b1b0, rect, 0, 1);
