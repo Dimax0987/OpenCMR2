@@ -42,6 +42,15 @@ for mode, cursor, cars in [('single-race', 1, 6), ('time-trial', 2, 2)]:
             'OPENCMR2_PROBE_EXPECT_ARCADE_TRACK': str(track),
             'OPENCMR2_PROBE_UNLOCK_TRACKS': '1',
         })
+# The two-car super special stages, where the start table index is negative.
+for country, name in [(1, 'greece'), (3, 'sweden'), (5, 'kenya'), (7, 'united-kingdom')]:
+    SCENARIOS[f'super-special-{name}'] = (500, {
+        'OPENCMR2_PROBE_CURSORS': f'88:2,36:{country},37:10',
+        'OPENCMR2_PROBE_EXPECT_CARS': '2',
+        'OPENCMR2_PROBE_EXPECT_COUNTRY': str(country),
+        'OPENCMR2_PROBE_EXPECT_STAGE': '10',
+        'OPENCMR2_PROBE_UNLOCK_TRACKS': '1',
+    })
 REPLAY = re.compile(r'probe: replay tick=(\d+) playing=(-?\d+) lane=(-?\d+) frame=(-?\d+) length=(-?\d+)')
 
 
