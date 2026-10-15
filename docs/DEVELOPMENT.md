@@ -61,6 +61,29 @@ checks selecting subfolders or parent folders, ambiguous installations and
 symlink cycles on every CI platform, without original assets or a display
 server.
 
+## Sanitizers
+
+The `linux-debug` preset builds with AddressSanitizer and UBSan. With the
+vendored SDL, the shared ASan runtime must be linked into both SDL and the
+game, and found at run time:
+
+```sh
+cmake --preset linux-debug -DOPENCMR2_VENDORED_SDL=ON \
+    -DOPENCMR2_BINK_TEST_DATA_DIR="$HOME/cmr2game" \
+    "-DCMAKE_SHARED_LINKER_FLAGS=-shared-libasan -fsanitize=address,undefined" \
+    "-DCMAKE_EXE_LINKER_FLAGS=-shared-libasan" \
+    "-DCMAKE_CXX_FLAGS=-fsanitize-recover=address" "-DCMAKE_C_FLAGS=-fsanitize-recover=address"
+cmake --build --preset linux-debug --target stage_probe
+LD_LIBRARY_PATH="$(dirname "$(clang -print-file-name=libclang_rt.asan.so)")" \
+ASAN_OPTIONS=detect_leaks=0:halt_on_error=0 \
+    python3 tests/runtime_scenarios.py --probe build/linux-debug/tests/stage_probe --data "$HOME/cmr2game"
+```
+
+Each scenario's `run.log` holds the reports. Code that reads a dword and
+keeps its low byte, as the original does, is reported as well; check the
+use before treating a report as a bug. The 60-second scenario timeout may
+need raising under the sanitizers.
+
 ## Source sync and generated files
 
 `game/` follows CMR2Decomp; `UPSTREAM` records the imported commit.
