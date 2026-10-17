@@ -142,6 +142,9 @@ struct GfxExecutor {
     virtual void DestroyTexture(GfxTexture *texture) = 0;
     // Brings a render target's pixels back into its CPU copy (for locks).
     virtual void ReadTexture(GfxTexture *texture) = 0;
+    // Completes the back buffer read the last presented frame started, when
+    // the game asks for its pixels (Gfx_ReadBackBuffer).
+    virtual void CollectReadback(GfxReadback &) {}
 };
 
 GfxExecutor *Gfx_CreateGpuExecutor(void);

@@ -861,6 +861,8 @@ extern "C" void Gfx_GenerateMipmaps(GfxTexture *texture)
 
 extern "C" BOOL Gfx_ReadBackBuffer(int x, int y, int width, int height, DWORD *pixels)
 {
+    if (s_executor != NULL)
+        s_executor->CollectReadback(s_readback);
     s_readback.requested = true;
     s_readback.x = x;
     s_readback.y = y;

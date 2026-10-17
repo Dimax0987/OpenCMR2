@@ -163,12 +163,22 @@ struct Executor : GfxExecutor {
     std::unordered_map<uint32_t, SDL_GPUSampler *> samplers;
     bool bcSupported = true;
     bool presentModeVsync = true;
+    int anisotropy = 1, smoothScaling = 1;    // video.anisotropy, video.smooth_scaling
+    // The back buffer read of the last presented frame (the lens flare test):
+    // it runs with that frame, and CollectReadback waits for it only when the
+    // game reads the pixels, during the next frame.
+    SDL_GPUTransferBuffer *readbackBuffer = nullptr;
+    uint32_t readbackCapacity = 0;
+    SDL_GPUFence *readbackFence = nullptr;
+    int readbackWidth = 0, readbackHeight = 0;
 
     ~Executor() override
     {
         if (device == NULL)
             return;
         SDL_WaitForGPUIdle(device);
+        SDL_ReleaseGPUFence(device, readbackFence);
+        SDL_ReleaseGPUTransferBuffer(device, readbackBuffer);
         for (auto &p : pipelines)
             SDL_ReleaseGPUGraphicsPipeline(device, p.second);
         for (auto &s : samplers)
@@ -256,8 +266,9 @@ struct Executor : GfxExecutor {
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_CLIP_DISTANCE_BOOLEAN, false);
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
-        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN,
-                               Platform_GetSettingInt("video.anisotropy", 1) > 1);
+        anisotropy = Platform_GetSettingInt("video.anisotropy", 1);
+        smoothScaling = Platform_GetSettingInt("video.smooth_scaling", 1);
+        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN, anisotropy > 1);
         device = SDL_CreateGPUDeviceWithProperties(props);
         SDL_DestroyProperties(props);
         if (device == NULL) {
@@ -658,7 +669,7 @@ struct Executor : GfxExecutor {
 
     SDL_GPUSampler *Sampler(const GfxStageState &stage)
     {
-        int aniso = Platform_GetSettingInt("video.anisotropy", 1);
+        int aniso = anisotropy;
         uint32_t key = (uint32_t)(stage.minFilter & 3) | (uint32_t)(stage.magFilter & 3) << 2 |
                        (uint32_t)(stage.mipFilter & 3) << 4 | (uint32_t)(stage.address & 3) << 6 |
                        (uint32_t)(aniso & 31) << 8;
@@ -686,6 +697,28 @@ struct Executor : GfxExecutor {
     }
 
     // ---- uniforms ----
+
+    // Whether two states give the same VertexUniforms (FillVertexUniforms).
+    static bool SameVertexUniforms(const GfxDrawState &a, const GfxDrawState &b)
+    {
+        for (int i = 0; i < 2; i++)
+            if (a.stages[i].texCoordIndex != b.stages[i].texCoordIndex ||
+                a.stages[i].textureTransform != b.stages[i].textureTransform)
+                return false;
+        return a.viewport.width == b.viewport.width && a.viewport.height == b.viewport.height &&
+               a.lighting == b.lighting && a.colorVertex == b.colorVertex && a.specular == b.specular &&
+               a.localViewer == b.localViewer && a.normalizeNormals == b.normalizeNormals &&
+               a.diffuseSource == b.diffuseSource && a.specularSource == b.specularSource &&
+               a.ambientSource == b.ambientSource && a.emissiveSource == b.emissiveSource && a.fog == b.fog &&
+               a.fogTableMode == b.fogTableMode && a.fogVertexMode == b.fogVertexMode &&
+               a.fogStart == b.fogStart && a.fogEnd == b.fogEnd && a.ambient == b.ambient &&
+               memcmp(&a.world, &b.world, sizeof(a.world)) == 0 && memcmp(&a.view, &b.view, sizeof(a.view)) == 0 &&
+               memcmp(&a.projection, &b.projection, sizeof(a.projection)) == 0 &&
+               memcmp(a.texture, b.texture, sizeof(a.texture)) == 0 &&
+               memcmp(&a.material, &b.material, sizeof(a.material)) == 0 &&
+               memcmp(a.lightEnabled, b.lightEnabled, sizeof(a.lightEnabled)) == 0 &&
+               memcmp(a.lights, b.lights, sizeof(a.lights)) == 0;
+    }
 
     void FillVertexUniforms(const GfxCommand &cmd, const GfxDrawState &s, int targetW, int targetH, VertexUniforms &u)
     {
@@ -789,9 +822,8 @@ struct Executor : GfxExecutor {
         u.bumpLuminance[1] = a.bumpLumOffset;
     }
 
-    void BindTextures(SDL_GPURenderPass *pass, const GfxDrawState &s)
+    void TextureBindings(const GfxDrawState &s, SDL_GPUTextureSamplerBinding bindings[4])
     {
-        SDL_GPUTextureSamplerBinding bindings[4];
         for (int i = 0; i < 2; i++) {
             const GfxStageState &stage = s.stages[i];
             GfxTexture *t = stage.texture;
@@ -804,7 +836,29 @@ struct Executor : GfxExecutor {
             bindings[i * 2] = { (texture != NULL && !cube) ? texture : white2D, sampler };
             bindings[i * 2 + 1] = { (texture != NULL && cube) ? texture : whiteCube, sampler };
         }
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 4);
+    }
+
+    // What a render pass has bound: each draw sets only what differs from the
+    // previous one. Render passes start with nothing bound.
+    struct PassBindings {
+        SDL_GPUGraphicsPipeline *pipeline = nullptr;
+        bool viewportSet = false, texturesSet = false, verticesSet = false, indicesSet = false;
+        SDL_GPUViewport viewport = {};
+        SDL_Rect scissor = {};
+        SDL_GPUTextureSamplerBinding textures[4] = {};
+        uint32_t vertexOffset = 0;
+    };
+
+    void SetViewport(SDL_GPURenderPass *pass, PassBindings &bound, const SDL_GPUViewport &vp, const SDL_Rect &scissor)
+    {
+        if (bound.viewportSet && memcmp(&bound.viewport, &vp, sizeof(vp)) == 0 &&
+            memcmp(&bound.scissor, &scissor, sizeof(scissor)) == 0)
+            return;
+        SDL_SetGPUViewport(pass, &vp);
+        SDL_SetGPUScissor(pass, &scissor);
+        bound.viewport = vp;
+        bound.scissor = scissor;
+        bound.viewportSet = true;
     }
 
     // ---- frame execution ----
@@ -901,8 +955,16 @@ struct Executor : GfxExecutor {
         UploadGeometry(cmd, frame);
 
         SDL_GPURenderPass *pass = NULL;
+        PassBindings bound;
         GfxTexture *target = NULL;
         int targetW = backWidth, targetH = backHeight;
+        // The uniforms pushed to this command buffer (they stay for its
+        // passes): the state and target size of the vertex ones, and the
+        // fragment ones. Clears push their own.
+        const GfxDrawState *vertexUniformState = NULL;
+        int vertexUniformW = 0, vertexUniformH = 0;
+        FragmentUniforms fragmentUniforms;
+        bool fragmentUniformsSet = false;
         for (const GfxCommand &c : frame.commands) {
             if (c.type == GFX_CMD_TARGET) {
                 if (pass != NULL) {
@@ -912,25 +974,32 @@ struct Executor : GfxExecutor {
                 target = c.target;
                 continue;
             }
-            if (pass == NULL)
+            if (pass == NULL) {
                 pass = BeginPass(cmd, target, targetW, targetH);
+                bound = PassBindings();
+            }
             if (c.type == GFX_CMD_CLEAR) {
                 bool colorClear = (c.clearFlags & GFX_CLEAR_TARGET) != 0;
                 bool depthClear = (c.clearFlags & GFX_CLEAR_ZBUFFER) != 0;
                 if (!colorClear && !depthClear)
                     continue;
-                SDL_BindGPUGraphicsPipeline(pass, ClearPipeline(colorClear, depthClear));
+                SDL_GPUGraphicsPipeline *pipeline = ClearPipeline(colorClear, depthClear);
+                if (pipeline != bound.pipeline) {
+                    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+                    bound.pipeline = pipeline;
+                }
                 SDL_GPUViewport vp = { (float)c.clearViewport.x, (float)c.clearViewport.y,
                                        (float)c.clearViewport.width, (float)c.clearViewport.height, 0.0f, 1.0f };
-                SDL_SetGPUViewport(pass, &vp);
                 SDL_Rect scissor = { (int)c.clearViewport.x, (int)c.clearViewport.y, (int)c.clearViewport.width,
                                      (int)c.clearViewport.height };
-                SDL_SetGPUScissor(pass, &scissor);
+                SetViewport(pass, bound, vp, scissor);
                 ClearUniforms u = {};
                 Color(c.clearColor, u.color);
                 u.depth[0] = c.clearZ;
                 SDL_PushGPUVertexUniformData(cmd, 0, &u, sizeof(u));
                 SDL_PushGPUFragmentUniformData(cmd, 0, &u, sizeof(u));
+                vertexUniformState = NULL;
+                fragmentUniformsSet = false;
                 SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
                 continue;
             }
@@ -938,28 +1007,53 @@ struct Executor : GfxExecutor {
             SDL_GPUGraphicsPipeline *pipeline = Pipeline(c, s);
             if (pipeline == NULL)
                 continue;
-            SDL_BindGPUGraphicsPipeline(pass, pipeline);
+            if (pipeline != bound.pipeline) {
+                SDL_BindGPUGraphicsPipeline(pass, pipeline);
+                bound.pipeline = pipeline;
+            }
             SDL_GPUViewport vp;
             if (c.transformed)
                 vp = { 0.0f, 0.0f, (float)targetW, (float)targetH, 0.0f, 1.0f };
             else
                 vp = { (float)s.viewport.x, (float)s.viewport.y, (float)s.viewport.width, (float)s.viewport.height,
                        s.viewport.minZ, s.viewport.maxZ };
-            SDL_SetGPUViewport(pass, &vp);
             SDL_Rect scissor = { (int)s.viewport.x, (int)s.viewport.y, (int)s.viewport.width, (int)s.viewport.height };
-            SDL_SetGPUScissor(pass, &scissor);
-            VertexUniforms vu;
-            FillVertexUniforms(c, s, targetW, targetH, vu);
-            SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
+            SetViewport(pass, bound, vp, scissor);
+            if (vertexUniformState == NULL || vertexUniformW != targetW || vertexUniformH != targetH ||
+                (vertexUniformState != &s && !SameVertexUniforms(*vertexUniformState, s))) {
+                VertexUniforms vu;
+                FillVertexUniforms(c, s, targetW, targetH, vu);
+                SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
+                vertexUniformState = &s;
+                vertexUniformW = targetW;
+                vertexUniformH = targetH;
+            }
             FragmentUniforms fu;
             FillFragmentUniforms(s, fu);
-            SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
-            BindTextures(pass, s);
-            SDL_GPUBufferBinding vb = { vertexBuffer, c.firstVertexByte };
-            SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+            if (!fragmentUniformsSet || memcmp(&fu, &fragmentUniforms, sizeof(fu)) != 0) {
+                SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
+                fragmentUniforms = fu;
+                fragmentUniformsSet = true;
+            }
+            SDL_GPUTextureSamplerBinding textures[4];
+            TextureBindings(s, textures);
+            if (!bound.texturesSet || memcmp(textures, bound.textures, sizeof(textures)) != 0) {
+                SDL_BindGPUFragmentSamplers(pass, 0, textures, 4);
+                memcpy(bound.textures, textures, sizeof(textures));
+                bound.texturesSet = true;
+            }
+            if (!bound.verticesSet || bound.vertexOffset != c.firstVertexByte) {
+                SDL_GPUBufferBinding vb = { vertexBuffer, c.firstVertexByte };
+                SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+                bound.vertexOffset = c.firstVertexByte;
+                bound.verticesSet = true;
+            }
             if (c.firstIndex != ~0u) {
-                SDL_GPUBufferBinding ib = { indexBuffer, 0 };
-                SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+                if (!bound.indicesSet) {
+                    SDL_GPUBufferBinding ib = { indexBuffer, 0 };
+                    SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+                    bound.indicesSet = true;
+                }
                 SDL_DrawGPUIndexedPrimitives(pass, c.indexCount, 1, c.firstIndex, 0, 0);
             } else {
                 SDL_DrawGPUPrimitives(pass, c.vertexCount, 1, 0, 0);
@@ -974,13 +1068,18 @@ struct Executor : GfxExecutor {
         }
 
         // Read back before the frame is shown (the lens flare test).
-        SDL_GPUTransferBuffer *readbackBuffer = NULL;
+        CollectReadback(readback);
+        bool reading = false;
         if (readback.requested && readback.width > 0 && readback.height > 0) {
             int x = std::max(0, std::min(readback.x, backWidth - 1));
             int y = std::max(0, std::min(readback.y, backHeight - 1));
             int w = std::min(readback.width, backWidth - x), h = std::min(readback.height, backHeight - y);
-            SDL_GPUTransferBufferCreateInfo tbi = { SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, (Uint32)(w * h * 4), 0 };
-            readbackBuffer = SDL_CreateGPUTransferBuffer(device, &tbi);
+            if ((uint32_t)(w * h * 4) > readbackCapacity) {
+                SDL_ReleaseGPUTransferBuffer(device, readbackBuffer);
+                readbackCapacity = (uint32_t)(w * h * 4);
+                SDL_GPUTransferBufferCreateInfo tbi = { SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, readbackCapacity, 0 };
+                readbackBuffer = SDL_CreateGPUTransferBuffer(device, &tbi);
+            }
             SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
             SDL_GPUTextureRegion src = {};
             src.texture = backColor;
@@ -992,8 +1091,10 @@ struct Executor : GfxExecutor {
             SDL_GPUTextureTransferInfo dst = { readbackBuffer, 0, 0, 0 };
             SDL_DownloadFromGPUTexture(copy, &src, &dst);
             SDL_EndGPUCopyPass(copy);
-            readback.readyWidth = w;
-            readback.readyHeight = h;
+            readbackWidth = w;
+            readbackHeight = h;
+            readback.requested = false;
+            reading = true;
         }
 
         if (vsync != presentModeVsync) {
@@ -1021,24 +1122,30 @@ struct Executor : GfxExecutor {
             blit.destination.h = rect.height;
             blit.load_op = SDL_GPU_LOADOP_CLEAR;
             blit.clear_color = { 0.0f, 0.0f, 0.0f, 1.0f };
-            blit.filter = Platform_GetSettingInt("video.smooth_scaling", 1) ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
+            blit.filter = smoothScaling ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
             SDL_BlitGPUTexture(cmd, &blit);
         }
 
-        if (readbackBuffer != NULL) {
-            SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-            SDL_WaitForGPUFences(device, true, &fence, 1);
-            SDL_ReleaseGPUFence(device, fence);
-            const uint32_t *map = (const uint32_t *)SDL_MapGPUTransferBuffer(device, readbackBuffer, false);
-            readback.pixels.assign(map, map + (size_t)readback.readyWidth * readback.readyHeight);
-            SDL_UnmapGPUTransferBuffer(device, readbackBuffer);
-            SDL_ReleaseGPUTransferBuffer(device, readbackBuffer);
-            readback.ready = true;
-            readback.requested = false;
-        } else {
+        if (reading)
+            readbackFence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+        else
             SDL_SubmitGPUCommandBuffer(cmd);
-        }
         HashFrame();
+    }
+
+    void CollectReadback(GfxReadback &readback) override
+    {
+        if (readbackFence == NULL)
+            return;
+        SDL_WaitForGPUFences(device, true, &readbackFence, 1);
+        SDL_ReleaseGPUFence(device, readbackFence);
+        readbackFence = NULL;
+        const uint32_t *map = (const uint32_t *)SDL_MapGPUTransferBuffer(device, readbackBuffer, false);
+        readback.pixels.assign(map, map + (size_t)readbackWidth * readbackHeight);
+        SDL_UnmapGPUTransferBuffer(device, readbackBuffer);
+        readback.readyWidth = readbackWidth;
+        readback.readyHeight = readbackHeight;
+        readback.ready = true;
     }
 
     // OPENCMR2_FRAME_HASH=file: one line per presented frame, its number, size
