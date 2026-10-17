@@ -134,6 +134,13 @@ cadence, not actual monitor scanout. Blocking movies can occupy a single
 callback with many internal presentations. Startup, menus and races should be
 examined separately.
 
+`OPENCMR2_FRAME_HASH=file` writes a hash of the back buffer of every presented
+frame, and `OPENCMR2_FRAME_DUMP=dir` saves every 600th frame (or every
+`OPENCMR2_FRAME_DUMP_EVERY`) as a BMP. Run `stage_probe` with a real video
+driver instead of the null executor to compare renderer changes: the same
+scenario must produce the same hashes. Each hashed frame waits for the GPU, so
+measure timings in a separate run.
+
 GPU execution time, actual display intervals and input-to-display latency are
 not measured yet. Headless probe timings include trace overhead and no GPU;
 use a normal session on the target machine to investigate real stutter. The

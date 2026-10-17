@@ -16,6 +16,8 @@
 #endif
 
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <algorithm>
@@ -1036,6 +1038,54 @@ struct Executor : GfxExecutor {
         } else {
             SDL_SubmitGPUCommandBuffer(cmd);
         }
+        HashFrame();
+    }
+
+    // OPENCMR2_FRAME_HASH=file: one line per presented frame, its number, size
+    // and a hash of the back buffer's pixels, to compare renderer changes;
+    // OPENCMR2_FRAME_DUMP=dir also saves every OPENCMR2_FRAME_DUMP_EVERY'th
+    // frame (default 600) as a BMP. Each waits for the GPU: not for timing.
+    void HashFrame()
+    {
+        static FILE *file = getenv("OPENCMR2_FRAME_HASH") ? fopen(getenv("OPENCMR2_FRAME_HASH"), "w") : NULL;
+        static const char *dump = getenv("OPENCMR2_FRAME_DUMP");
+        static int every = getenv("OPENCMR2_FRAME_DUMP_EVERY") ? atoi(getenv("OPENCMR2_FRAME_DUMP_EVERY")) : 600;
+        static unsigned frame;
+        if (file == NULL)
+            return;
+        uint32_t bytes = (uint32_t)backWidth * backHeight * 4;
+        SDL_GPUTransferBufferCreateInfo tbi = { SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, bytes, 0 };
+        SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(device, &tbi);
+        SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
+        SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
+        SDL_GPUTextureRegion src = {};
+        src.texture = backColor;
+        src.w = backWidth;
+        src.h = backHeight;
+        src.d = 1;
+        SDL_GPUTextureTransferInfo dst = { tb, 0, 0, 0 };
+        SDL_DownloadFromGPUTexture(copy, &src, &dst);
+        SDL_EndGPUCopyPass(copy);
+        SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+        SDL_WaitForGPUFences(device, true, &fence, 1);
+        SDL_ReleaseGPUFence(device, fence);
+        uint8_t *map = (uint8_t *)SDL_MapGPUTransferBuffer(device, tb, false);
+        uint64_t h = 14695981039346656037ull;
+        for (uint32_t i = 0; i < bytes; i++)
+            h = (h ^ map[i]) * 1099511628211ull;
+        fprintf(file, "%u %dx%d %016llx\n", frame, backWidth, backHeight, (unsigned long long)h);
+        if (dump != NULL && every > 0 && frame % every == 0) {
+            char path[1024];
+            snprintf(path, sizeof(path), "%s/frame-%06u.bmp", dump, frame);
+            SDL_Surface *s = SDL_CreateSurfaceFrom(backWidth, backHeight, SDL_PIXELFORMAT_ARGB8888, map, backWidth * 4);
+            if (s != NULL) {
+                SDL_SaveBMP(s, path);
+                SDL_DestroySurface(s);
+            }
+        }
+        SDL_UnmapGPUTransferBuffer(device, tb);
+        SDL_ReleaseGPUTransferBuffer(device, tb);
+        frame++;
     }
 };
 
