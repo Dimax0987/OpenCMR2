@@ -22,7 +22,7 @@ DATA = {
     "timing": 0x53d968, "checkpoints": 0x542e78, "transforms": 0x53b560, "shadow": 0x53ad10,
     "wheels": 0x53bda0, "order": 0x53b500, "order_count": 0x53a3a0, "physics_step": 0x519c8c,
     "physics_scale": 0x519c90, "stage_clock": 0x53d1b0, "frame_time": 0x663ee0,
-    "keyboard": 0x59f7c8, "garage_menu": 0x831778,
+    "keyboard": 0x59f7c8, "garage_menu": 0x831778, "game_info": 0x52afa0,
     "sqrt_table": 0x6e0ef4, "sin_table": 0x6e2ef4, "acos_table": 0x6e6ef4,
     "atan_table": 0x6e8ff4, "tan_table": 0x6e93f4,
 }

@@ -155,6 +155,9 @@ static int ForcedCursor(int id) {
 }
 static void ConfigureMenu(BYTE *menu) {
     if (!menu) return;
+    // The record flags of CGameInfo; bit 13 unlocks every stage, as the
+    // portable probe's OPENCMR2_PROBE_UNLOCK_TRACKS does.
+    if (getenv("CMR_CAPTURE_UNLOCK_TRACKS")) *(unsigned *)(Address("game_info") + 0x38f0) |= 1 << 0xd;
     int forced = ForcedCursor(*(short *)(menu + 4));
     if (forced >= 0) { menu[7] = (BYTE)forced; return; }
     if (menu == Menu("menu_main")) menu[7] = 1;
@@ -243,11 +246,16 @@ static int WINAPI Dispatch() {
         if (!tick && getenv("CMR_CAPTURE_CURSORS") && frame % 12 == 6)
             keys[0x1c] = 0x80;
         if (!raceOrigin) {
-            raceOrigin = now = 100000;
+            // The race clock seeds the start side of the super specials.
+            raceOrigin = now = getenv("CMR_CAPTURE_RACE_CLOCK") ? atoi(getenv("CMR_CAPTURE_RACE_CLOCK")) : 100000;
             *(unsigned *)Address("frame_time") = now;
         }
     }
     EnumThreadWindows(GetCurrentThreadId(), SendKeys, 0);
+    // Direct3D 7 leaves the x87 at single precision (0x007f) on Windows, as
+    // the game never asks it to preserve the FPU state; Wine's DirectDraw
+    // keeps the CRT's 0x027f. CMR_CAPTURE_X87_DOUBLE keeps that instead.
+    if (!getenv("CMR_CAPTURE_X87_DOUBLE")) { unsigned short cw = 0x007f; __asm fldcw cw }
     int result = realDispatch();
     if (!clockEnabled) {
         clockEnabled = 1;

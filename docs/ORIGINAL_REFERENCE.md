@@ -113,7 +113,13 @@ python3 tools/reference_capture/record.py build/reference-new decomp \
 
 `record.py` fingerprints the prepared files before starting, configures only the
 disposable prefix, uses Wine's builtin DirectDraw (the local dgVoodoo wrapper
-failed during this capture), and verifies completion. The decompilation side
+failed during this capture), and verifies completion. Wine's DirectDraw leaves
+the x87 at the CRT's `0x027f`, while Direct3D 7 on Windows sets single
+precision; the recorder sets `0x007f` before every frame, as on Windows, unless
+`--x87-double` is given (the Finland references were recorded at `0x027f` and
+are identical at both). `--unlock-tracks` unlocks every stage and
+`--race-clock MS` sets the race start clock, which seeds the start side of the
+super specials (100000 and 101000 give the two sides). The decompilation side
 gets registry paths pointing at its isolated copy. Existing captures are never
 overwritten. Prepare another output for an independent repeat.
 

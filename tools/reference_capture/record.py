@@ -26,6 +26,11 @@ def main():
     p.add_argument('--expect-country', type=int, default=0)
     p.add_argument('--expect-stage', type=int, default=0)
     p.add_argument('--expect-cars', type=int, default=1)
+    p.add_argument('--unlock-tracks', action='store_true', help='unlock every stage, such as the super specials')
+    p.add_argument('--race-clock', type=int, default=100000,
+                   help='virtual clock at the race start (ms); it seeds the start side of the super specials')
+    p.add_argument('--x87-double', action='store_true',
+                   help="keep Wine's x87 control word (0x027f) instead of Direct3D 7's single precision (0x007f)")
     args = p.parse_args()
     if not 10 <= args.fps <= 1000:
         raise ValueError('FPS must be in 10..1000')
@@ -56,10 +61,18 @@ def main():
     env.pop('CMR_CAPTURE_TICKS', None)
     env.pop('CMR_CAPTURE_FPS', None)
     env.pop('CMR_CAPTURE_CURSORS', None)
+    env.pop('CMR_CAPTURE_UNLOCK_TRACKS', None)
+    env.pop('CMR_CAPTURE_RACE_CLOCK', None)
+    env.pop('CMR_CAPTURE_X87_DOUBLE', None)
+    env['CMR_CAPTURE_RACE_CLOCK'] = str(args.race_clock)
+    if args.x87_double:
+        env['CMR_CAPTURE_X87_DOUBLE'] = '1'
     env['CMR_CAPTURE_FPS'] = str(args.fps)
     env['CMR_CAPTURE_TICKS'] = str(args.ticks)
     if args.cursors:
         env['CMR_CAPTURE_CURSORS'] = args.cursors
+    if args.unlock_tracks:
+        env['CMR_CAPTURE_UNLOCK_TRACKS'] = '1'
     def registry(key, name, value):
         subprocess.run(['wine', 'reg', 'add', key, '/v', name, '/d', value, '/f'], env=env, check=True, stdout=subprocess.DEVNULL)
     registry(r'HKCU\Software\Wine\AppDefaults\CMR2.exe', 'Version', 'win2k')
@@ -77,7 +90,8 @@ def main():
     (run/'run-parameters.json').write_text(json.dumps({
         'fps': args.fps, 'ticks': args.ticks, 'cursors': args.cursors,
         'expected_country': args.expect_country, 'expected_stage': args.expect_stage,
-        'expected_cars': args.expect_cars,
+        'expected_cars': args.expect_cars, 'unlock_tracks': args.unlock_tracks,
+        'race_clock': args.race_clock, 'x87_control_word': '027f' if args.x87_double else '007f',
     }, indent=2) + '\n')
     with (run/'wine.log').open('x') as log:
         result = subprocess.run(['timeout', str(args.timeout)+'s', 'wine', 'CMR2.exe'], cwd=run, env=env, stdout=log, stderr=subprocess.STDOUT)
