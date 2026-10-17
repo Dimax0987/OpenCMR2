@@ -129,9 +129,12 @@ int main()
     Write(game / "GAME/Bigfiles/COMMON.BFL", "synthetic main archive");
     Write(game / "frontend/Common.bfl", "synthetic frontend archive");
     Write(game / "Sounds/surface.bfl", "synthetic sound archive");
+    Write(game / "CountrySpecific/Europe/englishtext.bfl", "synthetic text archive");
+    Write(game / "SETUPREP/640/common.bfl", "synthetic loading screen archive");
     Write(root / "incomplete/Game/Bigfiles/common.bfl", "synthetic");
     Write(root / "incomplete/FrontEnd/common.bfl", "");
     fs::create_directories(root / "incomplete/Sounds/surface.bfl");
+    fs::create_directories(root / "incomplete/CountrySpecific");
     // Mixed-case sections, duplicate old values, CRLF, comments and unrelated
     // settings must survive replacing the remembered folder.
     Write(ini, "; keep this comment\r\n[PATHS]\r\ndata = missing\r\n"
@@ -142,7 +145,9 @@ int main()
     Check(Start(user), "select valid folder after incomplete folder");
     Check(dialogs == 2 && messages.size() == 2, "retry incomplete installation");
     Check(messages.back().find("FrontEnd/common.bfl") != std::string::npos &&
-          messages.back().find("Sounds/surface.bfl") != std::string::npos, "list missing archives");
+          messages.back().find("Sounds/surface.bfl") != std::string::npos &&
+          messages.back().find("CountrySpecific/") != std::string::npos &&
+          messages.back().find("SetupRep/") != std::string::npos, "list missing archives and folders");
     Check(std::string(Platform_GetDataDir()) == game.u8string() + "/", "copy UTF-8 callback path");
     Check(Platform_GetSettingInt("video.fov", 0) == 91, "preserve unrelated settings");
     const std::string archivePath = std::string(CInstallInfo::GetBigFilesDir()) + "\\common.bfl";

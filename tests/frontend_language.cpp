@@ -136,6 +136,7 @@ int main()
     Write(data / "FrontEnd/Res640.bfl", "synthetic resources");
     Write(data / "FrontEnd/Res640C.bfl", "synthetic resources");
     Write(data / "Sounds/surface.bfl", "synthetic archive");
+    Write(data / "SetupRep/640/common.bfl", "synthetic archive");
     Write(user / "opencmr2.ini", "[install]\nmenu_shortcut = 0\n");
     CreateRegion(data, 0);
     CreateRegion(data, 1);

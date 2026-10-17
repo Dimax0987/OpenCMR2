@@ -70,7 +70,8 @@ int main()
     const fs::path root = fs::temp_directory_path() / ("opencmr2-save-" + std::to_string(SDL_GetPerformanceCounter()));
     const fs::path data = root / "Data", user = root / "user";
     for (const char *path : {"Game/Bigfiles/common.bfl", "FrontEnd/common.bfl", "FrontEnd/Res640.bfl",
-                             "FrontEnd/Res640C.bfl", "Sounds/surface.bfl"})
+                             "FrontEnd/Res640C.bfl", "Sounds/surface.bfl",
+                             "CountrySpecific/Europe/EnglishText.bfl", "SetupRep/640/common.bfl"})
         Write(data / path, "fixture", 7);
     const char ini[] = "[install]\nmenu_shortcut = 0\n";
     Write(user / "opencmr2.ini", ini, sizeof(ini) - 1);

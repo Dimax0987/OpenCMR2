@@ -98,6 +98,8 @@ enum SysSeekOrigin {
 };
 
 SysFile *Sys_OpenFile(const char *path, int mode);
+// Game path of the last file Sys_OpenFile could not open for reading.
+const char *Sys_GetLastMissingFile(void);
 void Sys_CloseFile(SysFile *file);
 DWORD Sys_ReadFile(SysFile *file, void *buffer, DWORD size);
 DWORD Sys_WriteFile(SysFile *file, const void *buffer, DWORD size);

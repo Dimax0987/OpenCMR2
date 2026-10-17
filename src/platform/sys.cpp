@@ -33,6 +33,7 @@ FILE *s_logFile;
 const PlatformTestClock *s_testClock;
 const PlatformTestDialogs *s_testDialogs;
 bool s_setupCanceled;
+std::string s_lastMissingFile;  // game path of the last file that could not be read
 
 FILE *OpenHostFile(const char *path, const char *mode)
 {
@@ -319,6 +320,15 @@ std::string MissingGameData(const std::string &dir)
         if (path.empty() || !SDL_GetPathInfo(path.c_str(), &info) ||
             info.type != SDL_PATHTYPE_FILE || info.size == 0)
             missing += std::string("\n- ") + file;
+    }
+    // The text, speech and loading screens are in these folders, which some
+    // copies of an installation leave out; the game cannot start without them.
+    for (const char *folder : {"CountrySpecific", "SetupRep"}) {
+        std::string path = FindUnder(dir, {folder});
+        SDL_PathInfo info{};
+        if (path.empty() || !SDL_GetPathInfo(path.c_str(), &info) ||
+            info.type != SDL_PATHTYPE_DIRECTORY || ListDir(path + "/").empty())
+            missing += std::string("\n- ") + folder + "/";
     }
     return missing;
 }
@@ -925,9 +935,19 @@ extern "C" int Sys_MessageBox(const char *title, const char *text, int buttons)
         data.numbuttons = 1;
         data.buttons = okButtons;
     }
+    Sys_Log("%s: %s", title, text);
+    // A fullscreen window can keep the box out of sight, as when the
+    // desktop shows it through another display server (XWayland).
+    const bool fullscreen = s_window && (SDL_GetWindowFlags(s_window) & SDL_WINDOW_FULLSCREEN);
+    if (fullscreen) {
+        SDL_SetWindowFullscreen(s_window, false);
+        SDL_SyncWindow(s_window);
+    }
     int result = SYS_MESSAGEBOX_RESULT_CANCEL;
     if (!SDL_ShowMessageBox(&data, &result))
-        Sys_Log("message box \"%s\": %s", title, text);
+        Sys_Log("message box: %s", SDL_GetError());
+    if (fullscreen)
+        SDL_SetWindowFullscreen(s_window, true);
     return result;
 }
 
@@ -988,8 +1008,10 @@ extern "C" BOOL Sys_ResolvePath(const char *path, BOOL forWriting, char *out, si
         host = PathForWriting(parts);
     } else {
         host = ResolveForReading(path);
-        if (host.empty())
+        if (host.empty()) {
+            s_lastMissingFile = path;
             return FALSE;
+        }
     }
     if (host.size() + 1 > outSize)
         return FALSE;
@@ -997,14 +1019,22 @@ extern "C" BOOL Sys_ResolvePath(const char *path, BOOL forWriting, char *out, si
     return TRUE;
 }
 
+extern "C" const char *Sys_GetLastMissingFile(void)
+{
+    return s_lastMissingFile.c_str();
+}
+
 extern "C" SysFile *Sys_OpenFile(const char *path, int mode)
 {
     char host[1024];
-    if (!Sys_ResolvePath(path, mode == SYS_FILE_WRITE, host, sizeof(host)))
+    FILE *f = NULL;
+    if (Sys_ResolvePath(path, mode == SYS_FILE_WRITE, host, sizeof(host)))
+        f = OpenHostFile(host, mode == SYS_FILE_WRITE ? "wb" : "rb");
+    if (f == NULL) {
+        if (mode != SYS_FILE_WRITE)
+            s_lastMissingFile = path;
         return NULL;
-    FILE *f = OpenHostFile(host, mode == SYS_FILE_WRITE ? "wb" : "rb");
-    if (f == NULL)
-        return NULL;
+    }
     SysFile *file = new SysFile;
     file->f = f;
     return file;

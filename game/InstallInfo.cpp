@@ -178,8 +178,13 @@ BOOL CInstallInfo::ShowNoCDErrorMessage(void)
         }
     }
 
-    // PORT: there is no CD; the message means a game data file is missing.
-    int reply = Sys_MessageBox(m_noCDMessages[languageID][1], m_noCDMessages[languageID][0], SYS_MESSAGEBOX_RETRY_CANCEL);
+    // PORT: there is no CD; the message means a game data file is missing,
+    // so name it instead of asking for the CD.
+    char text[MAX_PATH + 256];
+    sprintf(text, "This game file could not be read:\n%.*s\n\n"
+                  "Check that the game folder holds the complete installation.",
+            MAX_PATH, Sys_GetLastMissingFile());
+    int reply = Sys_MessageBox(m_noCDMessages[languageID][1], text, SYS_MESSAGEBOX_RETRY_CANCEL);
     if (reply == SYS_MESSAGEBOX_RESULT_CANCEL)
     {
         CMain::UnwindGameCallbacks();

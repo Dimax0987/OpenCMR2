@@ -102,7 +102,8 @@ all work. The location is checked and remembered, and the game files stay
 where they are.
 
 If you have the CD or an ISO, install the game or extract it first: OpenCMR2
-reads the installed folders (`Game`, `FrontEnd`, `Sounds`, ...).
+reads the installed folders `Game`, `FrontEnd`, `Sounds`, `CountrySpecific`
+and `SetupRep`, and does not start when one of them is missing.
 
 On Android, install the APK and copy the installation folder to the
 device first. On first launch, choose it in the system's folder picker: the
