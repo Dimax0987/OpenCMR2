@@ -119,7 +119,11 @@ precision; the recorder sets `0x007f` before every frame, as on Windows, unless
 `--x87-double` is given (the Finland references were recorded at `0x027f` and
 are identical at both). `--unlock-tracks` unlocks every stage and
 `--race-clock MS` sets the race start clock, which seeds the start side of the
-super specials (100000 and 101000 give the two sides). The decompilation side
+super specials (100000 and 101000 give the two sides). `--finish-at N` makes the
+player finish after N ticks, `--results-presses N` then presses Down N times in
+the two-item results menu and logs how often its cursor moved and the bytes at
+the ghost name, and `--stage-records` fills every stage record with split
+times, as the portable probe's options of the same names do. The decompilation side
 gets registry paths pointing at its isolated copy. Existing captures are never
 overwritten. Prepare another output for an independent repeat.
 

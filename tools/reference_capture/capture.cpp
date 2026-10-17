@@ -158,6 +158,13 @@ static void ConfigureMenu(BYTE *menu) {
     // The record flags of CGameInfo; bit 13 unlocks every stage, as the
     // portable probe's OPENCMR2_PROBE_UNLOCK_TRACKS does.
     if (getenv("CMR_CAPTURE_UNLOCK_TRACKS")) *(unsigned *)(Address("game_info") + 0x38f0) |= 1 << 0xd;
+    // CMR_CAPTURE_STAGE_RECORDS: split times in every stage record, as the
+    // portable probe's OPENCMR2_PROBE_STAGE_RECORDS writes them.
+    if (getenv("CMR_CAPTURE_STAGE_RECORDS")) {
+        short *splits = (short *)(Address("game_info") + 0xa4 + 0x914);
+        for (int r = 0; r < 88; ++r)
+            for (int k = 0; k < 10; ++k) splits[r * 10 + k] = (short)(0x1a2b + r * 37 + k * 401);
+    }
     int forced = ForcedCursor(*(short *)(menu + 4));
     if (forced >= 0) { menu[7] = (BYTE)forced; return; }
     if (menu == Menu("menu_main")) menu[7] = 1;
@@ -195,8 +202,20 @@ static void WINAPI Cars() {
     }
     realCars();
 }
+// CMR_CAPTURE_FINISH_AT=N: the player finishes after N ticks (a timeout
+// finish, then the race result table moves on), as the portable probe's
+// OPENCMR2_PROBE_FINISH_AT_TICK does.
+static int finished;
 static void WINAPI Decrement(short *order, short count) {
     realDecrement(order, count);
+    if (inRace && getenv("CMR_CAPTURE_FINISH_AT") && !finished && raceState == 8 &&
+        tick + 1 == (unsigned)atoi(getenv("CMR_CAPTURE_FINISH_AT"))) {
+        ((void (WINAPI *)(int))Address("finish_timeout"))(0);
+        ((int (WINAPI *)(void *, BYTE, BYTE, int))Address("promote_entry"))(
+            ((void *(WINAPI *)())Address("race_result_table"))(), 0, 0, 2);
+        finished = 1;
+        fprintf(logFile, "finish requested at tick %u\n", tick + 1); fflush(logFile);
+    }
     if (!inRace || !controlsReady || tick >= target) return;
     controlsReady = 0;
     if (!tick) {
@@ -224,7 +243,7 @@ static void WINAPI Decrement(short *order, short count) {
     CaptureTick(capture, tick, raceState, rng, Read("frame_time"), drivingTick, input, view);
     ++tick;
     if (ferror(capture)) Fail("capture write");
-    if (tick == target) {
+    if (tick == target && !finished) {
         CaptureFinish(capture, tick); if (fclose(capture)) Fail("capture close"); capture = NULL;
         fprintf(logFile, "COMPLETE %u ticks (%u driving)\n", tick, drivingTick); fflush(logFile);
         // End this isolated process after the last captured tick; avoids any
@@ -232,10 +251,35 @@ static void WINAPI Decrement(short *order, short count) {
         ExitProcess(0);
     }
 }
+// After the finish, CMR_CAPTURE_RESULTS_PRESSES=N presses Down N times in the
+// two-item results menu (80 ms each, 160 ms apart), logs how often its cursor
+// moved and the bytes at the ghost name, then ends the process.
+static unsigned pressesDone, pressMoves, pressAt;
+static int pressDown, pressCursor = -1;
+static void ResultsPresses(int mode) {
+    unsigned presses = getenv("CMR_CAPTURE_RESULTS_PRESSES") ? atoi(getenv("CMR_CAPTURE_RESULTS_PRESSES")) : 0;
+    BYTE *menu = mode == 3 && finished ? (BYTE *)Read("header_menu") : NULL;
+    if (!presses || !menu || menu[6] != 2) return;
+    if (!pressAt) { pressAt = now + 200; pressCursor = menu[7]; }
+    if (menu[7] != pressCursor) { ++pressMoves; pressCursor = menu[7]; }
+    if (pressesDone < presses && now >= pressAt) {
+        if (!pressDown) { pressDown = 1; ++pressesDone; }
+        if (now < pressAt + 80) keys[0xd0] = 0x80;
+        else { pressDown = 0; pressAt += 160; }
+    } else if (pressesDone == presses && now >= pressAt + 80) {
+        const BYTE *g = (const BYTE *)Address("ghost_name");
+        fprintf(logFile, "results menu %u presses, %u moves\nghost name bytes:", pressesDone, pressMoves);
+        for (int i = 0; i < 32; ++i) fprintf(logFile, " %02x", g[i]);
+        fprintf(logFile, "\nCOMPLETE %u ticks (%u driving)\n", tick, drivingTick); fflush(logFile);
+        CaptureFinish(capture, tick); fclose(capture); capture = NULL;
+        ExitProcess(0);
+    }
+}
 static int WINAPI Dispatch() {
     VerifyPatch();
     int mode = Call("mode");
     memset(keys, 0, sizeof(keys));
+    ResultsPresses(mode);  // before the Enter presses below, which it leaves alone
     if (mode != 3) {
         BYTE *menu = mode == 2 ? (BYTE *)Read("garage_menu") : Menu("active_menu");
         if (mode == 2 && menu && menu[6] >= 4) menu[7] = 3; else ConfigureMenu(menu);
@@ -244,6 +288,11 @@ static int WINAPI Dispatch() {
     } else {
         // Rally Challenge opens its bracket inside race resource mode.
         if (!tick && getenv("CMR_CAPTURE_CURSORS") && frame % 12 == 6)
+            keys[0x1c] = 0x80;
+        // After the finish, Enter through the result screens up to the
+        // two-item results menu.
+        BYTE *header = finished ? (BYTE *)Read("header_menu") : NULL;
+        if (finished && getenv("CMR_CAPTURE_RESULTS_PRESSES") && !(header && header[6] == 2) && frame % 12 == 6)
             keys[0x1c] = 0x80;
         if (!raceOrigin) {
             // The race clock seeds the start side of the super specials.

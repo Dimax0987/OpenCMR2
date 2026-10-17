@@ -29,6 +29,9 @@ def main():
     p.add_argument('--unlock-tracks', action='store_true', help='unlock every stage, such as the super specials')
     p.add_argument('--race-clock', type=int, default=100000,
                    help='virtual clock at the race start (ms); it seeds the start side of the super specials')
+    p.add_argument('--finish-at', type=int, help='the player finishes after this many ticks')
+    p.add_argument('--results-presses', type=int, help='after the finish, press Down this many times in the results menu')
+    p.add_argument('--stage-records', action='store_true', help='split times in every stage record')
     p.add_argument('--x87-double', action='store_true',
                    help="keep Wine's x87 control word (0x027f) instead of Direct3D 7's single precision (0x007f)")
     args = p.parse_args()
@@ -62,6 +65,14 @@ def main():
     env.pop('CMR_CAPTURE_FPS', None)
     env.pop('CMR_CAPTURE_CURSORS', None)
     env.pop('CMR_CAPTURE_UNLOCK_TRACKS', None)
+    for name in ('CMR_CAPTURE_FINISH_AT', 'CMR_CAPTURE_RESULTS_PRESSES', 'CMR_CAPTURE_STAGE_RECORDS'):
+        env.pop(name, None)
+    if args.finish_at:
+        env['CMR_CAPTURE_FINISH_AT'] = str(args.finish_at)
+    if args.results_presses:
+        env['CMR_CAPTURE_RESULTS_PRESSES'] = str(args.results_presses)
+    if args.stage_records:
+        env['CMR_CAPTURE_STAGE_RECORDS'] = '1'
     env.pop('CMR_CAPTURE_RACE_CLOCK', None)
     env.pop('CMR_CAPTURE_X87_DOUBLE', None)
     env['CMR_CAPTURE_RACE_CLOCK'] = str(args.race_clock)
@@ -97,6 +108,8 @@ def main():
         result = subprocess.run(['timeout', str(args.timeout)+'s', 'wine', 'CMR2.exe'], cwd=run, env=env, stdout=log, stderr=subprocess.STDOUT)
     capture_log = (run/'capture.log').read_text()
     completed = re.search(rf'COMPLETE {args.ticks} ticks \((\d+) driving\)', capture_log)
+    if args.results_presses:
+        completed = re.search(r'results menu \d+ presses', capture_log) and completed
     scenario = f'scenario country={args.expect_country} stage={args.expect_stage} count={args.expect_cars}'
     if result.returncode or not completed or not 0 < int(completed.group(1)) <= args.ticks or scenario not in capture_log:
         raise ValueError(f'incomplete recording (exit {result.returncode}); inspect {run / "capture.log"} and wine.log')

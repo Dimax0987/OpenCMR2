@@ -16,6 +16,7 @@ FUNCTIONS = {
     "menu_difficulty": 0x4f8300, "menu_country": 0x4f8340, "menu_stage": 0x4f8350,
     "menu_alternate": 0x4f8360, "menu_name": 0x4f83c0, "set_name": 0x4eae90, "profile_slot": 0x4f2be0,
     "country": 0x406910, "stage": 0x406930,
+    "finish_timeout": 0x448630, "promote_entry": 0x49c1c0, "race_result_table": 0x41b390,
 }
 DATA = {
     "cars": 0x53c9a4, "parts": 0x588b94, "damage": 0x588b98, "contacts": 0x592734,
@@ -23,6 +24,7 @@ DATA = {
     "wheels": 0x53bda0, "order": 0x53b500, "order_count": 0x53a3a0, "physics_step": 0x519c8c,
     "physics_scale": 0x519c90, "stage_clock": 0x53d1b0, "frame_time": 0x663ee0,
     "keyboard": 0x59f7c8, "garage_menu": 0x831778, "game_info": 0x52afa0,
+    "header_menu": 0x541cc8, "ghost_name": 0x519ee0,
     "sqrt_table": 0x6e0ef4, "sin_table": 0x6e2ef4, "acos_table": 0x6e6ef4,
     "atan_table": 0x6e8ff4, "tan_table": 0x6e93f4,
 }
