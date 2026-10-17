@@ -61,6 +61,12 @@ void EnsureInit()
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
         SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC);
         s_initialised = true;
+        // Steam replaces the controllers it handles with virtual gamepads and
+        // hides the real ones through these: log them with the controllers.
+        for (const char *name : {"SteamVirtualGamepadInfo", "SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD",
+                                 "SDL_GAMECONTROLLER_IGNORE_DEVICES", "SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT"})
+            if (const char *value = SDL_getenv(name))
+                Sys_Log("controllers: %s=%s", name, value);
     }
 }
 
@@ -303,10 +309,16 @@ extern "C" InputDevice *Input_OpenJoystick(int index)
     if (SDL_IsJoystickHaptic(joystick))
         device->haptic = SDL_OpenHapticFromJoystick(joystick);
     s_openJoysticks.push_back(id);
-    Sys_Log("controller %d: %s (%04x:%04x), %s, %d axes, %d buttons, %d hats%s", index, device->name,
+    char guid[33];
+    SDL_GUIDToString(SDL_GetJoystickGUID(joystick), guid, sizeof(guid));
+    const char *path = SDL_GetJoystickPath(joystick);
+    Sys_Log("controller %d: %s (%04x:%04x), %s, %d axes, %d buttons, %d hats%s%s; GUID %s, %s", index, device->name,
             SDL_GetJoystickVendor(joystick), SDL_GetJoystickProduct(joystick), JoystickKind(joystick, gamepad != NULL),
             SDL_GetNumJoystickAxes(joystick), SDL_GetNumJoystickButtons(joystick), SDL_GetNumJoystickHats(joystick),
-            device->haptic != NULL ? ", force feedback" : "");
+            device->haptic != NULL ? ", force feedback" : "",
+            (SDL_GetJoystickVendor(joystick) == 0x28de && SDL_GetJoystickProduct(joystick) == 0x11ff) ||
+                    (gamepad && SDL_GetGamepadSteamHandle(gamepad)) ? ", Steam virtual gamepad" : "",
+            guid, path ? path : "no path");
     return device;
 }
 
