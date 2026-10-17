@@ -65,7 +65,10 @@ CMR2 renders with Direct3D 7's fixed-function pipeline:
 (`Gfx_SetTransform`, `Gfx_SetLight`, `Gfx_SetStage`, `Gfx_DrawIndexed`, ...).
 The SDL_GPU backend turns the current state into a pipeline key and a uniform
 block, and draws with an "uber" shader that reproduces the fixed-function
-equations. Device enumeration, display-mode switching, lost surfaces and
+equations. A draw binds only what differs from the previous one. Draws from a
+vertex buffer the game has not locked for a few frames (stage geometry) use a
+copy of it kept on the GPU; the others copy their vertices into the frame, as
+the game rewrites those buffers while it draws. Device enumeration, display-mode switching, lost surfaces and
 COM disappear: the game asks for what it needs and the backend provides it.
 
 The display modes offered to the game are the original 4:3 ones up to
