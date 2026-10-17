@@ -268,6 +268,7 @@ unsigned char RallyData_GetSelectionFlag26(void);
 int InRaceMenu_IsPlayerEditingCarSetup(unsigned int param1);
 void StageObject_SetCarValuePendingFlag(int index, int reset);
 extern float g_65536f;
+bool Graphics_AllCarsFullDetail(void);
 
 // Picks the up to three cars to display in one split-screen view (nearest to
 // the view position, in or near the viewport) and hides the remaining ones.
@@ -301,8 +302,14 @@ void View_SelectVisibleCars(unsigned int view, short *pRect)
     int sx;
     int sy;
 
-    if (CGameInfo::IsRecordFlagSet(0x10))
+    // PORT: Graphics_AllCarsFullDetail (record flag 0x10 in the original):
+    // there is no simpler body to switch the distant cars to, so every car
+    // keeps its own, also after a race that had them.
+    if (Graphics_AllCarsFullDetail()) {
+        for (i = 0; i < g_carOrderCount; i++)
+            StageObject_SetCarValuePendingFlag(g_carOrder[i], 1);
         return;
+    }
     if ((char)RallyData_GetSelectionFlag26() && RallyData_IsHeadToHeadRaceMode() != 0) {
         StageObject_SetCarValuePendingFlag(0, 1);
         StageObject_SetCarValuePendingFlag(1, 1);

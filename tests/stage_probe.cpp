@@ -496,6 +496,11 @@ int main(int argc, char **argv) {
             GameInfo_SetConfiguredCheat(0, 1);
             GameInfo_ApplyCheatsForGameMode();
         }
+        // The car detail setting (0 high, 2 low: the original's first-run
+        // default, which its reference captures used).
+        if (mode != 3)
+            if (const char *detail = getenv("OPENCMR2_PROBE_CAR_DETAIL"))
+                CGameInfo::SetPreviewMode(unsigned(atoi(detail)));
         // Stage lighting (shadow zones) is loaded only with this graphics option.
         if (mode != 3 && getenv("OPENCMR2_PROBE_LIGHTING")) CGameInfo::SetGraphicsOptionBit4(1);
         static bool lightingDone;

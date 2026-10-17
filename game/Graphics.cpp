@@ -149,7 +149,8 @@ bool CGraphics::InitializeDirectX(void) {
 // FUNCTION: CMR2 0x00405990
 // PORT: a new configuration starts at the display's aspect ratio
 // (Gfx_GetDefaultDisplayMode) instead of 640x480, in 32-bit colour, the only
-// depth the renderer offers (16-bit made it fall back to 640x480).
+// depth the renderer offers (16-bit made it fall back to 640x480), and at
+// high car detail, which the menu allows with 1024-pixel textures.
 void CGraphics::SetDefaults(void) {
     int width, height;
 
@@ -182,7 +183,7 @@ void CGraphics::SetDefaults(void) {
 
     CGameInfo::m_gameInfo.graphicsOptions =
         (CGameInfo::m_gameInfo.graphicsOptions & 0xebffffff) | 0xa000000;
-    CGameInfo::m_gameInfo.field_0x34 =  (CGameInfo::m_gameInfo.field_0x34 & 0xfffffffe) | 2;
+    CGameInfo::m_gameInfo.field_0x34 &= 0xfffffffc;
     CGameInfo::m_gameInfo.graphicsOptions &= 0xdfffffff;
 
     g_pGraphics->field913_0x3bc &= 0xfffffffb;
@@ -4761,11 +4762,26 @@ char g_stageQualityCodes[24] = {
 };
 
 
+// PORT: whether every car gets full detail, as the game does with record
+// flag 0x10 (set by the driver name MORRISMODE): the best model and textures
+// for each car of each mode, and no simpler body for the distant ones.
+// Otherwise only the player's car had them; even at high car detail the other
+// cars had models and textures of lower detail, and the distant ones a
+// simpler body. [video] car_detail = 0 keeps the original detail, and so does
+// the low car detail setting.
+bool Graphics_AllCarsFullDetail(void)
+{
+    if (CGameInfo::IsRecordFlagSet(0x10))
+        return true;
+    return Sys_GetOption("video.car_detail", 1) != 0 && CGameInfo::GetPreviewMode() != 2;
+}
+
 // Raises the detail levels when the hardware allows it (texture memory, caps).
 // FUNCTION: CMR2 0x00457c50
 void Graphics_RaiseSupportedDetailLevels(void)
 {
-    if (CGameInfo::IsRecordFlagSet(0x10) != 0 && CFrontend::IsTextureWidthSupported(0x400) != 0 &&
+    // PORT: also with Graphics_AllCarsFullDetail.
+    if (Graphics_AllCarsFullDetail() && CFrontend::IsTextureWidthSupported(0x400) != 0 &&
         CFrontend::IsTextureHeightSupported(0x400) != 0) {
         g_stageQualityCodes[0] = 'A';
         g_stageQualityCodes[1] = 'A';
@@ -4787,6 +4803,13 @@ void Graphics_RaiseSupportedDetailLevels(void)
         g_knockoutOpponentCarDetail = 'A';
         g_stageQualityCodes[11] = 'A';
         g_stageQualityCodes[12] = 'A';
+        // PORT: flag 0x10 left the arcade cars (4, 5) at 'C', below the
+        // player's 'A' at high car detail, and the super special cars (9, 10)
+        // at 'C' and 'D'. Every car gets the player's model.
+        g_stageQualityCodes[4] = 'A';
+        g_stageQualityCodes[5] = 'A';
+        g_stageQualityCodes[9] = 'A';
+        g_stageQualityCodes[10] = 'A';
         return;
     }
     switch (CGameInfo::GetPreviewMode()) {

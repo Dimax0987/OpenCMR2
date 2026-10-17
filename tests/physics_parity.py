@@ -41,7 +41,10 @@ def verify(probe, data, output):
         run.mkdir(parents=True)
         env = dict(os.environ, OPENCMR2_HEADLESS='1', SDL_VIDEODRIVER='dummy',
                    SDL_AUDIODRIVER='dummy', XDG_DATA_HOME=str(run / 'user'),
-                   OPENCMR2_REFERENCE_CLOCK='1', OPENCMR2_STATE_CAPTURE=str(run / 'state.bin'))
+                   OPENCMR2_REFERENCE_CLOCK='1', OPENCMR2_STATE_CAPTURE=str(run / 'state.bin'),
+                   # The original's first-run car detail, which loads the
+                   # same car model as the reference.
+                   OPENCMR2_PROBE_CAR_DETAIL='2')
         with (run / 'run.log').open('w') as log:
             subprocess.run([str(probe), str(data), str(run / 'trace.jsonl'), cadence,
                             '500', str(REFERENCE / 'inputs.csv')], env=env,

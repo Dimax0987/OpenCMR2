@@ -140,6 +140,7 @@ It is created with comments on first launch.
 | `[video] fullscreen` | `1` | Fullscreen (`1`) or window (`0`), changed and saved by Alt+Enter |
 | `[video] fov` | `70` | Field of view in degrees, 30 to 150 (70 is the original) |
 | `[video] run_in_background` | `0` | Keep running when the window loses focus |
+| `[video] car_detail` | `1` | Every car with the model and textures of the player's car (`1`), or the original's lower detail for the other cars (`0`); applies with Car Detail set to High |
 | `[video] stretch_movies` | `0` | Stretch the movies over the whole window (`1`) instead of keeping their 4:3 proportions |
 | `[install] language` | `English` | English, American, French, German, Italian, Spanish or Polish |
 | `[install] sku` | `EUROPE` | Game edition: `EUROPE`, `AMERICA`, `POLAND` or `JAPAN` |

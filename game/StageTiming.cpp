@@ -8022,6 +8022,7 @@ unsigned int NetPlayers_GetCarSelection(int index);
 int RallyData_GetDistinctValueEntry(int index);
 void RallyData_SetDriverCategoryOption(BYTE index, BYTE value);
 char *Car_GetDirectoryPath(int car);
+bool Graphics_AllCarsFullDetail(void);
 void Graphics_SetTextureStageState(int param1);
 struct SceneNode *Sector_BuildC3DModelScene(void *data, struct SceneNode *parent, struct GenericFile *archive);
 int *StageTiming_GetCarStartPosition(int car);
@@ -8269,7 +8270,8 @@ classes:
         lod = 1;
         break;
     }
-    if (CGameInfo::IsRecordFlagSet(0x10))
+    // PORT: Graphics_AllCarsFullDetail (record flag 0x10 in the original).
+    if (Graphics_AllCarsFullDetail())
         lod = 1;
     pRecord = &g_carScenes[car];
     pRecord->detailCode = letter;
@@ -8364,7 +8366,7 @@ wheelsDone:
         sprintf(CFrontend::m_stringDest, g_strCarModelFormat, Car_GetDirectoryPath(model), letterInt, lod);
         StageTiming_InitStageTypeEvents(CFrontend::m_stringDest, car, teamByte);
     }
-    if (hasVariant == 0 || CGameInfo::IsRecordFlagSet(0x10)) {
+    if (hasVariant == 0 || Graphics_AllCarsFullDetail()) {
         pCar = Car_Get(car);
         pCar->pAlternateBodyNode = NULL;
         pCar->pExtraNodes[0] = NULL;

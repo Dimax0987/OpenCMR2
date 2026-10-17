@@ -129,7 +129,7 @@ Capture the port with the original recording's resolved inputs:
 mkdir -p build/reference-port-new/user
 XDG_DATA_HOME="$PWD/build/reference-port-new/user" \
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy OPENCMR2_HEADLESS=1 \
-OPENCMR2_REFERENCE_CLOCK=1 \
+OPENCMR2_REFERENCE_CLOCK=1 OPENCMR2_PROBE_CAR_DETAIL=2 \
 OPENCMR2_STATE_CAPTURE="$PWD/build/reference-port-new/state.bin" \
   build/linux-x86/tests/stage_probe ~/cmr2game \
   build/reference-port-new/trace.jsonl 60 500 \
