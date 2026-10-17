@@ -912,8 +912,11 @@ extern "C" void Sys_GetDesktopSize(int *width, int *height)
 {
     SDL_DisplayID display = s_window ? SDL_GetDisplayForWindow(s_window) : SDL_GetPrimaryDisplay();
     const SDL_DisplayMode *mode = SDL_GetDesktopDisplayMode(display);
-    *width = mode ? mode->w : 640;
-    *height = mode ? mode->h : 480;
+    // In pixels: a scaled desktop (Wayland, macOS) gives its size in points,
+    // and the pixels per point as its density.
+    float density = mode != NULL && mode->pixel_density > 0.0f ? mode->pixel_density : 1.0f;
+    *width = mode ? (int)SDL_lroundf(mode->w * density) : 640;
+    *height = mode ? (int)SDL_lroundf(mode->h * density) : 480;
 }
 
 // ---- messages ----------------------------------------------------------------------

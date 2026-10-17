@@ -173,6 +173,7 @@ struct Executor : GfxExecutor {
     bool bcSupported = true;
     bool presentModeVsync = true;
     int anisotropy = 1, smoothScaling = 1;    // video.anisotropy, video.smooth_scaling
+    Uint32 presentWidth = 0, presentHeight = 0; // the window's pixels, as last logged
     // The back buffer read of the last presented frame (the lens flare test):
     // it runs with that frame, and CollectReadback waits for it only when the
     // game reads the pixels, during the next frame.
@@ -1223,6 +1224,11 @@ struct Executor : GfxExecutor {
         SDL_GPUTexture *swapchain = NULL;
         Uint32 sw = 0, sh = 0;
         if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swapchain, &sw, &sh) && swapchain != NULL) {
+            if (sw != presentWidth || sh != presentHeight) {
+                Sys_Log("gfx: %dx%d shown in %ux%u pixels", backWidth, backHeight, sw, sh);
+                presentWidth = sw;
+                presentHeight = sh;
+            }
             // Movie frames fill the drawable; ordinary game frames retain their aspect ratio.
             PresentationRect rect = GetPresentationRect(backWidth, backHeight, sw, sh, stretch);
             SDL_GPUBlitInfo blit = {};
