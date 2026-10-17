@@ -88,7 +88,11 @@ need raising under the sanitizers.
 
 `game/` follows CMR2Decomp; `UPSTREAM` records the imported commit.
 Use `tools/sync_upstream.py`, inspect its changes and resolve any conflicts.
-Port adaptations and tests must remain valid after a sync.
+Port adaptations and tests must remain valid after a sync. Port code keeps the
+original's floating-point conventions: after a sync that touches it, run
+`tools/ftoi_rewrite.py --port` (float-to-integer conversions) and
+`tools/x87s_rewrite.py --port` (operations the original ran at x87 single
+precision); both need `clang-devel`, and a second run finds nothing.
 
 When compatibility-sensitive structures change, check the disk-layout header:
 

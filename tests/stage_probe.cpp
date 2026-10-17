@@ -483,8 +483,11 @@ int main(int argc, char **argv) {
             sessionSaved = true;
             fprintf(stderr, "probe: saved garage session\n");
         }
-        if (mode == 3 && !raceOrigin && getenv("OPENCMR2_REFERENCE_CLOCK")) {
-            virtualTime = 100000;
+        // The race clock of the reference captures; OPENCMR2_PROBE_RACE_CLOCK
+        // picks another, which seeds the start side of the super specials.
+        const char *raceClock = getenv("OPENCMR2_PROBE_RACE_CLOCK");
+        if (mode == 3 && !raceOrigin && (getenv("OPENCMR2_REFERENCE_CLOCK") || raceClock)) {
+            virtualTime = raceClock ? DWORD(strtoul(raceClock, nullptr, 10)) : 100000;
             CMain::UpdateFrameTime();
             raceOrigin = virtualTime;
         }

@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "description": "Fixed-point math tables of the original executable built with the x87 at single precision (control word 0x007f), as Direct3D 7 leaves it on Windows",
+  "file": "math-tables.bin",
+  "file_sha256": "a069b51346414f70b47062991b092ec2718cf555b2eb395928746d358313d74c",
+  "layout": "sqrt u16[4096], sin i32[4096], acos i16[4096], atan u16[512], tan i32[4096]",
+  "original_sha256": "21b2dd13798724bcfe0c64b44216fb3e772c86addd330e821e53d5962fca3817",
+  "recorder": "tools/reference_capture (original + SilentPatch under Wine, control word set to 0x007f before every frame)",
+  "race_x87_control_word": "007f",
+  "differences_from_0x027f": {"sqrt": 8, "sin": 12, "acos": 0, "atan": 0, "tan": 339}
+}

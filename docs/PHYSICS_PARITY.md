@@ -39,21 +39,39 @@ through the real frontend with fresh settings, default model 0 and automatic
 gears. Each run contains 125 waiting/countdown updates and 375 driving updates,
 including acceleration, steering, lateral contact, braking and handbrake.
 
-## Timing defects of the original, fixed in the port
+## x87 precision on Windows
 
-The original recorder measured race x87 control word `0x027f`: 53-bit arithmetic
-and nearest-even conversion. Disassembly of `Car_UpdateEngineNoteFalloff` shows
-that its previous time boundary is stored as float at `0x0042c9c0`, while its
-current boundary retains double precision before FISTP at `0x0042c9d4`. At certain
-half-step boundaries the current value rounds forward, but the saved previous
-value rounds backward when read next frame. That repeats an already counted step.
+Direct3D 7 sets the x87 precision control to 24 bits (control word `0x007f`)
+when the game creates its device, as the game does not pass
+`DDSCL_FPUPRESERVE`. Every add, subtract, multiply, divide and square root of
+the race then rounds to single precision, while integer operands load exactly.
+Wine's DirectDraw keeps the CRT's `0x027f` (53 bits), so the first captures of
+the original measured that instead. CMR2Decomp marks these operations
+(`X87Single.h`) and the port rounds them the same way on every target; see
+[ORIGINAL_REFERENCE.md](ORIGINAL_REFERENCE.md) for captures at either control
+word.
 
-This explains the original's observed 206 updates in the same eight seconds at
-30/60/144 FPS and 212 at 240 FPS. OpenCMR2 evaluates both boundaries in the same
-double precision while retaining nearest-even conversion and the original signed
-interpolation phase. It now consistently runs the stored 25 Hz rate. Therefore
-**wall-clock pacing deliberately differs from the original's duplicate-step bug**;
-we do not claim identical original wall-time speed or copy that FPS dependency.
+The fixed-point math tables are built after the device: at single precision 8
+sqrt, 12 sin and 339 tan entries differ from double precision. The CPU runs of
+the super specials and the Rally Challenge (Japan) replay recorded controls
+open loop and were recorded with those tables: at 53 bits the opponents leave
+their recorded lines and stop against the scenery in most countries, lanes and
+difficulties. `math_tables_test` compares the tables with a dump of the
+original at `0x007f`, and the `cpu_runs` test drives every super special and
+the Japan challenge from both start sides.
+
+At `0x027f` the original's step scheduler repeats steps: its previous time
+boundary is stored as float at `0x0042c9c0`, while the current one keeps double
+precision before FISTP at `0x0042c9d4`, so at some half-step boundaries the
+current value rounds forward and the saved one backward. That gives 206 updates
+in eight seconds at 30/60/144 FPS and 212 at 240 FPS. At `0x007f` both
+boundaries round alike: the original runs exactly 200 updates in those eight
+seconds at 60 FPS, and so does the port, which follows the single-precision
+arithmetic.
+
+The Finland stage 1 excerpt below is identical at both control words (no
+changed table entry or conversion is reached in its 500 updates), so the
+frozen `0x027f` reference remains valid.
 
 The pre-race hold originally checked completion after scheduling another waiting
 update. At some render cadences this added a 126th countdown update. The port

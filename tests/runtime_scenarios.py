@@ -51,6 +51,33 @@ for country, name in [(1, 'greece'), (3, 'sweden'), (5, 'kenya'), (7, 'united-ki
         'OPENCMR2_PROBE_EXPECT_STAGE': '10',
         'OPENCMR2_PROBE_UNLOCK_TRACKS': '1',
     })
+# The CPU opponent of each super special, from both start sides (the race
+# clock seeds the side), must replay its recorded run to the end: it replays
+# controls open loop, so any difference from the x87 single precision the run
+# was recorded with sends it off its line within the first lap.
+for country, name in [(1, 'greece'), (3, 'sweden'), (5, 'kenya'), (7, 'united-kingdom')]:
+    for side, clock in [('a', 100000), ('b', 101000)]:
+        SCENARIOS[f'super-special-{name}-cpu-run-{side}'] = (3600, {
+            'OPENCMR2_PROBE_CURSORS': f'88:2,29:1,36:{country},37:10',
+            'OPENCMR2_PROBE_EXPECT_CARS': '2',
+            'OPENCMR2_PROBE_EXPECT_COUNTRY': str(country),
+            'OPENCMR2_PROBE_EXPECT_STAGE': '10',
+            'OPENCMR2_PROBE_UNLOCK_TRACKS': '1',
+            'OPENCMR2_PROBE_RACE_CLOCK': str(clock),
+            'OPENCMR2_PROBE_OPPONENT': '1',
+        })
+# The Rally Challenge is a knockout on the Japan super special (country 8).
+for side, clock in [('a', 100000), ('b', 101000)]:
+    SCENARIOS[f'rally-challenge-japan-cpu-run-{side}'] = (3600, {
+        'OPENCMR2_PROBE_CURSORS': '88:4',
+        'OPENCMR2_PROBE_EXPECT_CARS': '2',
+        'OPENCMR2_PROBE_EXPECT_COUNTRY': '8',
+        'OPENCMR2_PROBE_EXPECT_STAGE': '10',
+        'OPENCMR2_PROBE_EXPECT_MODE': '4',
+        'OPENCMR2_PROBE_UNLOCK_TRACKS': '1',
+        'OPENCMR2_PROBE_RACE_CLOCK': str(clock),
+        'OPENCMR2_PROBE_OPPONENT': '1',
+    })
 # Every car of the selection menu (51) with the all-cars cheat; the bonus cars
 # index tables past the six championship teams.
 for car, name in [(12, 'lancia-integrale'), (20, 'ford-puma'), (21, 'ford-escort')]:
@@ -60,6 +87,34 @@ for car, name in [(12, 'lancia-integrale'), (20, 'ford-puma'), (21, 'ford-escort
         'OPENCMR2_PROBE_EXPECT_MODE': '7',
         'OPENCMR2_PROBE_UNLOCK_CARS': '1',
     })
+OPPONENT = re.compile(r'opponent tick=(\d+) rate=\S+ playing=(-?\d+) started=\d+ type=\d+ lane=\S+ frame=(\d+)/(-?\d+)')
+
+
+def verify_cpu_run(log, records):
+    # The run keeps feeding controls to a car that is stuck, so check the car:
+    # it may stop only at the end of its run (the finish), never for ten
+    # seconds while most of the run is still to come.
+    samples = [tuple(map(int, match.groups())) for match in OPPONENT.finditer(log)]
+    progress = [(tick, frame / length) for tick, playing, frame, length in samples if playing and length > 0]
+    if not progress:
+        raise ValueError('the CPU run never played')
+    def played(tick):
+        return max((f for t, f in progress if t <= tick), default=0.0)
+    still = 0
+    for record in records:
+        if record['tick'] < progress[0][0]:
+            continue
+        car = next(c for c in record['cars'] if c['id'] == 1)
+        still = still + 1 if car['speed'] < 8000 else 0
+        if still == 250 and played(record['tick']) < 0.95:
+            raise ValueError(f'the CPU car stopped at tick {record["tick"] - 249} in sector {car["sector"]} '
+                             f'with {played(record["tick"]):.0%} of its run to go')
+    best = max(f for _, f in progress)
+    if best < 0.95:
+        raise ValueError(f'the CPU run reached only {best:.0%}')
+    return {'run_played': round(best, 3)}
+
+
 REPLAY = re.compile(r'probe: replay tick=(\d+) playing=(-?\d+) lane=(-?\d+) frame=(-?\d+) length=(-?\d+)')
 
 
@@ -77,9 +132,12 @@ def verify_replay(log):
             'last_playing_tick': playback[-1][0], 'first_finished_tick': finished[0][0]}
 
 
-def verify(probe, data, output):
+def verify(probe, data, output, cpu_runs=False):
     report = {}
     for name, (count, settings) in SCENARIOS.items():
+        # The long CPU run scenarios form their own test.
+        if ('-cpu-run-' in name) != cpu_runs:
+            continue
         run = output / name
         run.mkdir(parents=True)
         env = {k: v for k, v in os.environ.items() if not k.startswith('OPENCMR2_PROBE_')}
@@ -91,8 +149,8 @@ def verify(probe, data, output):
         log_path = run / 'run.log'
         with log_path.open('w') as log:
             subprocess.run([str(probe), str(data), str(run / 'trace.jsonl'), '30', str(count)],
-                           env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=60)
-        log = log_path.read_text()
+                           env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)
+        log = log_path.read_text(encoding='latin-1')
         if not re.search(rf'probe: {count} ticks, [1-9][0-9]* driving ticks, .*; complete', log):
             raise ValueError(f'{name}: no completed race: {log_path}')
         records = [json.loads(line) for line in (run / 'trace.jsonl').read_text().splitlines()]
@@ -113,6 +171,8 @@ def verify(probe, data, output):
             report[name]['next_stage_driving_ticks'] = int(match[1])
         if name == 'recorded-replay':
             report[name]['replay'] = verify_replay(log)
+        if '-cpu-run-' in name:
+            report[name]['cpu_run'] = verify_cpu_run(log, records)
         print(f'{name}: PASS ({count} ticks)', flush=True)
     (output / 'acceptance.json').write_text(json.dumps(report, indent=2) + '\n')
 
@@ -122,13 +182,15 @@ def main():
     parser.add_argument('--probe', type=Path, required=True)
     parser.add_argument('--data', type=Path, required=True)
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--cpu-runs', action='store_true',
+                        help='run the scenarios whose CPU opponent replays a recorded run instead')
     args = parser.parse_args()
     if args.output:
         args.output.mkdir(parents=True, exist_ok=False)
-        verify(args.probe.resolve(), args.data.resolve(), args.output.resolve())
+        verify(args.probe.resolve(), args.data.resolve(), args.output.resolve(), args.cpu_runs)
     else:
         with tempfile.TemporaryDirectory(prefix='opencmr2-runtime-') as directory:
-            verify(args.probe.resolve(), args.data.resolve(), Path(directory))
+            verify(args.probe.resolve(), args.data.resolve(), Path(directory), args.cpu_runs)
 
 
 if __name__ == '__main__':

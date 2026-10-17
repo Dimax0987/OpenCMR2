@@ -46,7 +46,7 @@ endif()
 add_executable(math_tables_test math_tables.cpp)
 target_link_libraries(math_tables_test PRIVATE opencmr2_platform)
 add_test(NAME math_tables COMMAND math_tables_test
-    ${CMAKE_CURRENT_SOURCE_DIR}/reference/finland-stage1/math-tables.bin)
+    ${CMAKE_CURRENT_SOURCE_DIR}/reference/x87-single/math-tables.bin)
 add_executable(game_data_setup_test game_data_setup.cpp)
 target_link_libraries(game_data_setup_test PRIVATE opencmr2_platform)
 add_test(NAME game_data_setup COMMAND game_data_setup_test)
@@ -96,6 +96,10 @@ if(OPENCMR2_BINK_TEST_DATA_DIR)
             ${CMAKE_CURRENT_SOURCE_DIR}/runtime_scenarios.py --probe $<TARGET_FILE:stage_probe>
             --data ${OPENCMR2_BINK_TEST_DATA_DIR})
         set_tests_properties(runtime_scenarios PROPERTIES TIMEOUT 180)
+        add_test(NAME cpu_runs COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/runtime_scenarios.py --probe $<TARGET_FILE:stage_probe>
+            --data ${OPENCMR2_BINK_TEST_DATA_DIR} --cpu-runs)
+        set_tests_properties(cpu_runs PROPERTIES TIMEOUT 900)
         if(NOT CMAKE_CROSSCOMPILING)
             add_test(NAME lan_game COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/lan_game.py --host-probe $<TARGET_FILE:stage_probe>

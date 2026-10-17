@@ -57,10 +57,13 @@ int main() {
     Sample(1040);
     Check(cars[0].simulationStepsRemaining == 0, "a counted half-step must not be repeated");
     Reset();
+    // At the x87's single precision 100 ms is exactly 2.5 steps (it is
+    // 2.5000001 in double), and FISTP keeps the even step: the third one is
+    // counted by the next sample, once, as both boundaries round alike.
     Sample(1100);
-    Check(cars[0].simulationStepsRemaining == 3, "100 ms rounds forward to the third step");
+    Check(cars[0].simulationStepsRemaining == 2, "100 ms is a half step at single precision");
     Sample(1116);
-    Check(cars[0].simulationStepsRemaining == 0, "float/double boundary must not duplicate the third step");
+    Check(cars[0].simulationStepsRemaining == 1, "the third step is counted once");
     Reset();
     unsigned normal = 0, ghost = 0, elapsed = 0;
     const unsigned pattern[] = {7, 13, 33, 5, 22, 48, 9, 23};

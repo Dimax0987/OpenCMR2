@@ -1,4 +1,5 @@
-// Compare the actual startup tables with a dump from original + SilentPatch.
+// Compare the actual startup tables with a dump from original + SilentPatch,
+// built with the x87 at single precision as on Windows (tests/reference/x87-single).
 #include "port/types.h"
 #include "FixedPoint.h"
 #include <cstdio>
@@ -32,5 +33,5 @@ int main(int argc, char **argv) {
     Compare(file, "tan", g_tanTable, 4096);
     if (fgetc(file) != EOF || ferror(file)) return 1;
     fclose(file);
-    puts("math tables: all 16,896 entries identical to original + SilentPatch");
+    puts("math tables: all 16,896 entries identical to original + SilentPatch at x87 single precision");
 }

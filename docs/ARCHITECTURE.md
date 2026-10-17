@@ -132,8 +132,10 @@ The compiler flags encode what the decompiled code relies on:
 
 - `-fwrapv`: 16.16 fixed point overflows on purpose;
 - `-fno-strict-aliasing`: the code reinterprets memory freely;
-- `-msse2 -mfpmath=sse`: explicit float/double arithmetic. The audited original
-  race used x87 53-bit precision; identical precision across drivers is not assumed;
+- `-msse2 -mfpmath=sse`: explicit float/double arithmetic. The original raced
+  with the x87 at single precision (set by Direct3D 7); the operations it
+  rounded that way are marked `X87S_*` (`game/X87Single.h`) and rounded once
+  to a 24-bit mantissa on every target;
 - float-to-int conversions: the original TUs built with `/QIfist` round to
   nearest instead of truncating. Audited sites use `llrint`/`lrintf` explicitly,
   preserving the original narrowing after 64-bit conversion.
