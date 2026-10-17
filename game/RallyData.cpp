@@ -5131,9 +5131,13 @@ int g_unk0x005337d4[6];
 int RallyData_PickStageOutsideExcludedGroups(int exclude1, int exclude2)
 {
     memset(g_unk0x005337d4, 0, sizeof(g_unk0x005337d4));
-    if (exclude1 >= 0)
+    // PORT: the table has the six teams the stages are picked from, but the
+    // player's car can be the Ford Racing Puma (id 12): the original writes
+    // its entry past the table, over memory nothing uses there; here it would
+    // land on another global. Only the six entries are read back.
+    if (exclude1 >= 0 && CFrontend::GetArchivePrimaryIDEntry(exclude1) < 6)
         g_unk0x005337d4[CFrontend::GetArchivePrimaryIDEntry(exclude1)] = 1;
-    if (exclude2 >= 0)
+    if (exclude2 >= 0 && CFrontend::GetArchivePrimaryIDEntry(exclude2) < 6)
         g_unk0x005337d4[CFrontend::GetArchivePrimaryIDEntry(exclude2)] = 1;
     g_unk0x005337c4 = rand() % 12;
     while (g_unk0x005337d4[CFrontend::GetArchivePrimaryIDEntry(g_unk0x005337c4)] == 1)

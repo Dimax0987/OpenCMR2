@@ -51,6 +51,15 @@ for country, name in [(1, 'greece'), (3, 'sweden'), (5, 'kenya'), (7, 'united-ki
         'OPENCMR2_PROBE_EXPECT_STAGE': '10',
         'OPENCMR2_PROBE_UNLOCK_TRACKS': '1',
     })
+# Every car of the selection menu (51) with the all-cars cheat; the bonus cars
+# index tables past the six championship teams.
+for car, name in [(12, 'lancia-integrale'), (20, 'ford-puma'), (21, 'ford-escort')]:
+    SCENARIOS[f'time-trial-{name}'] = (500, {
+        'OPENCMR2_PROBE_CURSORS': f'0:2,88:2,51:{car}',
+        'OPENCMR2_PROBE_EXPECT_CARS': '2',
+        'OPENCMR2_PROBE_EXPECT_MODE': '7',
+        'OPENCMR2_PROBE_UNLOCK_CARS': '1',
+    })
 REPLAY = re.compile(r'probe: replay tick=(\d+) playing=(-?\d+) lane=(-?\d+) frame=(-?\d+) length=(-?\d+)')
 
 

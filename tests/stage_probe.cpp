@@ -338,6 +338,9 @@ static void ConfigureMenu(Menu *menu) {
     // through the real menu and verify the archive chosen by the loader.
     if (getenv("OPENCMR2_PROBE_UNLOCK_TRACKS") && !CGameInfo::IsRecordFlagSet(0xd))
         CGameInfo::ToggleRecordFlag(0xd);
+    // The all-cars cheat, for the bonus cars.
+    if (getenv("OPENCMR2_PROBE_UNLOCK_CARS") && !CGameInfo::IsRecordFlagSet(0xc))
+        CGameInfo::ToggleRecordFlag(0xc);
     if (menu == FrontendMenu_GetNetworkSessionDetails())
         if (const char *name = getenv("OPENCMR2_PROBE_SESSION_NAME"))
             snprintf(g_unk0x00818ebc, sizeof(g_unk0x00818ebc), "%s", name);
