@@ -26,6 +26,11 @@ int s_width = 640, s_height = 480;
 GfxTexture *s_target;
 std::vector<std::pair<GfxDrawState, GfxTexture *>> s_savedStates;
 std::vector<std::pair<int, int>> s_modes;
+uint32_t s_presentedFrames = 1;     // frames presented (vertex buffer ages)
+uint32_t s_record = 1;              // recordings run (presented or flushed)
+
+// Frames a vertex buffer stays out of locks before draws refer to it.
+const uint32_t kStaticAfterFrames = 4;
 
 GfxMatrix Identity()
 {
@@ -67,11 +72,13 @@ uint32_t RecordState()
     return (uint32_t)s_frame.states.size() - 1;
 }
 
-uint32_t AppendVertices(const void *data, size_t bytes)
+// Vertices at a multiple of their size, so that the executor can draw them
+// from their first vertex.
+uint32_t AppendVertices(const void *data, size_t bytes, size_t stride)
 {
-    size_t offset = s_frame.vertices.size();
-    s_frame.vertices.resize(offset + bytes);
-    memcpy(s_frame.vertices.data() + offset, data, bytes);
+    size_t offset = (s_frame.vertices.size() + stride - 1) / stride * stride;
+    s_frame.vertices.resize(offset);
+    s_frame.vertices.insert(s_frame.vertices.end(), (const uint8_t *)data, (const uint8_t *)data + bytes);
     return (uint32_t)offset;
 }
 
@@ -95,9 +102,10 @@ static uint32_t TraceHash(uint32_t h, const void *data, size_t size)
     return h;
 }
 
-// Records a draw; fans become lists (SDL_GPU has no fans).
+// Records a draw; fans become lists (SDL_GPU has no fans). With a buffer,
+// the vertices are firstVertex.. of that buffer.
 void RecordDraw(int primitive, bool transformed, const void *vertices, DWORD vertexCount, const WORD *indices,
-                DWORD indexCount)
+                DWORD indexCount, GfxVertexBuffer *buffer = NULL, DWORD firstVertex = 0)
 {
     if (FILE *trace = TraceFile()) {
         uint32_t h = TraceHash(2166136261u, vertices, vertexCount * (transformed ? sizeof(GfxTLVertex) : sizeof(GfxVertex)));
@@ -140,7 +148,17 @@ void RecordDraw(int primitive, bool transformed, const void *vertices, DWORD ver
     cmd.primitive = primitive;
     cmd.transformed = transformed;
     cmd.vertexCount = vertexCount;
-    cmd.firstVertexByte = AppendVertices(vertices, vertexCount * (transformed ? sizeof(GfxTLVertex) : sizeof(GfxVertex)));
+    if (buffer != NULL && s_presentedFrames - buffer->lastLockFrame >= kStaticAfterFrames) {
+        cmd.buffer = buffer;
+        cmd.firstVertexByte = firstVertex * (uint32_t)sizeof(GfxVertex);
+        if (buffer->referencedRecord != s_record) {
+            buffer->referencedRecord = s_record;
+            s_frame.buffers.push_back(buffer);
+        }
+    } else {
+        size_t stride = transformed ? sizeof(GfxTLVertex) : sizeof(GfxVertex);
+        cmd.firstVertexByte = AppendVertices(vertices, vertexCount * stride, stride);
+    }
     if (indices != NULL) {
         cmd.firstIndex = (uint32_t)s_frame.indices.size();
         cmd.indexCount = indexCount;
@@ -355,6 +373,8 @@ static void Present(BOOL vsync, bool stretch)
     if (s_executor != NULL)
         s_executor->Execute(s_frame, s_textures, s_readback, true, vsync != 0, stretch);
     s_frame.Reset();
+    s_record++;
+    s_presentedFrames++;
     s_stateDirty = true;
     // A frame always starts on the back buffer.
     s_target = NULL;
@@ -371,6 +391,7 @@ static void Flush(void)
     if (s_executor != NULL)
         s_executor->Execute(s_frame, s_textures, s_readback, false, false);
     s_frame.Reset();
+    s_record++;
     s_stateDirty = true;
     if (s_target != NULL)
         Gfx_SetRenderTarget(s_target);
@@ -571,12 +592,27 @@ extern "C" GfxVertexBuffer *Gfx_CreateVertexBuffer(DWORD vertexCount)
 
 extern "C" void Gfx_DestroyVertexBuffer(GfxVertexBuffer *buffer)
 {
+    if (buffer == NULL)
+        return;
+    // Draws recorded this frame may still use it.
+    if (buffer->referencedRecord == s_record)
+        Flush();
+    if (s_executor != NULL)
+        s_executor->DestroyVertexBuffer(buffer);
     delete buffer;
 }
 
 extern "C" GfxVertex *Gfx_LockVertexBuffer(GfxVertexBuffer *buffer)
 {
-    return buffer != NULL ? buffer->vertices.data() : NULL;
+    if (buffer == NULL)
+        return NULL;
+    // Draws recorded this frame refer to the contents before this lock: run
+    // them first. It is rare: buffers drawn by reference are rarely locked.
+    if (buffer->referencedRecord == s_record)
+        Flush();
+    buffer->version++;
+    buffer->lastLockFrame = s_presentedFrames;
+    return buffer->vertices.data();
 }
 
 extern "C" void Gfx_UnlockVertexBuffer(GfxVertexBuffer *)
@@ -588,7 +624,7 @@ extern "C" void Gfx_DrawPrimitiveVB(int primitive, GfxVertexBuffer *buffer, DWOR
     s_traceCaller = __builtin_return_address(0);
     if (buffer == NULL || firstVertex + vertexCount > buffer->vertices.size())
         return;
-    RecordDraw(primitive, false, buffer->vertices.data() + firstVertex, vertexCount, NULL, 0);
+    RecordDraw(primitive, false, buffer->vertices.data() + firstVertex, vertexCount, NULL, 0, buffer, firstVertex);
 }
 
 extern "C" void Gfx_DrawIndexedPrimitiveVB(int primitive, GfxVertexBuffer *buffer, DWORD firstVertex, DWORD vertexCount,
@@ -597,7 +633,8 @@ extern "C" void Gfx_DrawIndexedPrimitiveVB(int primitive, GfxVertexBuffer *buffe
     s_traceCaller = __builtin_return_address(0);
     if (buffer == NULL || firstVertex + vertexCount > buffer->vertices.size())
         return;
-    RecordDraw(primitive, false, buffer->vertices.data() + firstVertex, vertexCount, indices, indexCount);
+    RecordDraw(primitive, false, buffer->vertices.data() + firstVertex, vertexCount, indices, indexCount, buffer,
+               firstVertex);
 }
 
 extern "C" void Gfx_DrawPrimitive(int primitive, const GfxVertex *vertices, DWORD vertexCount)

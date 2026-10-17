@@ -148,6 +148,13 @@ struct GpuTexture {
     bool cpuDecode = false;                // BC data decoded on the CPU (no BC support)
 };
 
+// The GPU copy of a GfxVertexBuffer, as of a version of it.
+struct GpuVertexBuffer {
+    SDL_GPUBuffer *buffer = nullptr;
+    uint32_t capacity = 0;
+    uint32_t version = 0;
+};
+
 struct Executor : GfxExecutor {
     SDL_GPUDevice *device = nullptr;
     SDL_Window *window = nullptr;
@@ -158,6 +165,8 @@ struct Executor : GfxExecutor {
     SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT;
     SDL_GPUBuffer *vertexBuffer = nullptr, *indexBuffer = nullptr;
     uint32_t vertexCapacity = 0, indexCapacity = 0;
+    SDL_GPUTransferBuffer *uploadBuffer = nullptr;  // the frame's vertices and indices
+    uint32_t uploadCapacity = 0;
     SDL_GPUTexture *white2D = nullptr, *whiteCube = nullptr;
     std::unordered_map<uint32_t, SDL_GPUGraphicsPipeline *> pipelines;
     std::unordered_map<uint32_t, SDL_GPUSampler *> samplers;
@@ -189,6 +198,7 @@ struct Executor : GfxExecutor {
         SDL_ReleaseGPUTexture(device, whiteCube);
         SDL_ReleaseGPUBuffer(device, vertexBuffer);
         SDL_ReleaseGPUBuffer(device, indexBuffer);
+        SDL_ReleaseGPUTransferBuffer(device, uploadBuffer);
         SDL_ReleaseGPUShader(device, vs3d);
         SDL_ReleaseGPUShader(device, vsTL);
         SDL_ReleaseGPUShader(device, fs);
@@ -842,11 +852,11 @@ struct Executor : GfxExecutor {
     // previous one. Render passes start with nothing bound.
     struct PassBindings {
         SDL_GPUGraphicsPipeline *pipeline = nullptr;
-        bool viewportSet = false, texturesSet = false, verticesSet = false, indicesSet = false;
+        bool viewportSet = false, texturesSet = false, indicesSet = false;
         SDL_GPUViewport viewport = {};
         SDL_Rect scissor = {};
         SDL_GPUTextureSamplerBinding textures[4] = {};
-        uint32_t vertexOffset = 0;
+        SDL_GPUBuffer *vertices = nullptr;
     };
 
     void SetViewport(SDL_GPURenderPass *pass, PassBindings &bound, const SDL_GPUViewport &vp, const SDL_Rect &scissor)
@@ -883,27 +893,80 @@ struct Executor : GfxExecutor {
     {
         uint32_t vertexBytes = (uint32_t)frame.vertices.size();
         uint32_t indexBytes = (uint32_t)(frame.indices.size() * 2);
-        if (vertexBytes == 0)
+        if (vertexBytes == 0 && indexBytes == 0)
             return;
-        EnsureBuffers(vertexBytes, std::max(indexBytes, 4u));
-        SDL_GPUTransferBufferCreateInfo tbi = { SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, vertexBytes + indexBytes, 0 };
-        SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(device, &tbi);
-        uint8_t *map = (uint8_t *)SDL_MapGPUTransferBuffer(device, tb, false);
+        EnsureBuffers(std::max(vertexBytes, 4u), std::max(indexBytes, 4u));
+        if (vertexBytes + indexBytes > uploadCapacity) {
+            SDL_ReleaseGPUTransferBuffer(device, uploadBuffer);
+            uploadCapacity = std::max(vertexBytes + indexBytes, uploadCapacity * 2);
+            SDL_GPUTransferBufferCreateInfo tbi = { SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, uploadCapacity, 0 };
+            uploadBuffer = SDL_CreateGPUTransferBuffer(device, &tbi);
+        }
+        SDL_GPUTransferBuffer *tb = uploadBuffer;
+        // Cycled: a fresh area while the GPU still reads an earlier frame's.
+        uint8_t *map = (uint8_t *)SDL_MapGPUTransferBuffer(device, tb, true);
         memcpy(map, frame.vertices.data(), vertexBytes);
         if (indexBytes)
             memcpy(map + vertexBytes, frame.indices.data(), indexBytes);
         SDL_UnmapGPUTransferBuffer(device, tb);
         SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
-        SDL_GPUTransferBufferLocation src = { tb, 0 };
-        SDL_GPUBufferRegion dst = { vertexBuffer, 0, vertexBytes };
-        SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+        if (vertexBytes) {
+            SDL_GPUTransferBufferLocation src = { tb, 0 };
+            SDL_GPUBufferRegion dst = { vertexBuffer, 0, vertexBytes };
+            SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+        }
         if (indexBytes) {
             SDL_GPUTransferBufferLocation isrc = { tb, vertexBytes };
             SDL_GPUBufferRegion idst = { indexBuffer, 0, indexBytes };
             SDL_UploadToGPUBuffer(copy, &isrc, &idst, true);
         }
         SDL_EndGPUCopyPass(copy);
-        SDL_ReleaseGPUTransferBuffer(device, tb);
+    }
+
+    // The GPU copies of the vertex buffers the frame draws from, where the
+    // game has locked them since.
+    void UploadVertexBuffers(SDL_GPUCommandBuffer *cmd, GfxFrame &frame)
+    {
+        SDL_GPUCopyPass *copy = NULL;
+        for (GfxVertexBuffer *b : frame.buffers) {
+            GpuVertexBuffer *g = (GpuVertexBuffer *)b->gpu;
+            if (g == NULL)
+                b->gpu = g = new GpuVertexBuffer;
+            uint32_t bytes = (uint32_t)(b->vertices.size() * sizeof(GfxVertex));
+            if ((g->version == b->version && g->buffer != NULL) || bytes == 0)
+                continue;
+            if (bytes > g->capacity) {
+                SDL_ReleaseGPUBuffer(device, g->buffer);
+                SDL_GPUBufferCreateInfo info = { SDL_GPU_BUFFERUSAGE_VERTEX, bytes, 0 };
+                g->buffer = SDL_CreateGPUBuffer(device, &info);
+                g->capacity = bytes;
+            }
+            SDL_GPUTransferBufferCreateInfo tbi = { SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, bytes, 0 };
+            SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(device, &tbi);
+            memcpy(SDL_MapGPUTransferBuffer(device, tb, false), b->vertices.data(), bytes);
+            SDL_UnmapGPUTransferBuffer(device, tb);
+            if (copy == NULL)
+                copy = SDL_BeginGPUCopyPass(cmd);
+            SDL_GPUTransferBufferLocation src = { tb, 0 };
+            SDL_GPUBufferRegion dst = { g->buffer, 0, bytes };
+            // Cycling keeps the contents earlier frames still draw from.
+            SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+            SDL_ReleaseGPUTransferBuffer(device, tb);
+            g->version = b->version;
+        }
+        if (copy != NULL)
+            SDL_EndGPUCopyPass(copy);
+    }
+
+    void DestroyVertexBuffer(GfxVertexBuffer *b) override
+    {
+        GpuVertexBuffer *g = (GpuVertexBuffer *)b->gpu;
+        if (g == NULL)
+            return;
+        if (device != NULL)
+            SDL_ReleaseGPUBuffer(device, g->buffer);
+        delete g;
+        b->gpu = NULL;
     }
 
     SDL_GPURenderPass *BeginPass(SDL_GPUCommandBuffer *cmd, GfxTexture *target, int &w, int &h)
@@ -953,6 +1016,7 @@ struct Executor : GfxExecutor {
                 Ensure(c.target->cube != NULL ? c.target->cube : c.target);
         UploadTextures(cmd, textures);
         UploadGeometry(cmd, frame);
+        UploadVertexBuffers(cmd, frame);
 
         SDL_GPURenderPass *pass = NULL;
         PassBindings bound;
@@ -1042,11 +1106,13 @@ struct Executor : GfxExecutor {
                 memcpy(bound.textures, textures, sizeof(textures));
                 bound.texturesSet = true;
             }
-            if (!bound.verticesSet || bound.vertexOffset != c.firstVertexByte) {
-                SDL_GPUBufferBinding vb = { vertexBuffer, c.firstVertexByte };
+            // The buffer from its start; the draw gives its first vertex.
+            SDL_GPUBuffer *vertices = c.buffer != NULL ? ((GpuVertexBuffer *)c.buffer->gpu)->buffer : vertexBuffer;
+            uint32_t firstVertex = c.firstVertexByte / (c.transformed ? sizeof(GfxTLVertex) : sizeof(GfxVertex));
+            if (vertices != bound.vertices) {
+                SDL_GPUBufferBinding vb = { vertices, 0 };
                 SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
-                bound.vertexOffset = c.firstVertexByte;
-                bound.verticesSet = true;
+                bound.vertices = vertices;
             }
             if (c.firstIndex != ~0u) {
                 if (!bound.indicesSet) {
@@ -1054,9 +1120,9 @@ struct Executor : GfxExecutor {
                     SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
                     bound.indicesSet = true;
                 }
-                SDL_DrawGPUIndexedPrimitives(pass, c.indexCount, 1, c.firstIndex, 0, 0);
+                SDL_DrawGPUIndexedPrimitives(pass, c.indexCount, 1, c.firstIndex, (Sint32)firstVertex, 0);
             } else {
-                SDL_DrawGPUPrimitives(pass, c.vertexCount, 1, 0, 0);
+                SDL_DrawGPUPrimitives(pass, c.vertexCount, 1, firstVertex, 0);
             }
         }
         if (pass != NULL)

@@ -27,8 +27,16 @@ struct GfxTexture {
     void *gpu;                  // executor's object
 };
 
+// A vertex buffer the game fills through Lock/Unlock. Draws from one that
+// has not been locked for a while refer to its GPU copy (stage geometry);
+// draws from one locked recently copy their vertices (cars, sprites), as the
+// game rewrites those during the frame.
 struct GfxVertexBuffer {
     std::vector<GfxVertex> vertices;
+    uint32_t version = 1;           // bumped by every lock
+    uint32_t lastLockFrame = 0;     // presented frame of the last lock
+    uint32_t referencedRecord = 0;  // recording that last drew from it
+    void *gpu = nullptr;            // executor's copy
 };
 
 // Bytes of one level, given its size, for a format.
@@ -93,7 +101,9 @@ struct GfxCommand {
     // draw
     int primitive;              // list/strip types only (fans are converted)
     bool transformed;           // GfxTLVertex data
-    uint32_t firstVertexByte;   // into the frame's vertex data
+    GfxVertexBuffer *buffer;    // vertices in this buffer, else in the frame's data
+    uint32_t firstVertexByte;   // into the buffer or the frame's vertex data,
+                                // a multiple of the vertex size
     uint32_t vertexCount;
     uint32_t firstIndex;        // into the frame's indices, or ~0 for none
     uint32_t indexCount;
@@ -112,12 +122,14 @@ struct GfxFrame {
     std::vector<uint16_t> indices;
     std::vector<GfxDrawState> states;
     std::vector<GfxCommand> commands;
+    std::vector<GfxVertexBuffer *> buffers;     // drawn from, each once
     void Reset()
     {
         vertices.clear();
         indices.clear();
         states.clear();
         commands.clear();
+        buffers.clear();
     }
 };
 
@@ -140,6 +152,7 @@ struct GfxExecutor {
     virtual void Execute(GfxFrame &frame, std::vector<GfxTexture *> &textures, GfxReadback &readback, bool present,
                          bool vsync, bool stretch = false) = 0;
     virtual void DestroyTexture(GfxTexture *texture) = 0;
+    virtual void DestroyVertexBuffer(GfxVertexBuffer *) {}
     // Brings a render target's pixels back into its CPU copy (for locks).
     virtual void ReadTexture(GfxTexture *texture) = 0;
     // Completes the back buffer read the last presented frame started, when
