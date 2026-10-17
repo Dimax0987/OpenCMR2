@@ -21,6 +21,7 @@ extern "C" DWORD Sys_ReadFile(SysFile *file, void *dst, DWORD count) {
 extern "C" DWORD Sys_GetTicks() { return 0; }
 extern "C" void Sys_GetDesktopSize(int *w, int *h) { *w = 640; *h = 480; }
 extern "C" void Sys_Log(const char *, ...) {}
+extern "C" int Sys_GetOption(const char *, int fallback) { return fallback; }
 int Platform_GetSettingInt(const char *, int value) { return value; }
 extern "C" AudioStream *Audio_CreateStream(DWORD, int) { return nullptr; }
 extern "C" BOOL Audio_QueueStream(AudioStream *, const float *, DWORD) { return FALSE; }
@@ -61,7 +62,7 @@ int main()
     Movie_DecodeFrame(movie);
     for (int i = 0; i < 2; ++i) {
         Movie_Present(movie, 0, 0, 640, 480);
-        Check(stretched && !drawnState.alphaBlend && !drawnState.alphaTest && !drawnState.depthTest &&
+        Check(!stretched && !drawnState.alphaBlend && !drawnState.alphaTest && !drawnState.depthTest &&
               drawnState.stages[0].texture != menuTexture, "movie pass uses its own state");
         // Draw the menu without resetting the cached state, exactly as at boot.
         GfxTLVertex vertices[3] = {};

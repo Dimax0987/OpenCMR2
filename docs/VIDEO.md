@@ -28,10 +28,12 @@ silent video playback with a log message.
 The blocking movie loop dispatches SDL events both before decoding and while
 waiting for the next frame. Enter (including keypad Enter) skips the movie;
 the skip key is consumed rather than queued as a menu confirmation. Joystick
-confirmation still uses the game's normal input mapping. Intro frames stretch
-across the entire window/full-screen drawable, including when the internal game
-resolution is 4:3 and the monitor is widescreen. Explicit movie rectangles are
-honoured. Ordinary game presentation retains its existing aspect-ratio policy.
+confirmation still uses the game's normal input mapping. Movies keep their
+proportions: frames are centred in the requested rectangle (the whole back
+buffer unless the game gives one) with black bars, and the back buffer is
+presented with its own aspect ratio, so wide and tall windows show bars instead
+of a stretched picture. `[video] stretch_movies = 1` fills the rectangle and
+the window instead, as earlier versions did.
 Each movie pass saves and restores the renderer's drawing state and the caller
 restores its viewport. This keeps the game's cached state setters consistent:
 fonts and menu sprites retain their texture operations and transparency after

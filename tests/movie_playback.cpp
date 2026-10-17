@@ -5,6 +5,8 @@
 #include "port/sys.h"
 #include "render/presentation.h"
 
+#include <string>
+
 using namespace BinkTest;
 struct SysFile { size_t position = 0; };
 struct GfxTexture { int width, height, pitch; std::vector<uint8_t> pixels; };
@@ -15,7 +17,8 @@ static DWORD ticks;
 static int files, textures, streams, queues, starts;
 static bool failTexture;
 static std::vector<float> queued;
-static int stretchedPresents;
+static int stretchedPresents, presents;
+static int stretchMovies;
 static int savedStates;
 static GfxTLVertex drawn[4];
 
@@ -57,8 +60,11 @@ extern "C" void Audio_ReleaseStream(AudioStream *stream) { if (stream) { --strea
 extern "C" void Gfx_Clear(DWORD, DWORD, float) {}
 extern "C" void Gfx_BeginScene() {}
 extern "C" void Gfx_EndScene() {}
-extern "C" void Gfx_Present(BOOL) {}
+extern "C" void Gfx_Present(BOOL) { ++presents; }
 extern "C" void Gfx_PresentStretched(BOOL) { ++stretchedPresents; }
+extern "C" int Sys_GetOption(const char *name, int fallback) {
+    return std::string(name) == "video.stretch_movies" ? stretchMovies : fallback;
+}
 extern "C" void Gfx_PushState() { ++savedStates; }
 extern "C" void Gfx_PopState() { --savedStates; }
 extern "C" void Gfx_SetDepthTest(BOOL) {}
@@ -95,9 +101,18 @@ int main() {
     Movie_Present(movie, 0, 0, 1920, 1080);
     Check(starts == 1, "audio starts with first presentation");
     Check(savedStates == 0, "movie balances render-state preservation");
+    Check(presents == 1 && stretchedPresents == 0 && drawn[0].sx == 420 && drawn[0].sy == 0 &&
+          drawn[3].sx == 1500 && drawn[3].sy == 1080 && drawn[3].tu == 1 && drawn[3].tv == 1,
+          "movie keeps its proportions in a wide rectangle");
+    Movie_Present(movie, 0, 0, 900, 1600);
+    Check(drawn[0].sx == 0 && drawn[0].sy == 350 && drawn[3].sx == 900 && drawn[3].sy == 1250,
+          "movie keeps its proportions in a tall rectangle");
+    stretchMovies = 1;
+    Movie_Present(movie, 0, 0, 1920, 1080);
     Check(stretchedPresents == 1 && drawn[0].sx == 0 && drawn[0].sy == 0 &&
-          drawn[3].sx == 1920 && drawn[3].sy == 1080 && drawn[3].tu == 1 && drawn[3].tv == 1,
-          "movie stretches to the requested rectangle");
+          drawn[3].sx == 1920 && drawn[3].sy == 1080 && savedStates == 0,
+          "stretch_movies fills the requested rectangle");
+    stretchMovies = 0;
     PresentationRect rect = GetPresentationRect(640, 480, 1920, 1080, true);
     Check(rect.x == 0 && rect.y == 0 && rect.width == 1920 && rect.height == 1080,
           "movie fills widescreen output with a 4:3 back buffer");

@@ -297,6 +297,8 @@ const char s_defaultSettings[] =
     "; fov = 70\n"
     "; 1 = keep running when the window loses the focus or is minimised.\n"
     "; run_in_background = 0\n"
+    "; 1 = stretch the movies over the whole window, 0 = keep their proportions.\n"
+    "; stretch_movies = 0\n"
     "\n"
     "[net]\n"
     "; Network play (see docs/NETWORK.md). UDP port games are hosted on.\n"

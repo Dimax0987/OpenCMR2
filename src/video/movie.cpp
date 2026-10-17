@@ -5,6 +5,7 @@
 #include "port/sys.h"
 #include "video/bink_decoder.h"
 
+#include <cstdint>
 #include <cstring>
 #include <new>
 
@@ -126,6 +127,20 @@ extern "C" void Movie_Present(Movie *movie, int x, int y, int width, int height)
     // The game caches its render-state setters. Leave their actual values
     // intact so the next menu can still blend its fonts and sprites.
     Gfx_PushState();
+    // Keep the movie's proportions within the rectangle, with black bars,
+    // unless the settings ask to fill the screen.
+    const bool stretch = Sys_GetOption("video.stretch_movies", 0) != 0;
+    if (!stretch && movie->info.width && movie->info.height && width > 0 && height > 0) {
+        const int64_t fitted = int64_t(height) * movie->info.width / movie->info.height;
+        if (fitted <= width) {
+            x += (width - int(fitted)) / 2;
+            width = int(fitted);
+        } else {
+            const int fittedHeight = int(int64_t(width) * movie->info.height / movie->info.width);
+            y += (height - fittedHeight) / 2;
+            height = fittedHeight;
+        }
+    }
     GfxTLVertex v[4];
     float x0 = (float)x, y0 = (float)y, x1 = (float)(x + width), y1 = (float)(y + height);
 
@@ -157,7 +172,10 @@ extern "C" void Movie_Present(Movie *movie, int x, int y, int width, int height)
     Gfx_SetStageAddress(0, GFX_ADDRESS_CLAMP);
     Gfx_DrawPrimitiveTL(GFX_TRIANGLESTRIP, v, 4);
     Gfx_EndScene();
-    Gfx_PresentStretched(TRUE);
+    if (stretch)
+        Gfx_PresentStretched(TRUE);
+    else
+        Gfx_Present(TRUE);
     Gfx_PopState();
     if (!movie->started && movie->decodedCurrent) {
         movie->startTicks = Sys_GetTicks();
