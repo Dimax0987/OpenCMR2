@@ -3084,15 +3084,30 @@ void GameMenu_SetupStageResults(int param_1)
     bVar1 = 0;
     if (Race_GetStateByte() != 0xff)
         StageObject_AddCarSoundTimeSeconds((char)Race_GetStateByte(), 0xb4);
-    sprintf(g_ghostName, CGameInfo::GetGameInfoFieldA4Address()->rallyStageRecordTimes[
-                 (RallyDataCountryIndex() & 0xff) * 11 + (RallyDataStageIndex() & 0xff)].ident);
+    // The stage records cover the eight rally countries (88 entries). The
+    // Rally Challenge runs in Japan (country 8), which has none: there the
+    // original reads the split times behind the records as the name, and with
+    // a profile that holds records writes tens of bytes into the four-byte
+    // g_ghostName, over g_unk0x00519ee4 and the chat characters.
+    // PORT: Japan has no stage record, so it has no ghost name or total. The
+    // original read the split times behind the records instead and, with a
+    // profile that holds records, wrote up to 53 bytes into g_ghostName: here
+    // over the menu colours and format strings next to it, which made the
+    // menus after a Rally Challenge misbehave and could crash on restarting.
+    const int record = (RallyDataCountryIndex() & 0xff) * 11 + (RallyDataStageIndex() & 0xff);
+    const int recordCount = sizeof(CGameInfo::GetGameInfoFieldA4Address()->rallyStageRecordTimes) /
+                            sizeof(CGameInfo::GetGameInfoFieldA4Address()->rallyStageRecordTimes[0]);
+    if (record < recordCount)
+        sprintf(g_ghostName, CGameInfo::GetGameInfoFieldA4Address()->rallyStageRecordTimes[record].ident);
+    else
+        g_ghostName[0] = '\0';
     CGenericFileLoader::StrLowerPolish(g_ghostName);
     for (i = 0; i < 10; i++)
         g_ghostSplits[i] = Frontend_StoreSelectedDeviceOption(i);
     // The tenth split slot is the ghost's total from the stage record
     // (0x541adc lies inside g_ghostSplits).
-    g_ghostSplits[9] = CGameInfo::GetGameInfoFieldA4Address()->rallyStageRecordTimes[
-                           (RallyDataCountryIndex() & 0xff) * 11 + (RallyDataStageIndex() & 0xff)].value >> 7 & 0xffff;
+    g_ghostSplits[9] = record < recordCount ?
+        CGameInfo::GetGameInfoFieldA4Address()->rallyStageRecordTimes[record].value >> 7 & 0xffff : 0;
     if ((char)param_1 == 0)
         CGameInfo::SetInputAndGamePaused(1);
     Menu_QueueDefaultAction();

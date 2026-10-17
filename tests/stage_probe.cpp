@@ -69,6 +69,8 @@ extern void GameInfo_ApplyCheatsForGameMode();
 extern char *Race_GetStagePathBuffer38340();
 extern void SavedGames_LoadRecords();
 extern int SavedGames_GetCount();
+extern char g_winnerFormat[];
+extern char g_ghostName[4];
 
 static DWORD virtualTime = 1000;
 static DWORD Ticks() { return virtualTime; }
@@ -87,6 +89,7 @@ struct Probe : Diagnostics::TimingObserver {
     bool scenarioCorrect = true;
     bool playbackCorrect = true;
     bool finishInjected = false;
+    bool leftRace = false;      // a state other than driving after the finish
     unsigned nextStageDrivingTicks = 0;
     BYTE state = 0;
     explicit Probe(FILE *file, unsigned count) : trace(file), target(count) {
@@ -130,7 +133,12 @@ struct Probe : Diagnostics::TimingObserver {
     void BeginTick(unsigned char value) override {
         TimingObserver::BeginTick(value);
         state = value;
-        if (finishInjected && value == 8 && RallyDataCountryIndex() == 0 && RallyDataStageIndex() == 1) {
+        // OPENCMR2_PROBE_RESTART: the race after the finish is the same stage
+        // again (Restart in the results menu), not Finland stage 2.
+        if (finishInjected && value != 8)
+            leftRace = true;
+        if (finishInjected && value == 8 &&
+            (getenv("OPENCMR2_PROBE_RESTART") ? leftRace : RallyDataCountryIndex() == 0 && RallyDataStageIndex() == 1)) {
             if (!nextStageDrivingTicks) fprintf(stderr, "probe: Finland stage 2 driving at tick %u\n", tick);
             ++nextStageDrivingTicks;
         }
@@ -455,6 +463,11 @@ int main(int argc, char **argv) {
     DWORD serviceOrigin = 0;
     bool mapOpening = false, mapExpanded = false;
     bool sessionSaved = false;
+    const unsigned resultsPresses = getenv("OPENCMR2_PROBE_RESULTS_PRESSES") ? unsigned(atoi(getenv("OPENCMR2_PROBE_RESULTS_PRESSES"))) : 0;
+    unsigned pressesDone = 0, pressMoves = 0;
+    DWORD pressAt = 0;
+    bool pressDown = false;
+    int pressCursor = -1;
     const char *lanRole = getenv("OPENCMR2_PROBE_LAN_ROLE");
     const Uint64 lanOrigin = SDL_GetTicks();
     bool lanReady = false;
@@ -495,6 +508,14 @@ int main(int argc, char **argv) {
         if (getenv("OPENCMR2_PROBE_HEADLIGHT_CHEAT") && CGameInfo::GetConfiguredGameMode() == 5) {
             GameInfo_SetConfiguredCheat(0, 1);
             GameInfo_ApplyCheatsForGameMode();
+        }
+        // A profile that has played: every stage record holds split times
+        // (the challenge reads one past them, for Japan, as a ghost name).
+        if (mode != 3 && getenv("OPENCMR2_PROBE_STAGE_RECORDS")) {
+            auto *records = CGameInfo::GetGameInfoFieldA4Address();
+            for (int r = 0; r < 88; r++)
+                for (int split = 0; split < 10; split++)
+                    records->rallyStageRecordSplits[r][split] = short(0x1a2b + r * 37 + split * 401);
         }
         // The car detail setting (0 high, 2 low: the original's first-run
         // default, which its reference captures used).
@@ -556,6 +577,22 @@ int main(int argc, char **argv) {
                             lanReady = true;
                         }
             }
+            // OPENCMR2_PROBE_RESULTS_PRESSES=N: in the results menu after the
+            // finish, press Down N times (80 ms each, 160 ms apart) instead
+            // of Enter, and count how often the cursor moved.
+            if (resultsPresses && mode == 3 && probe.finishInjected && menu && menu->itemCount == 2 &&
+                pressesDone <= resultsPresses) {
+                if (!pressAt) { pressAt = virtualTime + 200; pressCursor = menu->cursor; }
+                if (menu->cursor != pressCursor) { ++pressMoves; pressCursor = menu->cursor; }
+                if (pressesDone < resultsPresses && virtualTime >= pressAt) {
+                    if (!pressDown) { pressDown = true; ++pressesDone; }
+                    if (virtualTime < pressAt + 80) keys[INPUT_KEY_DOWN] = 0x80;
+                    else { pressDown = false; pressAt += 160; }
+                } else if (pressesDone == resultsPresses && virtualTime >= pressAt + 80) {
+                    fprintf(stderr, "probe: results menu %u presses, %u moves\n", pressesDone, pressMoves);
+                    ++pressesDone;
+                }
+            } else
             if ((frame % 12 == 6 || !menu) && !(holdMap && mapOpening) && !holdLobby) {
                 keys[INPUT_KEY_RETURN] = 0x80;
                 // Blocking movie playback consumes SDL events itself.
@@ -582,7 +619,12 @@ int main(int argc, char **argv) {
     if (!probe.Write((std::string(argv[2]) + ".frames.csv").c_str())) return 1;
     const bool ok = probe.tick == ticks && probe.drivingTick > 0 && probe.scenarioCorrect && probe.playbackCorrect && !ferror(file) &&
         (!getenv("OPENCMR2_PROBE_EXPAND_MAP") || mapExpanded) &&
-        (!getenv("OPENCMR2_PROBE_FINISH_AT_TICK") || (probe.finishInjected && probe.nextStageDrivingTicks >= 100));
+        (!getenv("OPENCMR2_PROBE_FINISH_AT_TICK") || (probe.finishInjected &&
+            (resultsPresses ? pressesDone > resultsPresses : probe.nextStageDrivingTicks >= 100))) &&
+        strcmp(g_winnerFormat, "%s, %s") == 0 && strlen(g_ghostName) < sizeof(g_ghostName);
+    // The results menus' data after the ghost name must survive the results.
+    if (strcmp(g_winnerFormat, "%s, %s") != 0 || strlen(g_ghostName) >= sizeof(g_ghostName))
+        fprintf(stderr, "probe: results menu data overwritten (ghost name %zu bytes)\n", strlen(g_ghostName));
     if (probe.finishInjected) fprintf(stderr, "probe: Finland stage 2 driving ticks=%u\n", probe.nextStageDrivingTicks);
     fprintf(stderr, "probe: RNG changed in %u race frames without a simulation step\n", probe.renderOnlyRngChanges);
     fprintf(stderr, "probe: %u ticks, %u driving ticks, %u ms; %s\n", probe.tick, probe.drivingTick, virtualTime, ok ? "complete" : "FAILED");

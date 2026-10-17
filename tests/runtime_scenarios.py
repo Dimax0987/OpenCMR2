@@ -78,6 +78,33 @@ for side, clock in [('a', 100000), ('b', 101000)]:
         'OPENCMR2_PROBE_RACE_CLOCK': str(clock),
         'OPENCMR2_PROBE_OPPONENT': '1',
     })
+# The results of a Rally Challenge race with a profile that holds stage
+# records, then Restart: the challenge's ghost name came from past the records.
+SCENARIOS['rally-challenge-results-restart'] = (1500, {
+    'OPENCMR2_PROBE_CURSORS': '88:4',
+    'OPENCMR2_PROBE_EXPECT_CARS': '2',
+    'OPENCMR2_PROBE_EXPECT_COUNTRY': '8',
+    'OPENCMR2_PROBE_EXPECT_STAGE': '10',
+    'OPENCMR2_PROBE_EXPECT_MODE': '4',
+    'OPENCMR2_PROBE_UNLOCK_TRACKS': '1',
+    'OPENCMR2_PROBE_STAGE_RECORDS': '1',
+    'OPENCMR2_PROBE_FINISH_AT_TICK': '400',
+    'OPENCMR2_PROBE_RESTART': '1',
+})
+# The results menu after a Rally Challenge race: every Down press must move
+# its cursor (presses read on the opponent's steps alone were lost). At 60 FPS,
+# where the original lost about a third of them.
+SCENARIOS['rally-challenge-results-menu'] = (1100, {
+    'OPENCMR2_PROBE_CURSORS': '88:4',
+    'OPENCMR2_PROBE_EXPECT_CARS': '2',
+    'OPENCMR2_PROBE_EXPECT_COUNTRY': '8',
+    'OPENCMR2_PROBE_EXPECT_STAGE': '10',
+    'OPENCMR2_PROBE_EXPECT_MODE': '4',
+    'OPENCMR2_PROBE_UNLOCK_TRACKS': '1',
+    'OPENCMR2_PROBE_FINISH_AT_TICK': '400',
+    'OPENCMR2_PROBE_RESULTS_PRESSES': '30',
+    'fps': '60',
+})
 # Every car of the selection menu (51) with the all-cars cheat; the bonus cars
 # index tables past the six championship teams.
 for car, name in [(12, 'lancia-integrale'), (20, 'ford-puma'), (21, 'ford-escort')]:
@@ -145,10 +172,12 @@ def verify(probe, data, output, cpu_runs=False):
                    SDL_AUDIODRIVER='dummy', XDG_DATA_HOME=str(run / 'user'))
         if name == 'saved-game-load':
             env['XDG_DATA_HOME'] = str(output / 'saved-game-create' / 'user')
+        settings = dict(settings)
+        fps = settings.pop('fps', '30')
         env.update(settings)
         log_path = run / 'run.log'
         with log_path.open('w') as log:
-            subprocess.run([str(probe), str(data), str(run / 'trace.jsonl'), '30', str(count)],
+            subprocess.run([str(probe), str(data), str(run / 'trace.jsonl'), fps, str(count)],
                            env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)
         log = log_path.read_text(encoding='latin-1')
         if not re.search(rf'probe: {count} ticks, [1-9][0-9]* driving ticks, .*; complete', log):
@@ -171,6 +200,11 @@ def verify(probe, data, output, cpu_runs=False):
             report[name]['next_stage_driving_ticks'] = int(match[1])
         if name == 'recorded-replay':
             report[name]['replay'] = verify_replay(log)
+        if 'OPENCMR2_PROBE_RESULTS_PRESSES' in settings:
+            match = re.search(r'probe: results menu (\d+) presses, (\d+) moves', log)
+            if not match or match[1] != settings['OPENCMR2_PROBE_RESULTS_PRESSES'] or match[1] != match[2]:
+                raise ValueError(f'{name}: results menu presses lost: {match and match.group(0)}')
+            report[name]['results_menu_moves'] = int(match[2])
         if '-cpu-run-' in name:
             report[name]['cpu_run'] = verify_cpu_run(log, records)
         print(f'{name}: PASS ({count} ticks)', flush=True)

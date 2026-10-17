@@ -5209,6 +5209,35 @@ int Replay_StopRecording(BYTE *pBuffer);
 void WheelTrail_Update(int carIndex);
 void Dash_Update(int player);
 
+unsigned short Input_GetControllerSlotMapping(unsigned short slot);
+
+// PORT: presses of the devices the results menu reads (the keyboard record
+// and the player's joystick, see Input_MergeAssignedJoystickButtons) on steps
+// that do not update it, added to the next step that does.
+static void Race_KeepResultsMenuPresses(bool menuStep)
+{
+    static DWORD s_keyboard, s_joystick;
+    DeviceInfo *pKeyboard = CInput::GetAvailableDeviceRecord(0);
+    DeviceInfo *pJoystick = NULL;
+    short slot = (short)Input_GetControllerSlotMapping(0);
+
+    if (slot != 0 && slot != 1) {
+        pJoystick = CInput::GetAvailableDeviceRecord(slot);
+        if (pJoystick->field_0x0 != 0 && pJoystick->field_0x0 != 3)
+            pJoystick = NULL;
+    }
+    if (!menuStep) {
+        s_keyboard |= pKeyboard->field_0x8;
+        if (pJoystick != NULL)
+            s_joystick |= pJoystick->field_0x8;
+        return;
+    }
+    pKeyboard->field_0x8 |= s_keyboard;
+    if (pJoystick != NULL)
+        pJoystick->field_0x8 |= s_joystick;
+    s_keyboard = s_joystick = 0;
+}
+
 // Per-frame update of one player's race view: advances the race, the car
 // order, the dashboards and the replay recording. The car loop walks the whole
 // order but only the entrants below the player count are driven; each car's
@@ -5252,7 +5281,17 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
         if (Diagnostics::observer)
             Diagnostics::observer->BeginTick(param1);
         player = Car_Get(0)->simulationStepsRemaining > 0;
+        // Every step reads the devices, which keeps only the presses new since
+        // the last read, but the results menu is updated only on the player's
+        // steps: where the other cars run at another rate (the Rally Challenge
+        // and super special opponents), a press read on a step of theirs
+        // alone never reaches the menu. More of them are lost at higher frame
+        // rates.
         CInput::UpdateAllAvailableDevices();
+        // PORT: keep those presses for the menu: a third to a half of them
+        // did nothing at 60 to 144 FPS.
+        if (param2 != 0 && param1 == 10)
+            Race_KeepResultsMenuPresses(player != 0);
         if (player != 0) {
             g_unk0x00537f24++;
             if (param2 != 0 && param1 == 10)
