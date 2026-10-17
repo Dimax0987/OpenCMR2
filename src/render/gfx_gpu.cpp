@@ -328,6 +328,18 @@ struct Executor : GfxExecutor {
         SDL_EndGPUCopyPass(copy);
         SDL_SubmitGPUCommandBuffer(cmd);
         SDL_ReleaseGPUTransferBuffer(device, tb);
+
+        // The pipelines the game draws with (keys of PipelineKey: menus,
+        // stages, replays, results), made now: the first use of each could
+        // take a frame's time to compile when the driver has not cached it.
+        static const uint32_t common[] = {
+            0x001a0459, 0x001a045b, 0x001a04b9, 0x001a0cb8, 0x001a0cb9, 0x001a0cbb, 0x001a2458, 0x001a2cb8,
+            0x001a64b8, 0x001a6ca8, 0x001a6cb4, 0x001a6cb8, 0x000a2458, 0x000a2cb8, 0x000a6ca8, 0x000a6cb8,
+        };
+        for (uint32_t key : common)
+            Pipeline(key);
+        for (int clear = 1; clear < 4; clear++)
+            ClearPipeline((clear & 1) != 0, (clear & 2) != 0);
         return true;
     }
 
@@ -572,24 +584,32 @@ struct Executor : GfxExecutor {
 
     // ---- pipelines and samplers ----
 
-    SDL_GPUGraphicsPipeline *Pipeline(const GfxCommand &cmd, const GfxDrawState &s)
+    // A draw's pipeline: everything of it the state can change.
+    static uint32_t PipelineKey(const GfxCommand &cmd, const GfxDrawState &s)
     {
         bool depthTest = s.depthTest;
-        uint32_t key = (cmd.transformed ? 1u : 0u) | (uint32_t)(cmd.primitive & 7) << 1 |
-                       (s.alphaBlend ? 1u : 0u) << 4 | (uint32_t)(s.srcBlend & 15) << 5 |
-                       (uint32_t)(s.destBlend & 15) << 9 | (depthTest ? 1u : 0u) << 13 |
-                       ((depthTest && s.depthWrite) ? 1u : 0u) << 14 | (uint32_t)(s.depthFunc & 15) << 15 |
-                       (uint32_t)(s.cull & 3) << 19;
+        return (cmd.transformed ? 1u : 0u) | (uint32_t)(cmd.primitive & 7) << 1 | (s.alphaBlend ? 1u : 0u) << 4 |
+               (uint32_t)(s.srcBlend & 15) << 5 | (uint32_t)(s.destBlend & 15) << 9 | (depthTest ? 1u : 0u) << 13 |
+               ((depthTest && s.depthWrite) ? 1u : 0u) << 14 | (uint32_t)(s.depthFunc & 15) << 15 |
+               (uint32_t)(s.cull & 3) << 19;
+    }
+
+    SDL_GPUGraphicsPipeline *Pipeline(uint32_t key)
+    {
         auto it = pipelines.find(key);
         if (it != pipelines.end())
             return it->second;
+        bool transformed = (key & 1) != 0, alphaBlend = (key >> 4 & 1) != 0, depthTest = (key >> 13 & 1) != 0;
+        bool depthWrite = (key >> 14 & 1) != 0;
+        int primitive = key >> 1 & 7, srcBlend = key >> 5 & 15, destBlend = key >> 9 & 15, depthFunc = key >> 15 & 15;
+        int cull = key >> 19 & 3;
 
         SDL_GPUVertexBufferDescription vb = {};
         vb.slot = 0;
         vb.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
         SDL_GPUVertexAttribute attrs[6] = {};
         int attrCount;
-        if (cmd.transformed) {
+        if (transformed) {
             vb.pitch = sizeof(GfxTLVertex);
             attrs[0] = { 0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, 0 };
             attrs[1] = { 1, 0, SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM, 16 };
@@ -609,33 +629,33 @@ struct Executor : GfxExecutor {
 
         SDL_GPUColorTargetDescription color = {};
         color.format = colorFormat;
-        color.blend_state.enable_blend = s.alphaBlend;
-        color.blend_state.src_color_blendfactor = BlendFactor(s.srcBlend);
-        color.blend_state.dst_color_blendfactor = BlendFactor(s.destBlend);
+        color.blend_state.enable_blend = alphaBlend;
+        color.blend_state.src_color_blendfactor = BlendFactor(srcBlend);
+        color.blend_state.dst_color_blendfactor = BlendFactor(destBlend);
         color.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
-        color.blend_state.src_alpha_blendfactor = BlendFactor(s.srcBlend);
-        color.blend_state.dst_alpha_blendfactor = BlendFactor(s.destBlend);
+        color.blend_state.src_alpha_blendfactor = BlendFactor(srcBlend);
+        color.blend_state.dst_alpha_blendfactor = BlendFactor(destBlend);
         color.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
 
         SDL_GPUGraphicsPipelineCreateInfo info = {};
-        info.vertex_shader = cmd.transformed ? vsTL : vs3d;
+        info.vertex_shader = transformed ? vsTL : vs3d;
         info.fragment_shader = fs;
         info.vertex_input_state.vertex_buffer_descriptions = &vb;
         info.vertex_input_state.num_vertex_buffers = 1;
         info.vertex_input_state.vertex_attributes = attrs;
         info.vertex_input_state.num_vertex_attributes = attrCount;
-        info.primitive_type = PrimitiveType(cmd.primitive);
+        info.primitive_type = PrimitiveType(primitive);
         info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
         // Direct3D's front faces are clockwise; CULL_CCW (its default)
         // removes the back faces.
         info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
-        info.rasterizer_state.cull_mode = s.cull == GFX_CULL_CW    ? SDL_GPU_CULLMODE_FRONT
-                                          : s.cull == GFX_CULL_CCW ? SDL_GPU_CULLMODE_BACK
+        info.rasterizer_state.cull_mode = cull == GFX_CULL_CW    ? SDL_GPU_CULLMODE_FRONT
+                                          : cull == GFX_CULL_CCW ? SDL_GPU_CULLMODE_BACK
                                                                    : SDL_GPU_CULLMODE_NONE;
         info.rasterizer_state.enable_depth_clip = true;
         info.depth_stencil_state.enable_depth_test = depthTest;
-        info.depth_stencil_state.enable_depth_write = depthTest && s.depthWrite;
-        info.depth_stencil_state.compare_op = CompareOp(s.depthFunc);
+        info.depth_stencil_state.enable_depth_write = depthTest && depthWrite;
+        info.depth_stencil_state.compare_op = CompareOp(depthFunc);
         info.target_info.color_target_descriptions = &color;
         info.target_info.num_color_targets = 1;
         info.target_info.depth_stencil_format = depthFormat;
@@ -969,7 +989,11 @@ struct Executor : GfxExecutor {
         b->gpu = NULL;
     }
 
-    SDL_GPURenderPass *BeginPass(SDL_GPUCommandBuffer *cmd, GfxTexture *target, int &w, int &h)
+    // Begins a pass on the target at commands[first]. Clears of the whole
+    // target there, before any draw, become the pass's load operations (the
+    // GPU's fast clears) instead of drawn quads; *cleared counts them.
+    SDL_GPURenderPass *BeginPass(SDL_GPUCommandBuffer *cmd, GfxTexture *target, int &w, int &h,
+                                 const std::vector<GfxCommand> &commands, size_t first, size_t *cleared)
     {
         SDL_GPUColorTargetInfo color = {};
         SDL_GPUDepthStencilTargetInfo depth = {};
@@ -992,6 +1016,24 @@ struct Executor : GfxExecutor {
             depth.texture = g->depth;
             w = root->width;
             h = root->height;
+        }
+        *cleared = 0;
+        for (size_t i = first; i < commands.size() && commands[i].type == GFX_CMD_CLEAR; i++) {
+            const GfxCommand &c = commands[i];
+            if (c.clearViewport.x != 0 || c.clearViewport.y != 0 || c.clearViewport.width != (DWORD)w ||
+                c.clearViewport.height != (DWORD)h)
+                break;
+            if (c.clearFlags & GFX_CLEAR_TARGET) {
+                float rgba[4];
+                Color(c.clearColor, rgba);
+                color.load_op = SDL_GPU_LOADOP_CLEAR;
+                color.clear_color = { rgba[0], rgba[1], rgba[2], rgba[3] };
+            }
+            if (c.clearFlags & GFX_CLEAR_ZBUFFER) {
+                depth.load_op = SDL_GPU_LOADOP_CLEAR;
+                depth.clear_depth = c.clearZ;
+            }
+            (*cleared)++;
         }
         return SDL_BeginGPURenderPass(cmd, &color, 1, &depth);
     }
@@ -1029,7 +1071,8 @@ struct Executor : GfxExecutor {
         int vertexUniformW = 0, vertexUniformH = 0;
         FragmentUniforms fragmentUniforms;
         bool fragmentUniformsSet = false;
-        for (const GfxCommand &c : frame.commands) {
+        for (size_t i = 0; i < frame.commands.size(); i++) {
+            const GfxCommand &c = frame.commands[i];
             if (c.type == GFX_CMD_TARGET) {
                 if (pass != NULL) {
                     SDL_EndGPURenderPass(pass);
@@ -1039,8 +1082,13 @@ struct Executor : GfxExecutor {
                 continue;
             }
             if (pass == NULL) {
-                pass = BeginPass(cmd, target, targetW, targetH);
+                size_t cleared;
+                pass = BeginPass(cmd, target, targetW, targetH, frame.commands, i, &cleared);
                 bound = PassBindings();
+                if (cleared > 0) {
+                    i += cleared - 1;
+                    continue;
+                }
             }
             if (c.type == GFX_CMD_CLEAR) {
                 bool colorClear = (c.clearFlags & GFX_CLEAR_TARGET) != 0;
@@ -1068,7 +1116,7 @@ struct Executor : GfxExecutor {
                 continue;
             }
             const GfxDrawState &s = frame.states[c.state];
-            SDL_GPUGraphicsPipeline *pipeline = Pipeline(c, s);
+            SDL_GPUGraphicsPipeline *pipeline = Pipeline(PipelineKey(c, s));
             if (pipeline == NULL)
                 continue;
             if (pipeline != bound.pipeline) {
