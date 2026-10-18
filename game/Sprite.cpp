@@ -7,6 +7,7 @@
 #include "port/sys.h"
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 Sprite g_spriteLayer1[SPRITE_LAYER_MAX];
 Sprite g_spriteLayer2[SPRITE_LAYER_MAX];
@@ -45,6 +46,16 @@ GfxTLVertex g_spriteVerts3[1024 * 4];
 
 void Graphics_InvalidateTextureStageCache(void);
 
+// PORT: whether scaled-up sprites and text are filtered smoothly ([video]
+// hud_filter = smooth, the default) rather than kept in square texels.
+static int Sprite_SmoothScaling(void)
+{
+    static int smooth = -1;
+    if (smooth < 0)
+        smooth = strcmp(Sys_GetOptionText("video.hud_filter", "smooth"), "sharp") != 0;
+    return smooth;
+}
+
 #define SPRITE_VERTEX(v, px, py, u, vv)                                             \
     (v)->sx = (float)(px);                                                          \
     (v)->sy = (float)(py);                                                          \
@@ -76,6 +87,7 @@ void Sprite_DrawLayer(int layer)
     unsigned int n;
     float w, h;
     float u0, u1, v0, v1;
+    float x0, x1, y0, y1;
     float t;
     DWORD colour;
     int centre[3];
@@ -138,6 +150,26 @@ void Sprite_DrawLayer(int layer)
                 v1 += 0.5f / h;
             }
         }
+        // PORT: filtered smoothly, a scaled-up sprite reads its border texels
+        // from their centres, half a texel inside its quad, so the filter does
+        // not reach into the next sprite of the texture (the next letter of a
+        // font); the scale stays the same.
+        x0 = pSprite->dst.x;
+        x1 = pSprite->dst.x + pSprite->dst.w;
+        y0 = pSprite->dst.y;
+        y1 = pSprite->dst.y + pSprite->dst.h;
+        if (Sprite_SmoothScaling() && pSprite->src.w > 0 && pSprite->dst.w > pSprite->src.w) {
+            u0 = (pSprite->src.x + 0.5f) / w;
+            u1 = (pSprite->src.x + pSprite->src.w - 0.5f) / w;
+            x0 += 0.5f * pSprite->dst.w / pSprite->src.w;
+            x1 -= 0.5f * pSprite->dst.w / pSprite->src.w;
+        }
+        if (Sprite_SmoothScaling() && pSprite->src.h > 0 && pSprite->dst.h > pSprite->src.h) {
+            v0 = (pSprite->src.y + 0.5f) / h;
+            v1 = (pSprite->src.y + pSprite->src.h - 0.5f) / h;
+            y0 += 0.5f * pSprite->dst.h / pSprite->src.h;
+            y1 -= 0.5f * pSprite->dst.h / pSprite->src.h;
+        }
         if (pSprite->param & 5) {
             t = u0;
             u0 = u1;
@@ -157,13 +189,13 @@ void Sprite_DrawLayer(int layer)
         angle = pSprite->angle;
         if (angle != 0)
             FixMatrix_RotationZ(&rotation, angle);
-        SPRITE_VERTEX(pVert, pSprite->dst.x, pSprite->dst.y, u0, v0);
+        SPRITE_VERTEX(pVert, x0, y0, u0, v0);
         pVert++;
-        SPRITE_VERTEX(pVert, pSprite->dst.x + pSprite->dst.w, pSprite->dst.y, u1, v0);
+        SPRITE_VERTEX(pVert, x1, y0, u1, v0);
         pVert++;
-        SPRITE_VERTEX(pVert, pSprite->dst.x, pSprite->dst.y + pSprite->dst.h, u0, v1);
+        SPRITE_VERTEX(pVert, x0, y1, u0, v1);
         pVert++;
-        SPRITE_VERTEX(pVert, pSprite->dst.x + pSprite->dst.w, pSprite->dst.y + pSprite->dst.h, u1, v1);
+        SPRITE_VERTEX(pVert, x1, y1, u1, v1);
         pVert++;
         pSprite++;
     }

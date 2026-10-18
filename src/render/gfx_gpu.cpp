@@ -173,6 +173,7 @@ struct Executor : GfxExecutor {
     bool bcSupported = true;
     bool presentModeVsync = true;
     int anisotropy = 1, smoothScaling = 1;    // video.anisotropy, video.smooth_scaling
+    int spriteFilter = 2;                      // video.hud_filter: 1 sharp, 2 smooth
     Uint32 presentWidth = 0, presentHeight = 0; // the window's pixels, as last logged
     // The back buffer read of the last presented frame (the lens flare test):
     // it runs with that frame, and CollectReadback waits for it only when the
@@ -279,6 +280,7 @@ struct Executor : GfxExecutor {
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
         anisotropy = Platform_GetSettingInt("video.anisotropy", 1);
         smoothScaling = Platform_GetSettingInt("video.smooth_scaling", 1);
+        spriteFilter = strcmp(Platform_GetSetting("video.hud_filter", "smooth"), "sharp") == 0 ? 1 : 2;
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN, anisotropy > 1);
         device = SDL_CreateGPUDeviceWithProperties(props);
         SDL_DestroyProperties(props);
@@ -822,8 +824,9 @@ struct Executor : GfxExecutor {
 
     // A 2D texture drawn with point filtering and no mipmaps (the game's
     // sprites, text and HUD). Scaled up, nearest texels would come out one or
-    // two pixels wide; the shader keeps them square and blends only across
-    // their edges, through a linear sampler. Elsewhere it reads them as the
+    // two pixels wide; the shader filters them smoothly (video.hud_filter =
+    // smooth) or keeps them square, blending only across their edges
+    // (sharp), through a linear sampler. Elsewhere it reads them as the
     // point filter does.
     bool SharpPoint(const GfxStageState &stage)
     {
@@ -841,7 +844,7 @@ struct Executor : GfxExecutor {
         u.stage0b[0] = a.alphaArg1;
         u.stage0b[1] = a.alphaArg2;
         u.stage0b[2] = TextureKind(a);
-        u.stage0b[3] = SharpPoint(a);
+        u.stage0b[3] = SharpPoint(a) ? spriteFilter : 0;
         u.stage1[0] = b.colorOp;
         u.stage1[1] = b.colorArg1;
         u.stage1[2] = b.colorArg2;
@@ -849,7 +852,7 @@ struct Executor : GfxExecutor {
         u.stage1b[0] = b.alphaArg1;
         u.stage1b[1] = b.alphaArg2;
         u.stage1b[2] = TextureKind(b);
-        u.stage1b[3] = SharpPoint(b);
+        u.stage1b[3] = SharpPoint(b) ? spriteFilter : 0;
         Color(s.textureFactor, u.textureFactor);
         u.alphaTest[0] = s.alphaTest;
         u.alphaTest[1] = s.alphaFunc;

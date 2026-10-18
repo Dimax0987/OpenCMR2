@@ -16,7 +16,7 @@ layout(set = 2, binding = 3) uniform samplerCube cube1;
 
 layout(std140, set = 3, binding = 0) uniform FragmentUniforms {
     ivec4 stage0;       // colour op, colour arg1, colour arg2, alpha op
-    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump), sharp point
+    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump), scaled point filter
     ivec4 stage1;
     ivec4 stage1b;
     vec4 textureFactor;
@@ -68,27 +68,28 @@ vec4 Op(int op, vec4 a, vec4 b)
 }
 
 // A point-filtered texture through a linear sampler: where it is scaled up,
-// each texel stays square and only its edges blend over about a pixel;
-// elsewhere the nearest texel, as the point filter reads it.
-vec4 SampleSharp(sampler2D t2, vec2 uv)
+// filtered smoothly (mode 2), or with each texel kept square and only its
+// edges blended over about a pixel (mode 1); elsewhere the nearest texel, as
+// the point filter reads it.
+vec4 SampleScaledPoint(sampler2D t2, vec2 uv, int mode)
 {
     vec2 size = vec2(textureSize(t2, 0));
     vec2 t = uv * size;
     vec2 d = fwidth(t);
     vec2 seam = floor(t + 0.5);
-    vec2 sharp = seam + clamp((t - seam) / max(d, vec2(1e-5)), -0.5, 0.5);
-    t = mix(floor(t) + 0.5, sharp, lessThan(d, vec2(0.99)));
+    vec2 scaled = mode == 2 ? t : seam + clamp((t - seam) / max(d, vec2(1e-5)), -0.5, 0.5);
+    t = mix(floor(t) + 0.5, scaled, lessThan(d, vec2(0.99)));
     return textureLod(t2, t / size, 0.0);
 }
 
-vec4 Sample(int kind, bool sharp, sampler2D t2, samplerCube tc, vec4 coord)
+vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, vec4 coord)
 {
     if (kind == 2)
         return texture(tc, coord.xyz);
     if (kind == 0)
         return vec4(1.0);
-    if (sharp)
-        return SampleSharp(t2, coord.xy);
+    if (scaledPoint != 0)
+        return SampleScaledPoint(t2, coord.xy, scaledPoint);
     return texture(t2, coord.xy);
 }
 
@@ -127,7 +128,7 @@ void main()
             if (stage0.x == TOP_BUMPENVMAPLUMINANCE)
                 luminance = clamp(bump.b * bumpLuminance.x + bumpLuminance.y, 0.0, 1.0);
         } else {
-            vec4 texel = Sample(stage0b.z, stage0b.w != 0, tex0, cube0, inTex0);
+            vec4 texel = Sample(stage0b.z, stage0b.w, tex0, cube0, inTex0);
             vec4 color = Op(stage0.x, Arg(stage0.y, current, texel), Arg(stage0.z, current, texel));
             float alpha = stage0.w == TOP_DISABLE ? current.a
                                                   : Op(stage0.w, Arg(stage0b.x, current, texel), Arg(stage0b.y, current, texel)).a;
@@ -136,7 +137,7 @@ void main()
         // Stage 1.
         if (stage1.x != TOP_DISABLE) {
             vec4 coord = inTex1 + vec4(bumpOffset, 0.0, 0.0);
-            vec4 texel = Sample(stage1b.z, stage1b.w != 0, tex1, cube1, coord);
+            vec4 texel = Sample(stage1b.z, stage1b.w, tex1, cube1, coord);
             texel.rgb *= luminance;
             vec4 color = Op(stage1.x, Arg(stage1.y, current, texel), Arg(stage1.z, current, texel));
             float alpha = stage1.w == TOP_DISABLE ? current.a
