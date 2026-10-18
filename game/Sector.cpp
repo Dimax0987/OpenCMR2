@@ -632,6 +632,8 @@ void Sector_CullGridAroundViewNode(SceneNode *pNode, void *pRect)
     int tri[6];
     short iSector;
     int radius;
+    int halfWidth;
+    int projection;
     int spread;
     int rem;
     int quo;
@@ -649,12 +651,24 @@ void Sector_CullGridAroundViewNode(SceneNode *pNode, void *pRect)
     int fz;
 
     radius = CGraphics::m_farPlaneFixed;
+    // PORT: the triangle's sides are at 45 degrees to the view, the
+    // original's 90-degree horizontal view. Wider views (screens wider than
+    // 4:3, which keep the vertical view, a wider field of view, a split
+    // screen) show past them: trees and banners near the edges went missing
+    // on 21:9. The sides open to the view's own half-angle, whose tangent is
+    // 1 / the projection's _11, set for the view culled (negative for the
+    // mirrored view), here in 16.16 as SetProjection keeps it; narrower views
+    // keep the original's triangle.
+    halfWidth = radius;
+    projection = abs((int)FTOI(__int64, X87S_MUL(CGraphics::m_projection11, CGraphics::m_65536)));
+    if (projection > 0 && projection < 0x10000)
+        halfWidth = FixDiv(radius, projection);
     memset(g_sectorVisibleBits, 0, sizeof(g_sectorVisibleBits));
     g_sectorCullEnabled = 0;
     pos.y = 0;
     pos.x = pNode->world.position.x;
     pos.z = pNode->world.position.z;
-    spread = FixMulShift32(radius, g_sectorScale);
+    spread = FixMulShift32(halfWidth, g_sectorScale);
     iSector = (short)Sector_FromPosition(&pos);
     rem = iSector % g_sectorsPerRow;
     quo = iSector / g_sectorsPerRow;
@@ -685,8 +699,8 @@ void Sector_CullGridAroundViewNode(SceneNode *pNode, void *pRect)
     tri[1] = pNode->world.position.z;
     ex = FixMul(pos.x, radius);
     ez = FixMul(pos.z, radius);
-    fz = FixMul(pos.z, FixMul(radius, 0x10000));
-    fx = -FixMul(pos.x, FixMul(radius, 0x10000));
+    fz = FixMul(pos.z, FixMul(halfWidth, 0x10000));
+    fx = -FixMul(pos.x, FixMul(halfWidth, 0x10000));
     tri[4] = tri[0] + fz + ex;
     tri[5] = tri[1] + fx + ez;
     tri[2] = tri[0] - fz + ex;
