@@ -820,6 +820,16 @@ struct Executor : GfxExecutor {
         return 1;
     }
 
+    // A 2D texture drawn with point filtering and no mipmaps (the game's
+    // sprites, text and HUD). Scaled up, nearest texels would come out one or
+    // two pixels wide; the shader keeps them square and blends only across
+    // their edges, through a linear sampler. Elsewhere it reads them as the
+    // point filter does.
+    bool SharpPoint(const GfxStageState &stage)
+    {
+        return TextureKind(stage) == 1 && stage.magFilter == GFX_FILTER_POINT && stage.mipFilter == GFX_MIPFILTER_NONE;
+    }
+
     void FillFragmentUniforms(const GfxDrawState &s, FragmentUniforms &u)
     {
         memset(&u, 0, sizeof(u));
@@ -831,6 +841,7 @@ struct Executor : GfxExecutor {
         u.stage0b[0] = a.alphaArg1;
         u.stage0b[1] = a.alphaArg2;
         u.stage0b[2] = TextureKind(a);
+        u.stage0b[3] = SharpPoint(a);
         u.stage1[0] = b.colorOp;
         u.stage1[1] = b.colorArg1;
         u.stage1[2] = b.colorArg2;
@@ -838,6 +849,7 @@ struct Executor : GfxExecutor {
         u.stage1b[0] = b.alphaArg1;
         u.stage1b[1] = b.alphaArg2;
         u.stage1b[2] = TextureKind(b);
+        u.stage1b[3] = SharpPoint(b);
         Color(s.textureFactor, u.textureFactor);
         u.alphaTest[0] = s.alphaTest;
         u.alphaTest[1] = s.alphaFunc;
@@ -861,7 +873,10 @@ struct Executor : GfxExecutor {
             if (t != NULL && t->cube != NULL)
                 t = t->cube;
             GpuTexture *g = t != NULL ? Ensure(t) : NULL;
-            SDL_GPUSampler *sampler = Sampler(stage);
+            GfxStageState sampled = stage;
+            if (SharpPoint(stage))
+                sampled.minFilter = sampled.magFilter = GFX_FILTER_LINEAR;
+            SDL_GPUSampler *sampler = Sampler(sampled);
             bool cube = t != NULL && (t->flags & GFX_TEXTURE_CUBE);
             SDL_GPUTexture *texture = g != NULL ? g->texture : NULL;
             bindings[i * 2] = { (texture != NULL && !cube) ? texture : white2D, sampler };

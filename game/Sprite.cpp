@@ -121,10 +121,22 @@ void Sprite_DrawLayer(int layer)
         v0 = X87S_DIV((float)pSprite->src.y, h);
         v1 = X87S_DIV(X87S_FILD(float, (pSprite->src.y + pSprite->src.h)), h);
         if (CGraphics::GetSelectedDisplayDriverIndex() == 0) {
-            u0 += 0.5f / w;
-            u1 += 0.5f / w;
-            v0 += 0.5f / h;
-            v1 += 0.5f / h;
+            // PORT: half a pixel of the screen, to read texel centres; that
+            // is half a texel only when the sprite keeps its size.
+            if (pSprite->dst.w != pSprite->src.w && pSprite->dst.w != 0) {
+                u0 += 0.5f / w * pSprite->src.w / pSprite->dst.w;
+                u1 += 0.5f / w * pSprite->src.w / pSprite->dst.w;
+            } else {
+                u0 += 0.5f / w;
+                u1 += 0.5f / w;
+            }
+            if (pSprite->dst.h != pSprite->src.h && pSprite->dst.h != 0) {
+                v0 += 0.5f / h * pSprite->src.h / pSprite->dst.h;
+                v1 += 0.5f / h * pSprite->src.h / pSprite->dst.h;
+            } else {
+                v0 += 0.5f / h;
+                v1 += 0.5f / h;
+            }
         }
         if (pSprite->param & 5) {
             t = u0;
