@@ -1813,7 +1813,9 @@ KnockoutMatch *g_pKnockoutMatch;
 // FUNCTION: CMR2 0x004529c0
 void GameMenu_DrawKnockoutMatchResult(Menu *pMenu)
 {
-    char name[4];
+    // PORT: the original prints the driver's name into four bytes of its
+    // stack; the computer drivers' names ("A. DRIVER") run past them.
+    char name[64];
     unsigned int *pState;
     int x;
     int y;
@@ -1825,9 +1827,9 @@ void GameMenu_DrawKnockoutMatchResult(Menu *pMenu)
     if (Knockout_HasHumanLostMatch(g_pKnockoutMatch)) {
         Font_DrawText(2, CFrontend::GetTextString(0x49), x, y, (int *)g_menuFrameColour, 0x11);
         if (g_pKnockoutMatch->time1 <= g_pKnockoutMatch->time2)
-            sprintf(name, (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + (g_pKnockoutMatch->flags & 0x1f)));
+            snprintf(name, sizeof(name), (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + (g_pKnockoutMatch->flags & 0x1f)));
         else
-            sprintf(name, (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + ((g_pKnockoutMatch->flags >> 5) & 0x1f)));
+            snprintf(name, sizeof(name), (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + ((g_pKnockoutMatch->flags >> 5) & 0x1f)));
         if ((*pState & 0x38) >= 0x20)
             sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(0x7d), name);
         else
@@ -1836,7 +1838,7 @@ void GameMenu_DrawKnockoutMatchResult(Menu *pMenu)
         Font_DrawText(0, CFrontend::m_stringDest, x, (int)(g_pGraphics->resY * 5) / 480 + (y + Font_GetLineHeight(0)),
                       (int *)g_menuFrameColour, 0x11);
     } else {
-        sprintf(name, (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + (g_pKnockoutMatch->flags & 0x1f)));
+        snprintf(name, sizeof(name), (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + (g_pKnockoutMatch->flags & 0x1f)));
         sprintf(CFrontend::m_stringDest, g_keypadFormat, CFrontend::GetTextString(0x88), name);
         Font_DrawText(2, CFrontend::m_stringDest, x, y, (int *)g_menuFrameColour, 0x11);
         if ((*pState & 0x38) < 0x20 && (*pState & 7) != 1)

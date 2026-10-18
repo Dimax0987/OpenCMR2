@@ -10005,7 +10005,10 @@ void FrontendMenu_DrawProfileRenameEntry(Menu *pMenu)
 void FrontendMenu_DrawSavedStageSelection(Menu *pMenu)
 {
     short rect[4];
-    char name[4];
+    // PORT: the original copies the driver's name into four bytes of its
+    // stack, past which a longer name ran over other locals; here it reached
+    // the return address.
+    char name[64];
     char *text[2];
     int *pColour;
     int baseY;
@@ -10019,7 +10022,8 @@ void FrontendMenu_DrawSavedStageSelection(Menu *pMenu)
     FrontendDraw_PlayTime();
     sprintf(g_str0x008188a4, CFrontend::GetTextString(0xdc),
             (CGameInfo::GetConfiguredPlayerCount() & 0xff) - FrontendProfile_GetPlayersRemaining());
-    strcpy(name, (char *)RallyData_GetRecord(CGameInfo::GetConfiguredPlayerCount() - 1 - FrontendProfile_GetPlayersRemaining()));
+    snprintf(name, sizeof(name), "%s",
+             (char *)RallyData_GetRecord(CGameInfo::GetConfiguredPlayerCount() - 1 - FrontendProfile_GetPlayersRemaining()));
     text[0] = g_str0x008188a4;
     text[1] = name;
     FrontendDraw_MenuPath(pMenu, PATH_X(), PATH_Y(), 1, 3, text, 2);
