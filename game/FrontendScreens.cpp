@@ -11099,13 +11099,17 @@ void FrontendMenu_DrawGraphicsOptions(Menu *pMenu)
                 Font_DrawText(1, CFrontend::m_stringDest, (int)(g_pGraphics->resX * 0x7a) / 640,
                               (int)(g_pGraphics->resY * 0x18) / 480 + g_unk0x008189a8[1], (int *)pColour, 0x11);
                 break;
-            case 3:
+            case 3: {
+                // PORT: the display's size, not that of the menus' screen.
+                int displayX, displayY;
+                MenuScreen_GetDisplaySize(&displayX, &displayY);
                 sprintf(CFrontend::m_stringDest,
-                        CInput::FormatString(g_strResModeFormat, CFrontend::GetTextString(0x1d1), g_pGraphics->resX,
-                                             g_pGraphics->resY, g_pGraphics->depth));
+                        CInput::FormatString(g_strResModeFormat, CFrontend::GetTextString(0x1d1), displayX,
+                                             displayY, g_pGraphics->depth));
                 Font_DrawText(1, CFrontend::m_stringDest, (int)(g_pGraphics->resX * 0x7a) / 640,
                               (int)(g_pGraphics->resY * 0x18) / 480 + g_unk0x008189a8[1], (int *)pColour, 0x11);
                 break;
+            }
             case 4:
                 strcpy(CFrontend::m_stringDest, CFrontend::GetTextString(0x1d2));
                 Font_DrawText(1, CFrontend::m_stringDest, (int)(g_pGraphics->resX * 0x7a) / 640,

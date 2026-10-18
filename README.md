@@ -144,8 +144,8 @@ It is created with comments on first launch.
 | `[video] run_in_background` | `0` | Keep running when the window loses focus |
 | `[video] car_detail` | `1` | Every car with the model and textures of the player's car (`1`), or the original's lower detail for the other cars (`0`); applies with Car Detail set to High |
 | `[video] hud_scale` | `100` | Size of the in-race HUD in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
-| `[video] hud_filter` | `smooth` | How scaled-up text and HUD graphics are filtered: `smooth`, or `sharp` to keep their pixels square |
 | `[video] hud_aspect` | `16:9` | Widest shape the HUD spreads over, centred on wider screens: an aspect ratio such as `16:9` or `21:9`, or `full` for the whole screen |
+| `[video] menu_scale` | `100` | Size of the menus in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
 | `[video] vsync` | `1` | Wait for the display's refresh (`1`) or draw frames as soon as they are ready (`0`) |
 | `[video] window_scale` | `1` | Size of the window in multiples of the game's resolution, applied when leaving fullscreen |
 | `[video] smooth_scaling` | `1` | Smooth the picture when it is scaled to the window or screen (`1`), or keep sharp pixels (`0`) |

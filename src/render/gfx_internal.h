@@ -88,6 +88,7 @@ struct GfxDrawState {
     DWORD textureFactor = 0xffffffff;
     GfxStageState stages[2];
     GfxViewport viewport;
+    int screenW = 0, screenH = 0;   // Gfx_SetVirtualScreen (0: the back buffer's size)
 };
 
 enum GfxCommandType {
@@ -113,6 +114,7 @@ struct GfxCommand {
     DWORD clearColor;
     float clearZ;
     GfxViewport clearViewport;
+    int clearScreenW, clearScreenH; // the draw state's screenW, screenH
     // target
     GfxTexture *target;         // NULL: the back buffer
 };

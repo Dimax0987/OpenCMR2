@@ -4680,6 +4680,8 @@ void RallyData_RunChallengeLoadingScreen(int param1, char param2)
     BYTE colour[4];
     int i;
 
+    // PORT: the loading screen laid out for the screen's size, as the menus.
+    MenuScreen_Begin();
     rect[0] = 0;
     rect[1] = 0;
     rect[2] = *(short *)g_pGraphics;
@@ -4712,6 +4714,7 @@ void RallyData_RunChallengeLoadingScreen(int param1, char param2)
             RallyData_DrawLoadingProgress(0, 0, 0xff);
         } while (--i);
     }
+    MenuScreen_End();
 }
 
 // Advances one step of the current rally-data menu entry: grows the panel and
@@ -4921,6 +4924,9 @@ void RallyData_DrawLoadingProgress(int progress, char drawScene, BYTE alpha)
     colourLit[3] = alpha;
     if (RallyData_ShouldEndStageEarly() != 0)
         return;
+    // PORT: the loading screen laid out for the screen's size, as the menus.
+    if (drawScene)
+        MenuScreen_Begin();
     i = 0;
     limit = 100;
     do {
@@ -4946,6 +4952,7 @@ void RallyData_DrawLoadingProgress(int progress, char drawScene, BYTE alpha)
         rect[3] = (short)g_pGraphics->resY;
         Game_DrawSceneViewport(RallyData_GetChallengeRenderState(), g_unk0x00536be4, rect, 0, 0);
         Graphics_PresentFrameAndResetCounters();
+        MenuScreen_End();
     }
 }
 
@@ -8084,6 +8091,8 @@ void RallyData_DrawViewEndFrameOverlay(CallbackStateMachine *pKey, int view)
         }
     }
     if (pKey->records[view].bits.state < 8 && CGameInfo::GetConfiguredGameMode() != 4) {
+        // PORT: the loading screen fading out, laid out as the menus.
+        MenuScreen_BeginOverlay();
         now = CMain::GetFrameDelta();
         fadeRect[0] = 0;
         fadeRect[1] = 0;
@@ -8102,6 +8111,7 @@ void RallyData_DrawViewEndFrameOverlay(CallbackStateMachine *pKey, int view)
             RallyData_DrawFadedLoadingText((BYTE)alpha);
             RallyData_DrawLoadingProgress(100, 0, (BYTE)alpha);
         }
+        MenuScreen_EndOverlay();
     }
     g_viewScreenRect = RallyData_GetViewScreenRectangle(view);
     Game_DrawSceneViewport(RallyData_GetChallengeRenderState(), g_viewNodes[view], g_viewScreenRect, view, 1);

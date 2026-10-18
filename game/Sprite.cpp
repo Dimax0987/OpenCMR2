@@ -7,7 +7,6 @@
 #include "port/sys.h"
 #include <math.h>
 #include <stdio.h>
-#include <string.h>
 
 Sprite g_spriteLayer1[SPRITE_LAYER_MAX];
 Sprite g_spriteLayer2[SPRITE_LAYER_MAX];
@@ -46,15 +45,9 @@ GfxTLVertex g_spriteVerts3[1024 * 4];
 
 void Graphics_InvalidateTextureStageCache(void);
 
-// PORT: whether scaled-up sprites and text are filtered smoothly ([video]
-// hud_filter = smooth, the default) rather than kept in square texels.
-static int Sprite_SmoothScaling(void)
-{
-    static int smooth = -1;
-    if (smooth < 0)
-        smooth = strcmp(Sys_GetOptionText("video.hud_filter", "smooth"), "sharp") != 0;
-    return smooth;
-}
+// PORT: pixels of the back buffer per pixel of the screen the game draws in,
+// larger than 1 when the menus are scaled up (see MenuScreen_Begin).
+static float g_spriteScreenScale = 1.0f;
 
 #define SPRITE_VERTEX(v, px, py, u, vv)                                             \
     (v)->sx = (float)(px);                                                          \
@@ -150,25 +143,27 @@ void Sprite_DrawLayer(int layer)
                 v1 += 0.5f / h;
             }
         }
-        // PORT: filtered smoothly, a scaled-up sprite reads its border texels
-        // from their centres, half a texel inside its quad, so the filter does
-        // not reach into the next sprite of the texture (the next letter of a
-        // font); the scale stays the same.
+        // PORT: filtered smoothly, a sprite scaled up on the back buffer reads
+        // its border texels from their centres, half a texel inside its quad,
+        // so the filter does not reach into the next sprite of the texture
+        // (the next letter of a font); the scale stays the same. Pixel centres
+        // are on integer coordinates: the quad starts half a pixel before the
+        // centre of its first texel.
         x0 = pSprite->dst.x;
         x1 = pSprite->dst.x + pSprite->dst.w;
         y0 = pSprite->dst.y;
         y1 = pSprite->dst.y + pSprite->dst.h;
-        if (Sprite_SmoothScaling() && pSprite->src.w > 0 && pSprite->dst.w > pSprite->src.w) {
+        if (pSprite->src.w > 0 && pSprite->dst.w * g_spriteScreenScale > pSprite->src.w) {
             u0 = (pSprite->src.x + 0.5f) / w;
             u1 = (pSprite->src.x + pSprite->src.w - 0.5f) / w;
-            x0 += 0.5f * pSprite->dst.w / pSprite->src.w;
-            x1 -= 0.5f * pSprite->dst.w / pSprite->src.w;
+            x0 += 0.5f * pSprite->dst.w / pSprite->src.w - 0.5f;
+            x1 -= 0.5f * pSprite->dst.w / pSprite->src.w + 0.5f;
         }
-        if (Sprite_SmoothScaling() && pSprite->src.h > 0 && pSprite->dst.h > pSprite->src.h) {
+        if (pSprite->src.h > 0 && pSprite->dst.h * g_spriteScreenScale > pSprite->src.h) {
             v0 = (pSprite->src.y + 0.5f) / h;
             v1 = (pSprite->src.y + pSprite->src.h - 0.5f) / h;
-            y0 += 0.5f * pSprite->dst.h / pSprite->src.h;
-            y1 -= 0.5f * pSprite->dst.h / pSprite->src.h;
+            y0 += 0.5f * pSprite->dst.h / pSprite->src.h - 0.5f;
+            y1 -= 0.5f * pSprite->dst.h / pSprite->src.h + 0.5f;
         }
         if (pSprite->param & 5) {
             t = u0;
@@ -948,6 +943,14 @@ static void Hud_MarkQueues(void)
     }
 }
 
+// Whether the game uses its high-resolution textures and fonts, drawn for
+// 1024x768 rather than 640x480.
+static int Sprite_HighResolutionSet(void)
+{
+    return CGameInfo::GetScreenWidth() >= 0x400 && CFrontend::IsTextureWidthSupported(0x400) &&
+           CFrontend::IsTextureHeightSupported(0x400);
+}
+
 // Gives g_pGraphics the size of the HUD's 4:3 screen, keeping the real one.
 // Returns 0 when the HUD keeps the original's layout (hud_scale = 0).
 static int Hud_SetScreen(int *pResX, int *pResY)
@@ -956,8 +959,7 @@ static int Hud_SetScreen(int *pResX, int *pResY)
         return 0;
     *pResX = g_pGraphics->resX;
     *pResY = g_pGraphics->resY;
-    if (CGameInfo::GetScreenWidth() >= 0x400 && CFrontend::IsTextureWidthSupported(0x400) &&
-        CFrontend::IsTextureHeightSupported(0x400)) {
+    if (Sprite_HighResolutionSet()) {
         g_pGraphics->resX = 1024;
         g_pGraphics->resY = 768;
     } else {
@@ -1124,4 +1126,174 @@ void Hud_EndView(void)
     g_pGraphics->resY = g_hud.resY;
     g_hud.active = 0;
     RallyData_GetViewScreenRectangle(g_hud.view);
+}
+
+// PORT: the menus on any screen. The menus lay themselves out at positions
+// taken as fractions of the screen, with textures and fonts in pixels for
+// 640x480, or 1024x768 with the high-resolution set, so they shrink as the
+// screen grows. Between MenuScreen_Begin and MenuScreen_End the game draws
+// them on a screen of the real one's shape, as many lines high as that
+// 640x480 or 1024x768 screen at [video] menu_scale = 100 (fewer, so larger,
+// above 100), and at least as wide; the renderer scales it to the back
+// buffer, whose pixels are still rasterised at their resolution, 3D included
+// (Gfx_SetVirtualScreen). The menus take the same part of the screen at any
+// resolution. menu_scale = 0 keeps the original's layout in pixels.
+
+void FrontendScroller_RecomputeAllAttached(void);
+
+static struct {
+    int active;
+    int depth;                  // MenuScreen_Begin calls inside the first
+    int resX, resY;             // the real screen
+    unsigned int modeX, modeY;  // the display mode it was set from
+    int screenX, screenY;       // the menus' screen
+} g_menuScreen;
+
+// The menus' screen of the last frame: layouts the menus keep from frame to
+// frame are worked out again when it changes.
+static int g_menuScreenLastX, g_menuScreenLastY;
+
+// The size of the menus' screen on a real one of realX x realY.
+static void MenuScreen_Size(int realX, int realY, int *pX, int *pY)
+{
+    int scale = Sys_GetOption("video.menu_scale", 100);
+    int baseX, baseY;
+
+    *pX = realX;
+    *pY = realY;
+    if (scale > 0 && realX > 0 && realY > 0) {
+        baseX = Sprite_HighResolutionSet() ? 1024 : 640;
+        baseY = baseX * 3 / 4;
+        *pY = (int)lround((double)baseY * 100.0 / scale);
+        // No narrower than the original's screen: the menus keep its widths.
+        if ((long long)*pY * realX < (long long)baseX * realY)
+            *pY = (int)(((long long)baseX * realY + realX - 1) / realX);
+        *pX = (int)lround((double)*pY * realX / realY);
+    }
+}
+
+void MenuScreen_Begin(void)
+{
+    int realX, realY;
+    int x, y;
+
+    if (g_menuScreen.active) {
+        g_menuScreen.depth++;
+        return;
+    }
+    if (g_pGraphics == NULL)
+        return;
+    realX = (int)g_pGraphics->resX;
+    realY = (int)g_pGraphics->resY;
+    MenuScreen_Size(realX, realY, &x, &y);
+    if (x != realX || y != realY) {
+        g_menuScreen.active = 1;
+        g_menuScreen.resX = realX;
+        g_menuScreen.resY = realY;
+        g_menuScreen.modeX = CGameInfo::GetScreenWidth();
+        g_menuScreen.modeY = CGameInfo::GetScreenHeight();
+        g_menuScreen.screenX = x;
+        g_menuScreen.screenY = y;
+        g_pGraphics->resX = x;
+        g_pGraphics->resY = y;
+        Gfx_SetVirtualScreen(x, y);
+        g_spriteScreenScale = (float)realY / y;
+    }
+    if (x != g_menuScreenLastX || y != g_menuScreenLastY) {
+        // The first frame's are those the menus were built on.
+        if (g_menuScreenLastX != 0)
+            FrontendScroller_RecomputeAllAttached();
+        g_menuScreenLastX = x;
+        g_menuScreenLastY = y;
+    }
+}
+
+void MenuScreen_End(void)
+{
+    if (!g_menuScreen.active)
+        return;
+    if (g_menuScreen.depth > 0) {
+        g_menuScreen.depth--;
+        return;
+    }
+    // A display mode chosen in the menus keeps its size.
+    if (CGameInfo::GetScreenWidth() == g_menuScreen.modeX && CGameInfo::GetScreenHeight() == g_menuScreen.modeY) {
+        g_pGraphics->resX = g_menuScreen.resX;
+        g_pGraphics->resY = g_menuScreen.resY;
+    }
+    Gfx_SetVirtualScreen(0, 0);
+    g_spriteScreenScale = 1.0f;
+    g_menuScreen.active = 0;
+}
+
+void MenuScreen_GetDisplaySize(int *pWidth, int *pHeight)
+{
+    *pWidth = g_menuScreen.active ? g_menuScreen.resX : (int)g_pGraphics->resX;
+    *pHeight = g_menuScreen.active ? g_menuScreen.resY : (int)g_pGraphics->resY;
+}
+
+// PORT: the menus over a race (pause, results) on the menus' screen. The
+// race and its HUD are drawn on the real screen, in the same queues, so the
+// 2D the menus queue between MenuScreen_BeginOverlay and MenuScreen_EndOverlay
+// is laid out on the menus' screen and then scaled to the real one.
+static struct {
+    int active;
+    int resX, resY;             // the real screen
+    float kx, ky;               // real pixels per pixel of the menus' screen
+    unsigned int sprites[4], tris[4];
+} g_menuOverlay;
+
+void MenuScreen_BeginOverlay(void)
+{
+    int x, y;
+
+    if (g_menuOverlay.active || g_menuScreen.active || g_hud.active || g_pGraphics == NULL)
+        return;
+    MenuScreen_Size((int)g_pGraphics->resX, (int)g_pGraphics->resY, &x, &y);
+    if (x == (int)g_pGraphics->resX && y == (int)g_pGraphics->resY)
+        return;
+    g_menuOverlay.active = 1;
+    g_menuOverlay.resX = g_pGraphics->resX;
+    g_menuOverlay.resY = g_pGraphics->resY;
+    g_menuOverlay.kx = (float)g_menuOverlay.resX / x;
+    g_menuOverlay.ky = (float)g_menuOverlay.resY / y;
+    for (int i = 0; i < 4; i++) {
+        g_menuOverlay.sprites[i] = *g_hudSpriteCounts[i];
+        g_menuOverlay.tris[i] = *g_hudTriCounts[i];
+    }
+    g_pGraphics->resX = x;
+    g_pGraphics->resY = y;
+}
+
+void MenuScreen_EndOverlay(void)
+{
+    unsigned int n;
+
+    if (!g_menuOverlay.active)
+        return;
+    const float kx = g_menuOverlay.kx, ky = g_menuOverlay.ky;
+    for (int i = 0; i < 4; i++) {
+        for (n = g_menuOverlay.sprites[i]; n < *g_hudSpriteCounts[i]; n++) {
+            Sprite *p = &g_hudSpriteLayers[i][n];
+            short left = (short)lroundf(p->dst.x * kx);
+            short top = (short)lroundf(p->dst.y * ky);
+            p->dst.w = (short)lroundf((p->dst.x + p->dst.w) * kx) - left;
+            p->dst.h = (short)lroundf((p->dst.y + p->dst.h) * ky) - top;
+            p->dst.x = left;
+            p->dst.y = top;
+            // (-1, -1, -1) is the sprite's middle, wherever it goes.
+            if (p->centre[0] != -1 || p->centre[1] != -1 || p->centre[2] != -1) {
+                p->centre[0] = (int)lroundf(p->centre[0] * kx);
+                p->centre[1] = (int)lroundf(p->centre[1] * ky);
+            }
+        }
+        for (n = g_menuOverlay.tris[i]; n < *g_hudTriCounts[i]; n++)
+            for (int v = 0; v < 3; v++) {
+                g_hudTriLayers[i][n].v[v].sx *= kx;
+                g_hudTriLayers[i][n].v[v].sy *= ky;
+            }
+    }
+    g_pGraphics->resX = g_menuOverlay.resX;
+    g_pGraphics->resY = g_menuOverlay.resY;
+    g_menuOverlay.active = 0;
 }

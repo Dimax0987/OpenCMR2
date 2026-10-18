@@ -173,7 +173,6 @@ struct Executor : GfxExecutor {
     bool bcSupported = true;
     bool presentModeVsync = true;
     int anisotropy = 1, smoothScaling = 1;    // video.anisotropy, video.smooth_scaling
-    int spriteFilter = 2;                      // video.hud_filter: 1 sharp, 2 smooth
     Uint32 presentWidth = 0, presentHeight = 0; // the window's pixels, as last logged
     // The back buffer read of the last presented frame (the lens flare test):
     // it runs with that frame, and CollectReadback waits for it only when the
@@ -280,7 +279,6 @@ struct Executor : GfxExecutor {
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
         anisotropy = Platform_GetSettingInt("video.anisotropy", 1);
         smoothScaling = Platform_GetSettingInt("video.smooth_scaling", 1);
-        spriteFilter = strcmp(Platform_GetSetting("video.hud_filter", "smooth"), "sharp") == 0 ? 1 : 2;
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN, anisotropy > 1);
         device = SDL_CreateGPUDeviceWithProperties(props);
         SDL_DestroyProperties(props);
@@ -739,7 +737,7 @@ struct Executor : GfxExecutor {
                 a.stages[i].textureTransform != b.stages[i].textureTransform)
                 return false;
         return a.viewport.width == b.viewport.width && a.viewport.height == b.viewport.height &&
-               a.lighting == b.lighting && a.colorVertex == b.colorVertex && a.specular == b.specular &&
+               a.screenW == b.screenW && a.screenH == b.screenH && a.lighting == b.lighting && a.colorVertex == b.colorVertex && a.specular == b.specular &&
                a.localViewer == b.localViewer && a.normalizeNormals == b.normalizeNormals &&
                a.diffuseSource == b.diffuseSource && a.specularSource == b.specularSource &&
                a.ambientSource == b.ambientSource && a.emissiveSource == b.emissiveSource && a.fog == b.fog &&
@@ -753,7 +751,28 @@ struct Executor : GfxExecutor {
                memcmp(a.lights, b.lights, sizeof(a.lights)) == 0;
     }
 
-    void FillVertexUniforms(const GfxCommand &cmd, const GfxDrawState &s, int targetW, int targetH, VertexUniforms &u)
+    // A rectangle of the screen the game draws in (Gfx_SetVirtualScreen) in
+    // the back buffer's pixels, within it; elsewhere as it is.
+    static GfxViewport ToTarget(const GfxViewport &v, int screenW, int screenH, bool backBuffer, int targetW,
+                                int targetH)
+    {
+        if (!backBuffer || screenW <= 0 || screenH <= 0)
+            return v;
+        float kx = (float)targetW / screenW, ky = (float)targetH / screenH;
+        int x0 = std::clamp((int)lroundf(v.x * kx), 0, targetW);
+        int y0 = std::clamp((int)lroundf(v.y * ky), 0, targetH);
+        int x1 = std::clamp((int)lroundf((v.x + v.width) * kx), x0, targetW);
+        int y1 = std::clamp((int)lroundf((v.y + v.height) * ky), y0, targetH);
+        GfxViewport r = v;
+        r.x = x0;
+        r.y = y0;
+        r.width = x1 - x0;
+        r.height = y1 - y0;
+        return r;
+    }
+
+    void FillVertexUniforms(const GfxCommand &cmd, const GfxDrawState &s, int targetW, int targetH,
+                            const GfxViewport &viewport, bool scaled, VertexUniforms &u)
     {
         memset(&u, 0, sizeof(u));
         Multiply(s.world, s.view, u.worldView);
@@ -800,11 +819,13 @@ struct Executor : GfxExecutor {
         u.texCoordIndex[1] = (int32_t)s.stages[1].texCoordIndex;
         u.texCoordIndex[2] = s.stages[0].textureTransform;
         u.texCoordIndex[3] = s.stages[1].textureTransform;
-        u.target[0] = (float)targetW;
-        u.target[1] = (float)targetH;
+        // Pre-transformed vertices are in pixels of the game's screen, scaled
+        // to the back buffer's.
+        u.target[0] = (float)(scaled ? s.screenW : targetW);
+        u.target[1] = (float)(scaled ? s.screenH : targetH);
         // Direct3D 7's half-pixel offset of the viewport transform.
-        u.target[2] = s.viewport.width ? 1.0f / s.viewport.width : 0.0f;
-        u.target[3] = s.viewport.height ? -1.0f / s.viewport.height : 0.0f;
+        u.target[2] = viewport.width ? 1.0f / viewport.width : 0.0f;
+        u.target[3] = viewport.height ? -1.0f / viewport.height : 0.0f;
         (void)cmd;
     }
 
@@ -823,12 +844,11 @@ struct Executor : GfxExecutor {
     }
 
     // A 2D texture drawn with point filtering and no mipmaps (the game's
-    // sprites, text and HUD). Scaled up, nearest texels would come out one or
-    // two pixels wide; the shader filters them smoothly (video.hud_filter =
-    // smooth) or keeps them square, blending only across their edges
-    // (sharp), through a linear sampler. Elsewhere it reads them as the
-    // point filter does.
-    bool SharpPoint(const GfxStageState &stage)
+    // sprites, text and HUD). Scaled, nearest texels would come out one or
+    // two pixels wide, or be skipped; the shader filters them smoothly
+    // through a linear sampler. At their size it reads them as the point
+    // filter does.
+    bool ScaledPoint(const GfxStageState &stage)
     {
         return TextureKind(stage) == 1 && stage.magFilter == GFX_FILTER_POINT && stage.mipFilter == GFX_MIPFILTER_NONE;
     }
@@ -844,7 +864,7 @@ struct Executor : GfxExecutor {
         u.stage0b[0] = a.alphaArg1;
         u.stage0b[1] = a.alphaArg2;
         u.stage0b[2] = TextureKind(a);
-        u.stage0b[3] = SharpPoint(a) ? spriteFilter : 0;
+        u.stage0b[3] = ScaledPoint(a);
         u.stage1[0] = b.colorOp;
         u.stage1[1] = b.colorArg1;
         u.stage1[2] = b.colorArg2;
@@ -852,7 +872,7 @@ struct Executor : GfxExecutor {
         u.stage1b[0] = b.alphaArg1;
         u.stage1b[1] = b.alphaArg2;
         u.stage1b[2] = TextureKind(b);
-        u.stage1b[3] = SharpPoint(b) ? spriteFilter : 0;
+        u.stage1b[3] = ScaledPoint(b);
         Color(s.textureFactor, u.textureFactor);
         u.alphaTest[0] = s.alphaTest;
         u.alphaTest[1] = s.alphaFunc;
@@ -877,7 +897,7 @@ struct Executor : GfxExecutor {
                 t = t->cube;
             GpuTexture *g = t != NULL ? Ensure(t) : NULL;
             GfxStageState sampled = stage;
-            if (SharpPoint(stage))
+            if (ScaledPoint(stage))
                 sampled.minFilter = sampled.magFilter = GFX_FILTER_LINEAR;
             SDL_GPUSampler *sampler = Sampler(sampled);
             bool cube = t != NULL && (t->flags & GFX_TEXTURE_CUBE);
@@ -1039,8 +1059,8 @@ struct Executor : GfxExecutor {
         *cleared = 0;
         for (size_t i = first; i < commands.size() && commands[i].type == GFX_CMD_CLEAR; i++) {
             const GfxCommand &c = commands[i];
-            if (c.clearViewport.x != 0 || c.clearViewport.y != 0 || c.clearViewport.width != (DWORD)w ||
-                c.clearViewport.height != (DWORD)h)
+            GfxViewport v = ToTarget(c.clearViewport, c.clearScreenW, c.clearScreenH, target == NULL, w, h);
+            if (v.x != 0 || v.y != 0 || v.width != (DWORD)w || v.height != (DWORD)h)
                 break;
             if (c.clearFlags & GFX_CLEAR_TARGET) {
                 float rgba[4];
@@ -1088,6 +1108,7 @@ struct Executor : GfxExecutor {
         // fragment ones. Clears push their own.
         const GfxDrawState *vertexUniformState = NULL;
         int vertexUniformW = 0, vertexUniformH = 0;
+        bool vertexUniformScaled = false;
         FragmentUniforms fragmentUniforms;
         bool fragmentUniformsSet = false;
         for (size_t i = 0; i < frame.commands.size(); i++) {
@@ -1119,10 +1140,10 @@ struct Executor : GfxExecutor {
                     SDL_BindGPUGraphicsPipeline(pass, pipeline);
                     bound.pipeline = pipeline;
                 }
-                SDL_GPUViewport vp = { (float)c.clearViewport.x, (float)c.clearViewport.y,
-                                       (float)c.clearViewport.width, (float)c.clearViewport.height, 0.0f, 1.0f };
-                SDL_Rect scissor = { (int)c.clearViewport.x, (int)c.clearViewport.y, (int)c.clearViewport.width,
-                                     (int)c.clearViewport.height };
+                GfxViewport v = ToTarget(c.clearViewport, c.clearScreenW, c.clearScreenH, target == NULL, targetW,
+                                         targetH);
+                SDL_GPUViewport vp = { (float)v.x, (float)v.y, (float)v.width, (float)v.height, 0.0f, 1.0f };
+                SDL_Rect scissor = { (int)v.x, (int)v.y, (int)v.width, (int)v.height };
                 SetViewport(pass, bound, vp, scissor);
                 ClearUniforms u = {};
                 Color(c.clearColor, u.color);
@@ -1142,22 +1163,26 @@ struct Executor : GfxExecutor {
                 SDL_BindGPUGraphicsPipeline(pass, pipeline);
                 bound.pipeline = pipeline;
             }
+            const bool scaled = target == NULL && s.screenW > 0 && s.screenH > 0;
+            const GfxViewport viewport = ToTarget(s.viewport, s.screenW, s.screenH, target == NULL, targetW, targetH);
             SDL_GPUViewport vp;
             if (c.transformed)
                 vp = { 0.0f, 0.0f, (float)targetW, (float)targetH, 0.0f, 1.0f };
             else
-                vp = { (float)s.viewport.x, (float)s.viewport.y, (float)s.viewport.width, (float)s.viewport.height,
-                       s.viewport.minZ, s.viewport.maxZ };
-            SDL_Rect scissor = { (int)s.viewport.x, (int)s.viewport.y, (int)s.viewport.width, (int)s.viewport.height };
+                vp = { (float)viewport.x, (float)viewport.y, (float)viewport.width, (float)viewport.height,
+                       viewport.minZ, viewport.maxZ };
+            SDL_Rect scissor = { (int)viewport.x, (int)viewport.y, (int)viewport.width, (int)viewport.height };
             SetViewport(pass, bound, vp, scissor);
             if (vertexUniformState == NULL || vertexUniformW != targetW || vertexUniformH != targetH ||
+                vertexUniformScaled != scaled ||
                 (vertexUniformState != &s && !SameVertexUniforms(*vertexUniformState, s))) {
                 VertexUniforms vu;
-                FillVertexUniforms(c, s, targetW, targetH, vu);
+                FillVertexUniforms(c, s, targetW, targetH, viewport, scaled, vu);
                 SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
                 vertexUniformState = &s;
                 vertexUniformW = targetW;
                 vertexUniformH = targetH;
+                vertexUniformScaled = scaled;
             }
             FragmentUniforms fu;
             FillFragmentUniforms(s, fu);

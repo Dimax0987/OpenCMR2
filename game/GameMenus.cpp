@@ -3805,6 +3805,8 @@ int g_unk0x00541e00;
 // FUNCTION: CMR2 0x0044b330
 void GameMenu_UpdateHeaderCallbacks(void)
 {
+    // PORT: laid out for the screen's size, as the other menus.
+    MenuScreen_BeginOverlay();
     if (g_unk0x00541dfc == g_pHeaderMenu || g_pHeaderMenu == &g_menu0x0053ea68) {
         if (g_unk0x00541e00 > 0)
             goto tail;
@@ -3812,6 +3814,7 @@ void GameMenu_UpdateHeaderCallbacks(void)
         if ((BYTE)RallyData_IsChampionshipFinalStage())
             GameMenu_DrawStageEndBanner();
         g_unk0x0053e698 = 0;
+        MenuScreen_EndOverlay();
         return;
     } else {
         g_unk0x00541dfc = g_pHeaderMenu;
@@ -3821,6 +3824,7 @@ tail:
     GameMenu_ClearMenuListWithHighlight();
     g_unk0x0053e698 = 0;
     g_unk0x00541e00--;
+    MenuScreen_EndOverlay();
 }
 
 // Sorts the stage results by time (zero times, i.e. no time, go last).

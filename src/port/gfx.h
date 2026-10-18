@@ -244,6 +244,11 @@ enum GfxClearFlags {
 void Gfx_Clear(DWORD flags, DWORD color, float z);
 void Gfx_SetViewport(const GfxViewport *viewport);
 void Gfx_GetViewport(GfxViewport *viewport);
+/* The size of the screen the game draws the back buffer in: its viewports,
+   clears and pre-transformed vertices are scaled from it to the back
+   buffer's pixels, which are still rasterised at their resolution. 0, 0 is
+   the back buffer's own size. Render-target textures are not scaled. */
+void Gfx_SetVirtualScreen(int width, int height);
 
 /* Preserve drawing state around temporary passes such as movie playback.
    Referenced textures must remain alive until the matching PopState. */

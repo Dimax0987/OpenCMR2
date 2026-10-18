@@ -405,12 +405,25 @@ extern "C" void Gfx_Clear(DWORD flags, DWORD color, float z)
     cmd.clearColor = color;
     cmd.clearZ = z;
     cmd.clearViewport = s_state.viewport;
+    cmd.clearScreenW = s_state.screenW;
+    cmd.clearScreenH = s_state.screenH;
     s_frame.commands.push_back(cmd);
 }
 
 extern "C" void Gfx_SetViewport(const GfxViewport *viewport)
 {
     s_state.viewport = *viewport;
+    Touch();
+}
+
+extern "C" void Gfx_SetVirtualScreen(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+        width = height = 0;
+    if (s_state.screenW == width && s_state.screenH == height)
+        return;
+    s_state.screenW = width;
+    s_state.screenH = height;
     Touch();
 }
 

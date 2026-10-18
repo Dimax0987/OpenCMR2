@@ -166,7 +166,10 @@ def verify(probe, data, output, cpu_runs=False):
         if ('-cpu-run-' in name) != cpu_runs:
             continue
         run = output / name
-        run.mkdir(parents=True)
+        (run / 'user').mkdir(parents=True)
+        # The menus' animations move in pixels, so their screen sets when the
+        # races start: the scenarios keep the original's.
+        (run / 'user' / 'opencmr2.ini').write_text('[video]\nmenu_scale = 0\n')
         env = {k: v for k, v in os.environ.items() if not k.startswith('OPENCMR2_PROBE_')}
         env.update(OPENCMR2_HEADLESS='1', SDL_VIDEODRIVER='dummy',
                    SDL_AUDIODRIVER='dummy', XDG_DATA_HOME=str(run / 'user'))

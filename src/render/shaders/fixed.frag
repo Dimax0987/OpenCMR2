@@ -67,18 +67,15 @@ vec4 Op(int op, vec4 a, vec4 b)
     }
 }
 
-// A point-filtered texture through a linear sampler: where it is scaled up,
-// filtered smoothly (mode 2), or with each texel kept square and only its
-// edges blended over about a pixel (mode 1); elsewhere the nearest texel, as
-// the point filter reads it.
-vec4 SampleScaledPoint(sampler2D t2, vec2 uv, int mode)
+// A point-filtered texture through a linear sampler: filtered smoothly where
+// it is scaled, the nearest texel, as the point filter reads it, where it
+// keeps its size.
+vec4 SampleScaledPoint(sampler2D t2, vec2 uv)
 {
     vec2 size = vec2(textureSize(t2, 0));
     vec2 t = uv * size;
     vec2 d = fwidth(t);
-    vec2 seam = floor(t + 0.5);
-    vec2 scaled = mode == 2 ? t : seam + clamp((t - seam) / max(d, vec2(1e-5)), -0.5, 0.5);
-    t = mix(floor(t) + 0.5, scaled, lessThan(d, vec2(0.99)));
+    t = mix(floor(t) + 0.5, t, bvec2(abs(d.x - 1.0) > 0.01, abs(d.y - 1.0) > 0.01));
     return textureLod(t2, t / size, 0.0);
 }
 
@@ -89,7 +86,7 @@ vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, vec4 coord)
     if (kind == 0)
         return vec4(1.0);
     if (scaledPoint != 0)
-        return SampleScaledPoint(t2, coord.xy, scaledPoint);
+        return SampleScaledPoint(t2, coord.xy);
     return texture(t2, coord.xy);
 }
 

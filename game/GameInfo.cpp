@@ -4656,10 +4656,16 @@ void InRaceMenu_AdvanceScreenEntries(CallbackStateMachine *param1)
     }
 }
 
+void MenuScreen_BeginOverlay(void);
+void MenuScreen_EndOverlay(void);
+
 // FUNCTION: CMR2 0x004054a0
 void InRaceMenu_DrawActivePage(void)
 {
+    // PORT: laid out for the screen's size, as the other menus.
+    MenuScreen_BeginOverlay();
     Menu_CallCallback2(g_pMenu0x0052af44);
+    MenuScreen_EndOverlay();
 }
 
 // FUNCTION: CMR2 0x004054b0

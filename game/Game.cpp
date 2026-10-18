@@ -164,6 +164,8 @@ void CGame::UpdateActiveSoundSlots(void)
 // FUNCTION: CMR2 0x004d0780
 BOOL CGame::DispatchFrontendResourceState(void)
 {
+    BOOL result;
+
     m_unk0x00523c5c = GetFrontendResourceMode();
     if (m_unk0x00523c5c != m_unk0x00523c58)
         m_unk0x00523c58 = m_unk0x00523c5c;
@@ -173,11 +175,18 @@ BOOL CGame::DispatchFrontendResourceState(void)
     case 3:
         return UpdateInRaceCallbackMachine();
 
+    // PORT: the menus laid out for the screen's size (see MenuScreen_Begin).
     case 2:
-        return UpdateSecondaryCallbackMachine();
+        MenuScreen_Begin();
+        result = UpdateSecondaryCallbackMachine();
+        MenuScreen_End();
+        return result;
 
     case 0:
-        return UpdateFrontendCallbackMachine();
+        MenuScreen_Begin();
+        result = UpdateFrontendCallbackMachine();
+        MenuScreen_End();
+        return result;
 
     default:
         return FALSE;
