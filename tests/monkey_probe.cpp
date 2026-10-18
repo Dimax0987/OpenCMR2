@@ -38,8 +38,20 @@ extern Menu *g_pMenu0x00831778;
 extern Menu *g_pHeaderMenu;
 
 static DWORD virtualTime = 1000;
+static BYTE g_keys[256];
+static unsigned g_sleeps;   // since the last frame
 static DWORD Ticks() { return virtualTime; }
-static void Sleep(DWORD ms) { virtualTime += ms; }
+// A movie plays inside one frame, waiting on the clock between its frames:
+// when the waits pile up, press Return and Space, which skip it, instead of
+// decoding it to the end.
+static void Sleep(DWORD ms)
+{
+    virtualTime += ms;
+    if (++g_sleeps > 200) {
+        g_keys[INPUT_KEY_RETURN] = 0x80;
+        g_keys[INPUT_KEY_SPACE] = 0x80;
+    }
+}
 
 // xorshift64*: the run depends on the seed alone.
 struct Random {
@@ -121,7 +133,7 @@ int main(int argc, char **argv)
     if (!Platform_Init(5, platformArgs))
         return 1;
     const PlatformTestClock clock{Ticks, Sleep, 1700000000};
-    BYTE keys[256]{};
+    BYTE *keys = g_keys;
     Platform_SetTestClock(&clock);
     Platform_SetTestKeyboard(keys);
     Main_InitD3DX();
@@ -163,7 +175,8 @@ int main(int argc, char **argv)
         }
 
         // Keys are held a few frames, then released, so each is one press.
-        memset(keys, 0, sizeof(keys));
+        memset(keys, 0, sizeof(g_keys));
+        g_sleeps = 0;
         if (keyFrames > 0) {
             keys[key] = 0x80;
             --keyFrames;
