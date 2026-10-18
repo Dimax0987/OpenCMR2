@@ -134,5 +134,7 @@ void MenuScreen_BeginOverlay(void);
 void MenuScreen_EndOverlay(void);
 // The display's size, also while the menus draw on their own screen.
 void MenuScreen_GetDisplaySize(int *pWidth, int *pHeight);
+// The largest [video] menu_scale the display takes.
+int MenuScreen_GetLargestScale(void);
 
 #endif

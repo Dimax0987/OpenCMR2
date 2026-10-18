@@ -470,4 +470,9 @@ Menu *FrontendMenu_GetDeviceBindings(void);
 Menu *FrontendMenu_GetPadSettings(void);
 Menu *FrontendMenu_GetDeviceConfiguration(void);
 
+// PORT: the screen options page of the graphics menu (FrontendScreens.cpp).
+void FrontendMenu_BuildScreenOptions(void);
+Menu *FrontendMenu_GetScreenOptions(void);
+char *FrontendMenu_GetScreenOptionsLabel(void);
+
 #endif

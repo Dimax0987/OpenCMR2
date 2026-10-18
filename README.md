@@ -135,7 +135,9 @@ Settings are stored in `opencmr2.ini` in the user directory
 (`~/.local/share/OpenCMR2/` on Linux,
 `%APPDATA%\OpenCMR2\` on Windows; files from the older
 `OpenCMR2/OpenCMR2` folder are moved there).
-It is created with comments on first launch.
+It is created with comments on first launch. The Screen page of the
+graphics options sets `hud_scale`, `menu_scale`, `vsync` and `fullscreen` in
+the game.
 
 | Setting | Default | Description |
 | --- | --- | --- |

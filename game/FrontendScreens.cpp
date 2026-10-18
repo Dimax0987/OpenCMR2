@@ -1475,6 +1475,7 @@ void FrontendMenu_BuildPagesAndSelectInitial(BYTE param1, BYTE back)
     FrontendMenu_BuildOptions();
     FrontendMenu_BuildGameOptions();
     FrontendMenu_BuildGraphicsOptions();
+    FrontendMenu_BuildScreenOptions();     // PORT
     FrontendMenu_BuildRenderDeviceOptions();
     FrontendMenu_BuildAdvancedGraphicsOptions();
     FrontendMenu_BuildDisplayDevice();
@@ -11147,6 +11148,11 @@ void FrontendMenu_DrawGraphicsOptions(Menu *pMenu)
                 Font_DrawText(1, CFrontend::GetTextString(pItem->id), (int)(g_pGraphics->resX * 0x7a) / 640,
                               (int)(g_pGraphics->resY * 0x18) / 480 + g_unk0x008189a8[1], (int *)pColour, 0x11);
                 break;
+            // PORT: the screen options (FrontendMenu_BuildScreenOptions).
+            case 0xf:
+                Font_DrawText(1, FrontendMenu_GetScreenOptionsLabel(), (int)(g_pGraphics->resX * 0x7a) / 640,
+                              (int)(g_pGraphics->resY * 0x18) / 480 + g_unk0x008189a8[1], (int *)pColour, 0x11);
+                break;
             default:
                 break;
             }
@@ -12022,4 +12028,240 @@ void FrontendMenu_DrawNetworkSessionSetup(Menu *pMenu)
         pItem++;
     }
     FrontendDraw_Carousel(FrontendMenu_GetMain(), 0, NULL);
+}
+
+// PORT: the screen options, a page of the graphics menu: the sizes of the
+// HUD and of the menus ([video] hud_scale and menu_scale, in percent of the
+// original's at the screen's height), the vertical sync and the fullscreen
+// window. They are saved in opencmr2.ini when OK is chosen; Back leaves them
+// as they were. The original's layout in pixels (a size of 0) stays an
+// opencmr2.ini setting.
+
+Menu g_screenOptionsMenu;
+
+enum ScreenOptionsItem {
+    SCREEN_ITEM_HUD,
+    SCREEN_ITEM_MENU,
+    SCREEN_ITEM_VSYNC,
+    SCREEN_ITEM_FULLSCREEN,
+    SCREEN_ITEM_OK = 0xe
+};
+
+enum ScreenOptionsText {
+    SCREEN_TEXT_TITLE,
+    SCREEN_TEXT_HUD,
+    SCREEN_TEXT_MENU,
+    SCREEN_TEXT_VSYNC,
+    SCREEN_TEXT_FULLSCREEN,
+    SCREEN_TEXT_COUNT
+};
+
+// In the game's character set (Windows-1252; Polish letters in place of
+// some symbols: 0xb1 is l with a stroke).
+static const char *const g_screenOptionsText[6][SCREEN_TEXT_COUNT] = {
+    { "Screen", "HUD Size", "Menu Size", "Vertical Sync", "Full Screen" },
+    { "\xc9" "cran", "Taille du HUD", "Taille des menus", "Synchro verticale", "Plein \xe9" "cran" },
+    { "Pantalla", "Tama\xf1o del HUD", "Tama\xf1o de los men\xfas", "Sincronizaci\xf3n vertical", "Pantalla completa" },
+    { "Schermo", "Dimensione HUD", "Dimensione menu", "Sincronia verticale", "Schermo intero" },
+    { "Bildschirm", "HUD-Gr\xf6\xdf" "e", "Men\xfcgr\xf6\xdf" "e", "VSync", "Vollbild" },
+    { "Ekran", "Rozmiar HUD", "Rozmiar menu", "Synchronizacja pionowa", "Pe\xb1ny ekran" },
+};
+
+// Sizes offered, in percent.
+#define SCREEN_SIZE_MIN 50
+#define SCREEN_SIZE_STEP 10
+#define SCREEN_SIZE_MAX 150
+
+// A text in the language the menus show: English, French, Spanish, Italian
+// or German, or Polish for that edition (its only language).
+static char *ScreenOptions_Text(int text)
+{
+    int language = CGameInfo::GetGameRegion() == 3 ? 5 : CFrontend::m_unk0x0065aa70;
+    if (language > 5)
+        language = 0;
+    return (char *)g_screenOptionsText[language][text];
+}
+
+// The sizes on offer and the one of a percentage (the nearest).
+static int ScreenOptions_SizeCount(int largest)
+{
+    if (largest > SCREEN_SIZE_MAX)
+        largest = SCREEN_SIZE_MAX;
+    if (largest < SCREEN_SIZE_MIN)
+        largest = SCREEN_SIZE_MIN;
+    return (largest - SCREEN_SIZE_MIN) / SCREEN_SIZE_STEP + 1;
+}
+
+static int ScreenOptions_SizeIndex(int percent, int count)
+{
+    int index = (percent - SCREEN_SIZE_MIN + SCREEN_SIZE_STEP / 2) / SCREEN_SIZE_STEP;
+    if (index < 0)
+        index = 0;
+    if (index > count - 1)
+        index = count - 1;
+    return index;
+}
+
+// The values the page opened with: unchanged ones are not written, so that a
+// size set in opencmr2.ini between the steps offered stays.
+static BYTE g_screenOptionsShown[4];
+
+void FrontendMenu_EnterScreenOptions(Menu *pMenu, int param)
+{
+    MenuItem *pItem;
+
+    pMenu->text = ScreenOptions_Text(SCREEN_TEXT_TITLE);
+    pItem = Menu_GetItem(pMenu, SCREEN_ITEM_HUD);
+    pItem->min = ScreenOptions_SizeCount(SCREEN_SIZE_MAX);
+    pItem->max = ScreenOptions_SizeIndex(Sys_GetOption("video.hud_scale", 100), pItem->min);
+    pItem = Menu_GetItem(pMenu, SCREEN_ITEM_MENU);
+    pItem->min = ScreenOptions_SizeCount(MenuScreen_GetLargestScale());
+    pItem->max = ScreenOptions_SizeIndex(Sys_GetOption("video.menu_scale", 100), pItem->min);
+    // On is the first choice, as in the graphics menu.
+    Menu_GetItem(pMenu, SCREEN_ITEM_VSYNC)->max = Sys_GetOption("video.vsync", 1) != 0 ? 0 : 1;
+    Menu_GetItem(pMenu, SCREEN_ITEM_FULLSCREEN)->max = g_pGraphics->isFullscreen ? 0 : 1;
+    for (int i = 0; i < 4; i++)
+        g_screenOptionsShown[i] = Menu_GetItem(pMenu, i)->max;
+}
+
+void FrontendMenu_ApplyScreenOptions(Menu *pMenu, MenuItem *pItem)
+{
+    BYTE value;
+
+    value = Menu_GetItem(pMenu, SCREEN_ITEM_HUD)->max;
+    if (value != g_screenOptionsShown[SCREEN_ITEM_HUD])
+        Sys_SetOption("video.hud_scale", SCREEN_SIZE_MIN + value * SCREEN_SIZE_STEP);
+    value = Menu_GetItem(pMenu, SCREEN_ITEM_MENU)->max;
+    if (value != g_screenOptionsShown[SCREEN_ITEM_MENU])
+        Sys_SetOption("video.menu_scale", SCREEN_SIZE_MIN + value * SCREEN_SIZE_STEP);
+    value = Menu_GetItem(pMenu, SCREEN_ITEM_VSYNC)->max;
+    if (value != g_screenOptionsShown[SCREEN_ITEM_VSYNC])
+        Sys_SetOption("video.vsync", value == 0);
+    value = Menu_GetItem(pMenu, SCREEN_ITEM_FULLSCREEN)->max;
+    if (value != g_screenOptionsShown[SCREEN_ITEM_FULLSCREEN]) {
+        // As Alt+Enter does.
+        g_pGraphics->isFullscreen = value == 0;
+        Gfx_SetFullscreen(g_pGraphics->isFullscreen);
+        Sys_SetOption("video.fullscreen", g_pGraphics->isFullscreen);
+    }
+}
+
+// The rows of the advanced graphics page: a label, then the value as
+// "< 100% >" or the choices, the chosen one highlighted.
+void FrontendMenu_DrawScreenOptions(Menu *pMenu)
+{
+    short rect[4];
+    MenuItem *pItem;
+    BYTE *pColour;
+    BYTE *pSelColour;
+    BYTE *pUnselColour;
+    BYTE *pLineColour;
+    BYTE *pLineShadow;
+    int textY;
+    int x;
+    int y;
+    int i;
+    int j;
+
+    rect[0] = (int)(g_pGraphics->resX * 100) / 640;
+    rect[2] = CFrontend::m_pAr640ATexture->width;
+    rect[3] = CFrontend::m_pAr640ATexture->height;
+    y = ((int)(g_pGraphics->resY * 8) / 480 + (int)(g_pGraphics->resY * 38) / 480 +
+         (int)(g_pGraphics->resY * 384) / 480) / 2 -
+        ((int)(g_pGraphics->resY * 36) / 480 * pMenu->itemCount) / 2;
+    pMenu->text = ScreenOptions_Text(SCREEN_TEXT_TITLE);
+    FrontendDraw_PlayTime();
+    FrontendDraw_MenuPath(pMenu, PATH_X(), PATH_Y(), 1, 2, NULL, -1);
+    pLineColour = pMenu->cursor == 0 ? g_colourWhite0x00524968 : g_colourText0x0052496c;
+    pLineShadow = pMenu->cursor == 0 ? g_colourShadowWhite0x00524974 : g_colourShadowText0x00524978;
+    g_unk0x008189a8[0] = (int)(g_pGraphics->resX * 99) / 640;
+    g_unk0x008189a8[1] = y;
+    g_unk0x008189a8[2] = (int)(g_pGraphics->resX * 282) / 640;
+    g_unk0x008189a8[3] = 1;
+    Sprite_FillRect(&g_pGraphics->field309_0x150, g_unk0x008189a8, pLineShadow, 1);
+    g_unk0x008189a8[1]++;
+    Sprite_FillRect(&g_pGraphics->field309_0x150, g_unk0x008189a8, pLineColour, 1);
+    pItem = pMenu->items;
+    for (i = 0; i < pMenu->itemCount; i++, pItem++) {
+        rect[1] = y + (int)(g_pGraphics->resY * 2) / 480 + (int)(g_pGraphics->resY * 18) / 480 +
+                  ((int)(g_pGraphics->resY * 36) / 480 * i - CFrontend::m_pAr640ATexture->height / 2);
+        if (pMenu->cursor == i) {
+            pColour = pSelColour = g_colourWhite0x00524968;
+            pUnselColour = g_colourText0x0052496c;
+            Sprite_Queue((SpriteRect *)&CFrontend::m_pAr640ATexture->field_0x11c, (SpriteRect *)rect,
+                         CFrontend::m_pAr640ATexture, 1, 0, 0, NULL, pColour, 8);
+        } else {
+            pColour = pUnselColour = g_colourText0x0052496c;
+            pSelColour = g_colourWhite0x00524968;
+            Sprite_Queue((SpriteRect *)&CFrontend::m_pAr640DTexture->field_0x11c, (SpriteRect *)rect,
+                         CFrontend::m_pAr640DTexture, 1, 0, 0, NULL, pColour, 8);
+        }
+        x = (int)(g_pGraphics->resX * 122) / 640;
+        textY = (int)(g_pGraphics->resY * 24) / 480 + g_unk0x008189a8[1];
+        switch (pItem->value) {
+        case SCREEN_ITEM_HUD:
+        case SCREEN_ITEM_MENU:
+            sprintf(CFrontend::m_stringDest, "%s  < %d%% >",
+                    ScreenOptions_Text(pItem->value == SCREEN_ITEM_HUD ? SCREEN_TEXT_HUD : SCREEN_TEXT_MENU),
+                    SCREEN_SIZE_MIN + pItem->max * SCREEN_SIZE_STEP);
+            Font_DrawText(1, CFrontend::m_stringDest, x, textY, (int *)pColour, 0x11);
+            break;
+        case SCREEN_ITEM_VSYNC:
+        case SCREEN_ITEM_FULLSCREEN:
+            strcpy(CFrontend::m_stringDest,
+                   ScreenOptions_Text(pItem->value == SCREEN_ITEM_VSYNC ? SCREEN_TEXT_VSYNC : SCREEN_TEXT_FULLSCREEN));
+            Font_DrawText(1, CFrontend::m_stringDest, x, textY, (int *)pColour, 0x11);
+            for (j = 0; j < pItem->min; j++) {
+                x += (int)(g_pGraphics->resX * 10) / 640 + Font_GetTextWidth(1, (BYTE *)CFrontend::m_stringDest);
+                strcpy(CFrontend::m_stringDest, CFrontend::GetTextString(j == 0 ? 0x134 : 0x133));
+                Font_DrawText(1, CFrontend::m_stringDest, x, textY,
+                              (int *)(pItem->max == j ? pSelColour : pUnselColour), 0x11);
+            }
+            break;
+        default:
+            Font_DrawText(1, CFrontend::GetTextString(pItem->id), x, textY, (int *)pColour, 0x11);
+            break;
+        }
+        if (pMenu->cursor == i + 1 || pMenu->cursor == i) {
+            pLineColour = g_colourWhite0x00524968;
+            pLineShadow = g_colourShadowWhite0x00524974;
+        } else {
+            pLineColour = g_colourText0x0052496c;
+            pLineShadow = g_colourShadowText0x00524978;
+        }
+        g_unk0x008189a8[1] = (int)(g_pGraphics->resY * 36) / 480 * (i + 1) + y;
+        Sprite_FillRect(&g_pGraphics->field309_0x150, g_unk0x008189a8, pLineShadow, 1);
+        g_unk0x008189a8[1]++;
+        Sprite_FillRect(&g_pGraphics->field309_0x150, g_unk0x008189a8, pLineColour, 1);
+    }
+    FrontendDraw_Carousel(FrontendMenu_GetMain(), 0, NULL);
+}
+
+extern Menu g_menu0x008210f8;
+
+void FrontendMenu_BuildScreenOptions(void)
+{
+    Menu_Init(&g_screenOptionsMenu, ScreenOptions_Text(SCREEN_TEXT_TITLE), -1, 0, &g_menu0x008210f8, NULL, 1, 0, 1);
+    Menu_AddItemType3(&g_screenOptionsMenu, 0, -1, ScreenOptions_SizeCount(SCREEN_SIZE_MAX), 0, 0, 0, 0,
+                      SCREEN_ITEM_HUD);
+    Menu_AddItemType3(&g_screenOptionsMenu, 0, -1, ScreenOptions_SizeCount(SCREEN_SIZE_MAX), 0, 0, 0, 0,
+                      SCREEN_ITEM_MENU);
+    Menu_AddItemType3(&g_screenOptionsMenu, 0, -1, 2, 0, 0, 0, 0, SCREEN_ITEM_VSYNC);
+    Menu_AddItemType3(&g_screenOptionsMenu, 0, -1, 2, 0, 0, 0, 0, SCREEN_ITEM_FULLSCREEN);
+    Menu_AddItemType1(&g_screenOptionsMenu, 0, 0x67, (MenuItemAction)FrontendMenu_ApplyScreenOptions, SCREEN_ITEM_OK);
+    Menu_SetCallbacks(&g_screenOptionsMenu, FrontendMenu_EnterScreenOptions, NULL,
+                      (MenuCallback)FrontendMenu_DrawScreenOptions, NULL);
+    Menu_ValidateCursor(&g_screenOptionsMenu, 0);
+}
+
+Menu *FrontendMenu_GetScreenOptions(void)
+{
+    return &g_screenOptionsMenu;
+}
+
+// The row of the screen options in the graphics menu.
+char *FrontendMenu_GetScreenOptionsLabel(void)
+{
+    sprintf(CFrontend::m_stringDest, g_strEllipsisFormat, ScreenOptions_Text(SCREEN_TEXT_TITLE));
+    return CFrontend::m_stringDest;
 }

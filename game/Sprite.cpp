@@ -1232,6 +1232,20 @@ void MenuScreen_End(void)
     g_menuScreen.active = 0;
 }
 
+// The largest menu_scale the display takes: above it the menus' screen
+// would be narrower than the original's, which they keep (see MenuScreen_Size).
+int MenuScreen_GetLargestScale(void)
+{
+    int realX, realY;
+    int baseX;
+
+    MenuScreen_GetDisplaySize(&realX, &realY);
+    if (realX <= 0 || realY <= 0)
+        return 100;
+    baseX = Sprite_HighResolutionSet() ? 1024 : 640;
+    return (int)((long long)baseX * 3 / 4 * 100 * realX / ((long long)baseX * realY));
+}
+
 void MenuScreen_GetDisplaySize(int *pWidth, int *pHeight)
 {
     *pWidth = g_menuScreen.active ? g_menuScreen.resX : (int)g_pGraphics->resX;
