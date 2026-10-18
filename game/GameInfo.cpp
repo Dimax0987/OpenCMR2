@@ -10904,6 +10904,19 @@ BYTE OptionPreview_ReleaseSessionResources(void)
             g_previewSixWheelModelBuffers[i] = NULL;
         }
     }
+    // PORT: the released scenes are forgotten. A session loads only its
+    // players' records, so the others kept the earlier session's wheel nodes
+    // and scenes, and leaving the service area again wrote the wheels back
+    // into, and destroyed, scenes already released.
+    for (i = 0; i < 16; i++) {
+        for (j = 0; j < 4; j++) {
+            g_previewSceneRecords[i].normalWheelMeshes[j] = 0;
+            g_previewSceneRecords[i].wheelNodes[j] = NULL;
+        }
+        g_previewSceneRecords[i].rootNode = NULL;
+        g_previewSceneRecords[i].lowWheelRoot = 0;
+        g_previewSceneRecords[i].sixWheelRoot = 0;
+    }
     g_previewSessionRegistered = 0;
     return 1;
 }
