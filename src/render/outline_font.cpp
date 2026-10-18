@@ -203,9 +203,10 @@ const int kFitOversample = 4;
 // original's ink and, with a width, as wide as it (within 10%: Heros's
 // glyphs are up to a pixel wider than the bitmaps', which closes the gaps
 // between letters); adds its coverage to out (cell pixels times scale).
-// What would leave the cell, Heros's longer descenders and the accents over
-// its capitals, is pressed into it, half a pixel inside, the rest of the
-// glyph keeping its size.
+// A glyph wider than its cell is narrowed to it, and kept inside it; what
+// would leave it at the top or bottom, Heros's longer descenders and the
+// accents over its capitals, is pressed into it, half a pixel inside, the
+// rest of the glyph keeping its size.
 void PlaceGlyph(const Fit &fit, int glyph, const Ink &ink, bool matchWidth, int scaleUp, int cellW, int cellH,
                 std::vector<float> &out)
 {
@@ -217,11 +218,19 @@ void PlaceGlyph(const Fit &fit, int glyph, const Ink &ink, bool matchWidth, int 
         emX = em * std::min(std::max(ink.width / width, 0.9f), 1.1f);
         centred = Rasterize(*fit.face, glyph, emX, em, 0.0f, 0.0f);
     }
+    const int w = cellW * scaleUp, h = cellH * scaleUp;
+    // No wider than the cell: the original's glyphs fill theirs.
+    if (centred.w > w) {
+        emX *= (float)w / centred.w;
+        centred = Rasterize(*fit.face, glyph, emX, em, 0.0f, 0.0f);
+    }
     float penX = ink.centreX * scaleUp - CentreX(centred);
+    // Moved inside the cell where centring would take it out.
+    penX = std::max(penX, (float)-centred.x0);
+    penX = std::min(penX, (float)(w - centred.x0 - centred.w));
     float penY = fit.baseline * scaleUp;
     int ox = (int)floorf(penX), oy = (int)floorf(penY);
     Raster r = Rasterize(*fit.face, glyph, emX, em, penX - ox, penY - oy);
-    const int w = cellW * scaleUp, h = cellH * scaleUp;
     if (r.h == 0)
         return;
     // Rows of the raster from the cell's top, and the bands pressed in.

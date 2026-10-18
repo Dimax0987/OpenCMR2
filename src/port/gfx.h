@@ -395,6 +395,9 @@ void Gfx_UnlockTexture(GfxTexture *texture, int face, int mip);
 /* Draws replacement wherever texture is drawn (NULL: texture itself), with
    the same texture coordinates; it is destroyed with texture. */
 void Gfx_SetTextureReplacement(GfxTexture *texture, GfxTexture *replacement);
+/* Texels of the distance field texture is drawn from (its replacement) per
+   texel of its own, or 0 if it is drawn from its own pixels. */
+int Gfx_GetDistanceFieldScale(GfxTexture *texture);
 
 /* Fills the lower mip levels from the top one (box filter). */
 void Gfx_GenerateMipmaps(GfxTexture *texture);

@@ -81,6 +81,8 @@ void Sprite_DrawLayer(int layer)
     float w, h;
     float u0, u1, v0, v1;
     float x0, x1, y0, y1;
+    float inset;
+    int field;
     float t;
     DWORD colour;
     int centre[3];
@@ -148,22 +150,26 @@ void Sprite_DrawLayer(int layer)
         // so the filter does not reach into the next sprite of the texture
         // (the next letter of a font); the scale stays the same. Pixel centres
         // are on integer coordinates: the quad starts half a pixel before the
-        // centre of its first texel.
+        // centre of its first texel. Text drawn from a distance field is cut
+        // by half a texel of its field only: its glyphs reach their cells'
+        // edges.
         x0 = pSprite->dst.x;
         x1 = pSprite->dst.x + pSprite->dst.w;
         y0 = pSprite->dst.y;
         y1 = pSprite->dst.y + pSprite->dst.h;
+        field = Gfx_GetDistanceFieldScale(pSprite->pTexture->pSurface);
+        inset = field > 0 ? 0.5f / field : 0.5f;
         if (pSprite->src.w > 0 && pSprite->dst.w * g_spriteScreenScale > pSprite->src.w) {
-            u0 = (pSprite->src.x + 0.5f) / w;
-            u1 = (pSprite->src.x + pSprite->src.w - 0.5f) / w;
-            x0 += 0.5f * pSprite->dst.w / pSprite->src.w - 0.5f;
-            x1 -= 0.5f * pSprite->dst.w / pSprite->src.w + 0.5f;
+            u0 = (pSprite->src.x + inset) / w;
+            u1 = (pSprite->src.x + pSprite->src.w - inset) / w;
+            x0 += inset * pSprite->dst.w / pSprite->src.w - 0.5f;
+            x1 -= inset * pSprite->dst.w / pSprite->src.w + 0.5f;
         }
         if (pSprite->src.h > 0 && pSprite->dst.h * g_spriteScreenScale > pSprite->src.h) {
-            v0 = (pSprite->src.y + 0.5f) / h;
-            v1 = (pSprite->src.y + pSprite->src.h - 0.5f) / h;
-            y0 += 0.5f * pSprite->dst.h / pSprite->src.h - 0.5f;
-            y1 -= 0.5f * pSprite->dst.h / pSprite->src.h + 0.5f;
+            v0 = (pSprite->src.y + inset) / h;
+            v1 = (pSprite->src.y + pSprite->src.h - inset) / h;
+            y0 += inset * pSprite->dst.h / pSprite->src.h - 0.5f;
+            y1 -= inset * pSprite->dst.h / pSprite->src.h + 0.5f;
         }
         if (pSprite->param & 5) {
             t = u0;
