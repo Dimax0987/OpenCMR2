@@ -3,8 +3,11 @@
 # Each of these functions reads a dword where the original reads a byte,
 # short or byte array and keeps only the low byte or bytes it needs, as the
 # original's code does: the read runs one to three bytes past the variable,
-# into the same stack frame or the globals after it, and the value used is
-# the same. Any other access in them is still checked by UBSan.
+# into the same stack frame or the padding after it, and the value used is
+# the same. The original's machine code loads the dword (mov eax, [x]; and
+# eax, 0xff); a byte read compiles to other instructions (xor eax, eax;
+# mov al, [x]), so the decompilation keeps the dword. Any other access in
+# them is still checked by UBSan.
 #
 # The UBSan sections below list indexing and alignment the original does
 # itself; the function type check is off for the whole build (CMakeLists.txt).
@@ -20,6 +23,10 @@ fun:*RallyData_DrawCarSplitTimesPanel*
 fun:*Track_SetFogAndSkyAlpha*
 # *(unsigned int *)&param1 over an unsigned short parameter, used & 0xffff
 fun:*ApplyControllerButtonBindings*
+# *(unsigned int *)&g_unk0x0052af58[0] & 0xff, the menu's device
+fun:*InRaceMenu_UpdateStateMachineFrame*
+# *(unsigned int *)&CGameInfo::m_unk0x005a01bc & 0xff, the session count
+fun:*Network_GetEnumeratedSessionCount*
 
 [alignment]
 fun:*StageObject_AverageWheelGroundLighting*
@@ -36,8 +43,6 @@ fun:*FrontendAnimation_ResetMainPath*
 fun:*Mesh_BuildParts*
 # end as g_classificationTable + 25
 fun:*RallyData_LayoutPlayerSplitBars*
-# cornerOnGround[4 + i] over the eight corners
-fun:*StageObject_UpdateCarCornerGroundHeights*
 # end as g_sparkTri[3].colour, g_shardTri[3].colour
 fun:*CarEffects_Init*
 fun:*GlassShard_Draw*
@@ -54,8 +59,6 @@ fun:*RallyData_LoadCurrentRallyWeatherTextures*
 # items[-1] when the menu lacks the item: the original writes the menu's
 # field_0x4, as this layout does
 fun:*GameMenu_SetupStageResults*
-# wheelPos[corner] over the eight local corners
-fun:*Car_IntegrateContacts*
 # end as g_saveCarRecords + 0x62c, within the save data
 fun:*FrontendChampionship_InitEntries*
 # driver records past the eight, within the save data (SaveBlock)
