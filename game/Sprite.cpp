@@ -131,15 +131,15 @@ void Sprite_DrawLayer(int layer)
             // PORT: half a pixel of the screen, to read texel centres; that
             // is half a texel only when the sprite keeps its size.
             if (pSprite->dst.w != pSprite->src.w && pSprite->dst.w != 0) {
-                u0 += 0.5f / w * pSprite->src.w / pSprite->dst.w;
-                u1 += 0.5f / w * pSprite->src.w / pSprite->dst.w;
+                u0 += X87S_DIV(X87S_MUL(0.5f / w, X87S_LOAD(pSprite->src.w)), X87S_LOAD(pSprite->dst.w));
+                u1 += X87S_DIV(X87S_MUL(0.5f / w, X87S_LOAD(pSprite->src.w)), X87S_LOAD(pSprite->dst.w));
             } else {
                 u0 += 0.5f / w;
                 u1 += 0.5f / w;
             }
             if (pSprite->dst.h != pSprite->src.h && pSprite->dst.h != 0) {
-                v0 += 0.5f / h * pSprite->src.h / pSprite->dst.h;
-                v1 += 0.5f / h * pSprite->src.h / pSprite->dst.h;
+                v0 += X87S_DIV(X87S_MUL(0.5f / h, X87S_LOAD(pSprite->src.h)), X87S_LOAD(pSprite->dst.h));
+                v1 += X87S_DIV(X87S_MUL(0.5f / h, X87S_LOAD(pSprite->src.h)), X87S_LOAD(pSprite->dst.h));
             } else {
                 v0 += 0.5f / h;
                 v1 += 0.5f / h;
@@ -158,18 +158,18 @@ void Sprite_DrawLayer(int layer)
         y0 = pSprite->dst.y;
         y1 = pSprite->dst.y + pSprite->dst.h;
         field = Gfx_GetDistanceFieldScale(pSprite->pTexture->pSurface);
-        inset = field > 0 ? 0.5f / field : 0.5f;
-        if (pSprite->src.w > 0 && pSprite->dst.w * g_spriteScreenScale > pSprite->src.w) {
-            u0 = (pSprite->src.x + inset) / w;
-            u1 = (pSprite->src.x + pSprite->src.w - inset) / w;
-            x0 += inset * pSprite->dst.w / pSprite->src.w - 0.5f;
-            x1 -= inset * pSprite->dst.w / pSprite->src.w + 0.5f;
+        inset = field > 0 ? X87S_DIV(0.5f, X87S_LOAD(field)) : 0.5f;
+        if (pSprite->src.w > 0 && X87S_MUL(X87S_LOAD(pSprite->dst.w), g_spriteScreenScale) > pSprite->src.w) {
+            u0 = X87S_DIV((X87S_ADD(X87S_LOAD(pSprite->src.x), inset)), w);
+            u1 = X87S_DIV((X87S_SUB(X87S_LOAD(pSprite->src.x + pSprite->src.w), inset)), w);
+            x0 += X87S_SUB(X87S_DIV(X87S_MUL(inset, X87S_LOAD(pSprite->dst.w)), X87S_LOAD(pSprite->src.w)), 0.5f);
+            x1 -= X87S_ADD(X87S_DIV(X87S_MUL(inset, X87S_LOAD(pSprite->dst.w)), X87S_LOAD(pSprite->src.w)), 0.5f);
         }
-        if (pSprite->src.h > 0 && pSprite->dst.h * g_spriteScreenScale > pSprite->src.h) {
-            v0 = (pSprite->src.y + inset) / h;
-            v1 = (pSprite->src.y + pSprite->src.h - inset) / h;
-            y0 += inset * pSprite->dst.h / pSprite->src.h - 0.5f;
-            y1 -= inset * pSprite->dst.h / pSprite->src.h + 0.5f;
+        if (pSprite->src.h > 0 && X87S_MUL(X87S_LOAD(pSprite->dst.h), g_spriteScreenScale) > pSprite->src.h) {
+            v0 = X87S_DIV((X87S_ADD(X87S_LOAD(pSprite->src.y), inset)), h);
+            v1 = X87S_DIV((X87S_SUB(X87S_LOAD(pSprite->src.y + pSprite->src.h), inset)), h);
+            y0 += X87S_SUB(X87S_DIV(X87S_MUL(inset, X87S_LOAD(pSprite->dst.h)), X87S_LOAD(pSprite->src.h)), 0.5f);
+            y1 -= X87S_ADD(X87S_DIV(X87S_MUL(inset, X87S_LOAD(pSprite->dst.h)), X87S_LOAD(pSprite->src.h)), 0.5f);
         }
         if (pSprite->param & 5) {
             t = u0;
@@ -1031,7 +1031,7 @@ void Hud_BeginView(int view)
     k = (g_hud.rx1 - g_hud.rx0) / (g_hud.vx1 - g_hud.vx0);
     if ((g_hud.ry1 - g_hud.ry0) / (g_hud.vy1 - g_hud.vy0) < k)
         k = (g_hud.ry1 - g_hud.ry0) / (g_hud.vy1 - g_hud.vy0);
-    g_hud.scale = k * (float)Sys_GetOption("video.hud_scale", 100) / 100.0f;
+    g_hud.scale = X87S_DIV(X87S_MUL(k, X87S_FILD(float, Sys_GetOption("video.hud_scale", 100))), 100.0f);
     g_hud.view = view;
     g_hud.active = 1;
     Hud_MarkQueues();
@@ -1170,11 +1170,11 @@ static void MenuScreen_Size(int realX, int realY, int *pX, int *pY)
     if (scale > 0 && realX > 0 && realY > 0) {
         baseX = Sprite_HighResolutionSet() ? 1024 : 640;
         baseY = baseX * 3 / 4;
-        *pY = (int)lround((double)baseY * 100.0 / scale);
+        *pY = (int)lround(X87S_DIV(X87S_MUL((double)baseY, 100.0), scale));
         // No narrower than the original's screen: the menus keep its widths.
         if ((long long)*pY * realX < (long long)baseX * realY)
             *pY = (int)(((long long)baseX * realY + realX - 1) / realX);
-        *pX = (int)lround((double)*pY * realX / realY);
+        *pX = (int)lround(X87S_DIV(X87S_MUL((double)*pY, realX), realY));
     }
 }
 
@@ -1203,7 +1203,7 @@ void MenuScreen_Begin(void)
         g_pGraphics->resX = x;
         g_pGraphics->resY = y;
         Gfx_SetVirtualScreen(x, y);
-        g_spriteScreenScale = (float)realY / y;
+        g_spriteScreenScale = X87S_DIV(X87S_FILD(float, realY), X87S_LOAD(y));
     }
     if (x != g_menuScreenLastX || y != g_menuScreenLastY) {
         // The first frame's are those the menus were built on.
@@ -1275,8 +1275,8 @@ void MenuScreen_BeginOverlay(void)
     g_menuOverlay.active = 1;
     g_menuOverlay.resX = g_pGraphics->resX;
     g_menuOverlay.resY = g_pGraphics->resY;
-    g_menuOverlay.kx = (float)g_menuOverlay.resX / x;
-    g_menuOverlay.ky = (float)g_menuOverlay.resY / y;
+    g_menuOverlay.kx = X87S_DIV(X87S_FILD(float, g_menuOverlay.resX), X87S_LOAD(x));
+    g_menuOverlay.ky = X87S_DIV(X87S_FILD(float, g_menuOverlay.resY), X87S_LOAD(y));
     for (int i = 0; i < 4; i++) {
         g_menuOverlay.sprites[i] = *g_hudSpriteCounts[i];
         g_menuOverlay.tris[i] = *g_hudTriCounts[i];
@@ -1295,16 +1295,16 @@ void MenuScreen_EndOverlay(void)
     for (int i = 0; i < 4; i++) {
         for (n = g_menuOverlay.sprites[i]; n < *g_hudSpriteCounts[i]; n++) {
             Sprite *p = &g_hudSpriteLayers[i][n];
-            short left = (short)lroundf(p->dst.x * kx);
-            short top = (short)lroundf(p->dst.y * ky);
-            p->dst.w = (short)lroundf((p->dst.x + p->dst.w) * kx) - left;
-            p->dst.h = (short)lroundf((p->dst.y + p->dst.h) * ky) - top;
+            short left = (short)lroundf(X87S_MUL(X87S_LOAD(p->dst.x), kx));
+            short top = (short)lroundf(X87S_MUL(X87S_LOAD(p->dst.y), ky));
+            p->dst.w = (short)lroundf(X87S_MUL(X87S_LOAD((p->dst.x + p->dst.w)), kx)) - left;
+            p->dst.h = (short)lroundf(X87S_MUL(X87S_LOAD((p->dst.y + p->dst.h)), ky)) - top;
             p->dst.x = left;
             p->dst.y = top;
             // (-1, -1, -1) is the sprite's middle, wherever it goes.
             if (p->centre[0] != -1 || p->centre[1] != -1 || p->centre[2] != -1) {
-                p->centre[0] = (int)lroundf(p->centre[0] * kx);
-                p->centre[1] = (int)lroundf(p->centre[1] * ky);
+                p->centre[0] = (int)lroundf(X87S_MUL(X87S_LOAD(p->centre[0]), kx));
+                p->centre[1] = (int)lroundf(X87S_MUL(X87S_LOAD(p->centre[1]), ky));
             }
         }
         for (n = g_menuOverlay.tris[i]; n < *g_hudTriCounts[i]; n++)
