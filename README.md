@@ -146,6 +146,7 @@ It is created with comments on first launch.
 | `[video] hud_scale` | `100` | Size of the in-race HUD in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
 | `[video] hud_aspect` | `16:9` | Widest shape the HUD spreads over, centred on wider screens: an aspect ratio such as `16:9` or `21:9`, or `full` for the whole screen |
 | `[video] menu_scale` | `100` | Size of the menus in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
+| `[video] outline_fonts` | `1` | Draw the text from outlines, sharp at any size (`1`), or from the original's bitmaps (`0`) |
 | `[video] vsync` | `1` | Wait for the display's refresh (`1`) or draw frames as soon as they are ready (`0`) |
 | `[video] window_scale` | `1` | Size of the window in multiples of the game's resolution, applied when leaving fullscreen |
 | `[video] smooth_scaling` | `1` | Smooth the picture when it is scaled to the window or screen (`1`), or keep sharp pixels (`0`) |

@@ -831,15 +831,15 @@ struct Executor : GfxExecutor {
 
     int TextureKind(const GfxStageState &stage)
     {
-        GfxTexture *t = stage.texture;
+        GfxTexture *t = Gfx_DrawnTexture(stage.texture);
         if (t == NULL)
             return 0;
-        if (t->cube != NULL)
-            t = t->cube;
         if (t->flags & GFX_TEXTURE_CUBE)
             return 2;
         if (t->format == GFX_FORMAT_BUMP_DUDVL)
             return 3;
+        if (t->flags & GFX_TEXTURE_DISTANCE_FIELD)
+            return 4;
         return 1;
     }
 
@@ -892,13 +892,17 @@ struct Executor : GfxExecutor {
     {
         for (int i = 0; i < 2; i++) {
             const GfxStageState &stage = s.stages[i];
-            GfxTexture *t = stage.texture;
-            if (t != NULL && t->cube != NULL)
-                t = t->cube;
+            GfxTexture *t = Gfx_DrawnTexture(stage.texture);
             GpuTexture *g = t != NULL ? Ensure(t) : NULL;
             GfxStageState sampled = stage;
             if (ScaledPoint(stage))
                 sampled.minFilter = sampled.magFilter = GFX_FILTER_LINEAR;
+            // A distance field is read between its texels, and from its mip
+            // levels where it is drawn smaller.
+            if (TextureKind(stage) == 4) {
+                sampled.minFilter = sampled.magFilter = GFX_FILTER_LINEAR;
+                sampled.mipFilter = GFX_MIPFILTER_LINEAR;
+            }
             SDL_GPUSampler *sampler = Sampler(sampled);
             bool cube = t != NULL && (t->flags & GFX_TEXTURE_CUBE);
             SDL_GPUTexture *texture = g != NULL ? g->texture : NULL;
@@ -1091,7 +1095,7 @@ struct Executor : GfxExecutor {
         for (const GfxDrawState &s : frame.states)
             for (const GfxStageState &stage : s.stages)
                 if (stage.texture != NULL)
-                    Ensure(stage.texture->cube != NULL ? stage.texture->cube : stage.texture);
+                    Ensure(Gfx_DrawnTexture(stage.texture));
         for (const GfxCommand &c : frame.commands)
             if (c.type == GFX_CMD_TARGET && c.target != NULL)
                 Ensure(c.target->cube != NULL ? c.target->cube : c.target);

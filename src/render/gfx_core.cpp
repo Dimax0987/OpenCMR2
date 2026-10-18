@@ -704,6 +704,7 @@ extern "C" GfxTexture *Gfx_CreateTexture(int width, int height, int format, int 
     t->dirty = true;
     t->renderedTo = false;
     t->gpu = NULL;
+    t->replacement = NULL;
     int faces = (flags & GFX_TEXTURE_CUBE) ? 6 : 1;
     for (int f = 0; f < faces; f++) {
         for (int m = 0; m < mipLevels; m++) {
@@ -747,12 +748,24 @@ extern "C" void Gfx_DestroyTexture(GfxTexture *texture)
                 goto flushed;
             }
 flushed:
+    Gfx_DestroyTexture(texture->replacement);
     if (s_executor != NULL)
         s_executor->DestroyTexture(texture);
     s_textures.erase(std::remove(s_textures.begin(), s_textures.end(), texture), s_textures.end());
     for (int f = 1; f < 6; f++)
         delete texture->faceViews[f];
     delete texture;
+}
+
+extern "C" void Gfx_SetTextureReplacement(GfxTexture *texture, GfxTexture *replacement)
+{
+    texture = Root(texture);
+    if (texture == NULL || texture->replacement == replacement)
+        return;
+    // Draws recorded so far read the previous one.
+    Flush();
+    Gfx_DestroyTexture(texture->replacement);
+    texture->replacement = replacement;
 }
 
 extern "C" int Gfx_GetTextureMipCount(GfxTexture *texture)

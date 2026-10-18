@@ -370,7 +370,9 @@ enum GfxTextureFlags {
     GFX_TEXTURE_RENDER_TARGET = 1,    /* can be drawn into (with its own depth buffer) */
     GFX_TEXTURE_CUBE = 2,             /* six faces */
     GFX_TEXTURE_DYNAMIC = 4,          /* changed often */
-    GFX_TEXTURE_STAGING = 8           /* CPU only: a source for Gfx_CopyTexture */
+    GFX_TEXTURE_STAGING = 8,          /* CPU only: a source for Gfx_CopyTexture */
+    GFX_TEXTURE_DISTANCE_FIELD = 16   /* alpha is a signed distance to the edge, 0.5 on it: drawn with
+                                         an edge of one pixel at any scale */
 };
 
 /* mipLevels counts the top level (1 = no mipmaps). */
@@ -389,6 +391,10 @@ typedef struct GfxLockedRect {
    updated on the GPU when it is unlocked. */
 BOOL Gfx_LockTexture(GfxTexture *texture, int face, int mip, GfxLockedRect *out);
 void Gfx_UnlockTexture(GfxTexture *texture, int face, int mip);
+
+/* Draws replacement wherever texture is drawn (NULL: texture itself), with
+   the same texture coordinates; it is destroyed with texture. */
+void Gfx_SetTextureReplacement(GfxTexture *texture, GfxTexture *replacement);
 
 /* Fills the lower mip levels from the top one (box filter). */
 void Gfx_GenerateMipmaps(GfxTexture *texture);

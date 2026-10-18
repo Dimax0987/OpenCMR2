@@ -7,6 +7,7 @@
 #include "Graphics.h"
 #include "InstallInfo.h"
 #include "Sprite.h"
+#include "port/outline_font.h"
 
 FontSlot *g_fonts;
 unsigned int g_fontCount;
@@ -102,6 +103,24 @@ void Font_Setup(void *pData, Texture *pTexture, unsigned int index, char bInArch
                 g_fonts[index].pGlyphs = pGlyphs;
             }
             g_fonts[index].loaded = 1;
+            // PORT: drawn from a distance field, sharp at any scale.
+            {
+                OutlineFontGlyph cells[256];
+                int count = 0;
+                for (i = 0; i < 256; i++) {
+                    short glyph = g_fonts[index].pCharMap[i];
+                    if (glyph < 0 || (unsigned int)glyph >= g_fonts[index].pHeader->glyphCount)
+                        continue;
+                    FontGlyph *pGlyph = &g_fonts[index].pGlyphs[glyph];
+                    cells[count].code = (BYTE)i;
+                    cells[count].x = ((short *)pGlyph->field_0x0)[0];
+                    cells[count].y = ((short *)pGlyph->field_0x0)[1];
+                    cells[count].width = pGlyph->width;
+                    cells[count].height = pGlyph->height;
+                    count++;
+                }
+                OutlineFont_Replace(pTexture->name, pTexture->pSurface, cells, count);
+            }
         }
     }
 }

@@ -16,7 +16,7 @@ layout(set = 2, binding = 3) uniform samplerCube cube1;
 
 layout(std140, set = 3, binding = 0) uniform FragmentUniforms {
     ivec4 stage0;       // colour op, colour arg1, colour arg2, alpha op
-    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump), scaled point filter
+    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump, 4 distance field), scaled point filter
     ivec4 stage1;
     ivec4 stage1b;
     vec4 textureFactor;
@@ -79,12 +79,23 @@ vec4 SampleScaledPoint(sampler2D t2, vec2 uv)
     return textureLod(t2, t / size, 0.0);
 }
 
+// A distance field in alpha (0.5 on the edge): its coverage of the pixel,
+// with an edge one pixel wide at any scale.
+vec4 SampleDistanceField(sampler2D t2, vec2 uv)
+{
+    vec4 t = texture(t2, uv);
+    float w = max(fwidth(t.a), 1e-5);
+    return vec4(t.rgb, clamp((t.a - 0.5) / w + 0.5, 0.0, 1.0));
+}
+
 vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, vec4 coord)
 {
     if (kind == 2)
         return texture(tc, coord.xyz);
     if (kind == 0)
         return vec4(1.0);
+    if (kind == 4)
+        return SampleDistanceField(t2, coord.xy);
     if (scaledPoint != 0)
         return SampleScaledPoint(t2, coord.xy);
     return texture(t2, coord.xy);

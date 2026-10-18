@@ -162,6 +162,20 @@ add_custom_command(
     DEPENDS ${ICON_BMP} ${ICON_PNG} ${PROJECT_SOURCE_DIR}/cmake/embed_spirv.cmake
     COMMENT "Embedding the window icon")
 
+# ---- TeX Gyre Heros (embedded) ----------------------------------------------------
+# The outlines the game's Helvetica text is drawn with (render/outline_font.cpp).
+set(HEROS_DIR ${PROJECT_SOURCE_DIR}/third_party/tex-gyre-heros)
+set(FONTS_HEADER ${CMAKE_CURRENT_BINARY_DIR}/generated/fonts_embedded.h)
+add_custom_command(
+    OUTPUT ${FONTS_HEADER}
+    COMMAND ${CMAKE_COMMAND} -DOUTPUT=${FONTS_HEADER}
+        "-DINPUTS=${HEROS_DIR}/texgyreheros-regular.otf|${HEROS_DIR}/texgyreheros-bold.otf"
+        -P ${PROJECT_SOURCE_DIR}/cmake/embed_spirv.cmake
+    VERBATIM
+    DEPENDS ${HEROS_DIR}/texgyreheros-regular.otf ${HEROS_DIR}/texgyreheros-bold.otf
+        ${PROJECT_SOURCE_DIR}/cmake/embed_spirv.cmake
+    COMMENT "Embedding the fonts")
+
 # Applications menu entry: on its own, as it includes the real <windows.h>
 # that port/compat replaces for the game.
 add_library(opencmr2_shortcut STATIC platform/menu_shortcut.cpp ${ICON_HEADER})
@@ -195,11 +209,14 @@ target_link_libraries(opencmr2_net PUBLIC enet Threads::Threads)
 target_sources(opencmr2_platform PRIVATE
     render/gfx_core.cpp
     render/gfx_gpu.cpp
+    render/outline_font.cpp
     ${SHADER_HEADER}
+    ${FONTS_HEADER}
     ${ICON_HEADER}
     audio/audio_sdl.cpp
     input/input_sdl.cpp
     video/movie.cpp
     net/net_api.cpp)
-target_include_directories(opencmr2_platform PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_include_directories(opencmr2_platform PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated
+    ${PROJECT_SOURCE_DIR}/third_party/stb)
 target_link_libraries(opencmr2_platform PRIVATE opencmr2_bink opencmr2_net)

@@ -25,7 +25,16 @@ struct GfxTexture {
     bool dirty;                 // CPU copy newer than the GPU's
     bool renderedTo;            // the GPU copy is newer (render targets)
     void *gpu;                  // executor's object
+    GfxTexture *replacement;    // drawn instead (Gfx_SetTextureReplacement)
 };
+
+// The texture a draw reads for t: its cube, or its replacement.
+inline GfxTexture *Gfx_DrawnTexture(GfxTexture *t)
+{
+    if (t != nullptr && t->cube != nullptr)
+        t = t->cube;
+    return t != nullptr && t->replacement != nullptr ? t->replacement : t;
+}
 
 // A vertex buffer the game fills through Lock/Unlock. Draws from one that
 // has not been locked for a while refer to its GPU copy (stage geometry);

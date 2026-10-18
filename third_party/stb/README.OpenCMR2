@@ -1,0 +1,4 @@
+stb_truetype 1.26 (https://github.com/nothings/stb), unmodified.
+Source: stb_truetype.h at commit 2c980bb59875b0d32144a71867fbdebb2f77cd20.
+Public domain or MIT licence (the end of the file).
+Used by src/render/outline_font.cpp to draw the TeX Gyre Heros glyphs.

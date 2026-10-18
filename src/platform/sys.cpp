@@ -306,6 +306,8 @@ const char s_defaultSettings[] =
     "; Size of the menus in percent of the original's at the screen's height;\n"
     "; 0 = the original's layout in pixels.\n"
     "; menu_scale = 100\n"
+    "; 1 = text drawn from outlines, sharp at any size; 0 = the original's bitmaps.\n"
+    "; outline_fonts = 1\n"
     "; 1 = stretch the movies over the whole window, 0 = keep their proportions.\n"
     "; stretch_movies = 0\n"
     "; 1 = wait for the display's refresh, 0 = draw frames as soon as they are ready.\n"
