@@ -502,6 +502,11 @@ int StageTiming_GetSplitDriverIDForPosition(int iPosition, int iSplit)
 // FUNCTION: CMR2 0x00455d40
 int StageTiming_GetSplitTimeForPosition(int iPosition, int iSplit)
 {
+    // PORT: the split bar asks for twelve splits' target times, but the
+    // tables hold ten; the original read the last two from the globals after
+    // them. They have no times, so they are 0.
+    if (iSplit >= 10)
+        return 0;
     return ConvertRawTimeToCentiseconds(g_stageSplitTimesRaw[iSplit][g_stageSplitTimesRawDriverIx[iSplit][iPosition]]);
 }
 

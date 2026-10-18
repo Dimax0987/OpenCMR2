@@ -80,8 +80,10 @@ ASAN_OPTIONS=detect_leaks=0:halt_on_error=0 \
 ```
 
 Each scenario's `run.log` holds the reports. Code that reads a dword and
-keeps its low byte, as the original does, is reported as well; check the
-use before treating a report as a bug. The 60-second scenario timeout may
+keeps its low byte, as the original does, runs past its variable without
+changing the value; the functions known to do it are listed, with the
+access, in `tools/sanitizer-ignorelist.txt`, so the scenarios run without
+AddressSanitizer reports and any new one is worth a look. The 60-second scenario timeout may
 need raising under the sanitizers.
 
 ## Source sync and generated files

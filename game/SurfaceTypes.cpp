@@ -37,6 +37,12 @@ BYTE g_surfaceIndexMap[96] = {
 // FUNCTION: CMR2 0x00478a10
 short Surface_GetMappedIndex(short index)
 {
+    // PORT: a point off the stage's mesh gets no surface, and callers pass
+    // what their variable held (Track_GetGroundHeight leaves it unset, one
+    // passes the default height). The original read whatever was that far
+    // from the table, up to 32 KB away; such a point gets the first class.
+    if ((unsigned short)index >= sizeof(g_surfaceIndexMap))
+        return g_surfaceIndexMap[0];
     return g_surfaceIndexMap[index];
 }
 // Path of the surface texture file; empty when the data came from memory.

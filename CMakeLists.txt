@@ -46,7 +46,8 @@ if(WIN32)
 endif()
 
 if(OPENCMR2_SANITIZE)
-    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer
+                        -fsanitize-ignorelist=${CMAKE_SOURCE_DIR}/tools/sanitizer-ignorelist.txt)
     add_link_options(-fsanitize=address,undefined)
 endif()
 

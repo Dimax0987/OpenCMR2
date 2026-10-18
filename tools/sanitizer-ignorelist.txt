@@ -1,0 +1,22 @@
+# Accesses the sanitizer build (OPENCMR2_SANITIZE) does not report.
+#
+# Each of these functions reads a dword where the original reads a byte,
+# short or byte array and keeps only the low byte or bytes it needs, as the
+# original's code does: the read runs one to three bytes past the variable,
+# into the same stack frame or the globals after it, and the value used is
+# the same. Any other access in them is still checked by UBSan.
+
+[address]
+# *(int *)(light + n) & 0xff over BYTE light[4]
+fun:*StageObject_AverageWheelGroundLighting*
+# *(DWORD *)&g_weatherViewCount, a one-byte global, low byte used
+fun:*StageObject_DeriveLoadedScaleVector*
+# *(int *)&g_unk0x0082ca18 & 0xff, a one-byte global
+fun:*RallyData_DrawCarSplitTimesPanel*
+# *(DWORD *)rgb over BYTE rgb[3], the fog colour's unused alpha
+fun:*Track_SetFogAndSkyAlpha*
+# *(unsigned int *)&param1 over an unsigned short parameter, used & 0xffff
+fun:*ApplyControllerButtonBindings*
+
+[alignment]
+fun:*StageObject_AverageWheelGroundLighting*
