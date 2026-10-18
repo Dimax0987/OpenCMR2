@@ -133,10 +133,6 @@ char g_strPpsPathFormat[32] = "%s\\pps\\%s%.2d%.2d%.2d%.2d.pps";
 // GLOBAL: CMR2 0x00818acc
 char g_ppsPath[260];
 
-extern BYTE g_saveCarRecords[8 * 0xc4];
-extern BYTE g_saveDirty[8];
-extern BYTE g_saveProfiles[4 * 0x650];
-extern SaveSlot g_saveSlots[16];
 
 #define SLOT(i) (g_saveSlots[i])
 

@@ -5816,10 +5816,6 @@ void FrontendMenu_DrawProfileBestStageTimes(Menu *pMenu)
     FrontendDraw_HelpText(CFrontend::GetTextString(0x172), 1);
 }
 
-extern BYTE g_saveCarRecords[8 * 0xc4];
-extern BYTE g_saveDirty[8];
-extern BYTE g_saveProfiles[4 * 0x650];
-extern SaveSlot g_saveSlots[16];
 int GameInfo_GetField98(void);
 void RallyData_SetPlayerDefaultCarSetup(int player);
 
@@ -6094,8 +6090,7 @@ void FrontendChampionship_InitEntries(void)
         pEntry[1] = (pEntry[1] & 0xfc) | 0x3c;
         i++;
         pEntry += 0xc4;
-    // 0x52fa0c in the original (g_saveProfiles + 4): bounded by the array
-    // itself, since our link order does not keep g_saveProfiles after it.
+    // 0x52fa0c in the original (g_saveProfiles + 4).
     } while ((INT_PTR)pEntry < (INT_PTR)(g_saveCarRecords + 0x62c));
 }
 

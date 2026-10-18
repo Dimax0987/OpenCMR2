@@ -61,6 +61,28 @@ struct SaveSlot {
     BYTE pad[0x28];
 };
 
+// PORT: the championship save data as one object, laid out as it was in
+// the original (0x52f3e0..0x531650), where five globals followed each other.
+// Code reads past one into the next: the Rally Challenge results read
+// driver records past the eight, from the profiles after them. As
+// separate globals, alignment padding moved those reads eight bytes, and a
+// sanitizer build's guards elsewhere.
+struct SaveBlock {
+    BYTE carRecords[8 * 0xc4];  // 0x52f3e0
+    BYTE dirty[8];              // 0x52fa00
+    BYTE profiles[4 * 0x650];   // 0x52fa08
+    BYTE unk0x00531348[8];      // 0x531348
+    SaveSlot slots[16];         // 0x531350
+};
+static_assert(offsetof(SaveBlock, profiles) == 0x52fa08 - 0x52f3e0, "SaveBlock layout");
+static_assert(offsetof(SaveBlock, slots) == 0x531350 - 0x52f3e0, "SaveBlock layout");
+extern SaveBlock g_saveBlock;
+#define g_saveCarRecords (g_saveBlock.carRecords)
+#define g_saveDirty (g_saveBlock.dirty)
+#define g_saveProfiles (g_saveBlock.profiles)
+#define g_unk0x00531348 (g_saveBlock.unk0x00531348)
+#define g_saveSlots (g_saveBlock.slots)
+
 struct SavedGameCarRecord { BYTE data[0x148]; };
 struct SavedGameController { BYTE data[7]; };
 

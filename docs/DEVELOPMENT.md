@@ -79,11 +79,13 @@ ASAN_OPTIONS=detect_leaks=0:halt_on_error=0 \
     python3 tests/runtime_scenarios.py --probe build/linux-debug/tests/stage_probe --data "$HOME/cmr2game"
 ```
 
-Each scenario's `run.log` holds the reports. Code that reads a dword and
-keeps its low byte, as the original does, runs past its variable without
-changing the value; the functions known to do it are listed, with the
-access, in `tools/sanitizer-ignorelist.txt`, so the scenarios run without
-AddressSanitizer reports and any new one is worth a look. The 60-second scenario timeout may
+Each scenario's `run.log` holds the reports. Some of the original's code
+reads a dword and keeps its low byte, running past its variable without
+changing the value, or ends a loop at `&a[n]` and indexes the members after
+an array; `tools/sanitizer-ignorelist.txt` lists those functions with the
+access, and UBSan's function type check is off because the game calls its
+callback tables through generic types. The scenarios run without reports, so
+any new one is worth a look. The 60-second scenario timeout may
 need raising under the sanitizers.
 
 ## Source sync and generated files

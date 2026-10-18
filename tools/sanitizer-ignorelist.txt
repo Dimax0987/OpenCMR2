@@ -5,6 +5,9 @@
 # original's code does: the read runs one to three bytes past the variable,
 # into the same stack frame or the globals after it, and the value used is
 # the same. Any other access in them is still checked by UBSan.
+#
+# The UBSan sections below list indexing and alignment the original does
+# itself; the function type check is off for the whole build (CMakeLists.txt).
 
 [address]
 # *(int *)(light + n) & 0xff over BYTE light[4]
@@ -20,3 +23,50 @@ fun:*ApplyControllerButtonBindings*
 
 [alignment]
 fun:*StageObject_AverageWheelGroundLighting*
+
+# Indexing UBSan reports that is the original's own: a loop's end written as
+# &a[n] (or a start as a - 1), or an index into the members after an array,
+# which the structures' layout checks keep where the original has them.
+[array-bounds]
+# end of the loop as &m_sessionPlayers[7].longName
+fun:*ResetSessionPlayerTable*
+# end as &g_menuStreamPos[6][0]
+fun:*FrontendAnimation_ResetMainPath*
+# start as pParts - 1, incremented before use
+fun:*Mesh_BuildParts*
+# end as g_classificationTable + 25
+fun:*RallyData_LayoutPlayerSplitBars*
+# cornerOnGround[4 + i] over the eight corners
+fun:*StageObject_UpdateCarCornerGroundHeights*
+# end as g_sparkTri[3].colour, g_shardTri[3].colour
+fun:*CarEffects_Init*
+fun:*GlassShard_Draw*
+fun:*Debris_Draw*
+# camera records addressed from four bytes before their array
+fun:*View_BlendCameraStates*
+fun:*View_UpdateCamera*
+# end as &g_menuScrollers[12].pMenu
+fun:*FrontendScroller_RecomputeAllAttached*
+# end as g_saveProfiles + 0x1954
+fun:*Profile_AssignAvailableCategory*
+# clears five maps and rect pairs of four, into the members after them
+fun:*RallyData_LoadCurrentRallyWeatherTextures*
+# items[-1] when the menu lacks the item: the original writes the menu's
+# field_0x4, as this layout does
+fun:*GameMenu_SetupStageResults*
+# wheelPos[corner] over the eight local corners
+fun:*Car_IntegrateContacts*
+# end as g_saveCarRecords + 0x62c, within the save data
+fun:*FrontendChampionship_InitEntries*
+# driver records past the eight, within the save data (SaveBlock)
+fun:*RallyData_GetRecord*
+
+# Records the game reads in place from its files, at the file's offsets.
+[alignment]
+fun:*StageWeather_InitParticleAndLightState*
+fun:*StageDeform_ApplyRadialDent*
+fun:*StageDeform_ApplyPlanarDent*
+
+# a << aShift with aShift 32 for a texture without alpha, where a is 0
+[shift-exponent]
+fun:*LoadTGATexture*

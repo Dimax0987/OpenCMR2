@@ -26,16 +26,10 @@ void Race_DrawPlayerMessage(char *text, int *pColour, int car, int param4, int x
 //   0x531350  16 index records of 0x30 bytes (category in bits 18..21 of +0)
 // These were five separate globals in the original, not one blob: MSVC6 only
 // reorders stores it can prove disjoint, i.e. to different symbols.
-// GLOBAL: CMR2 0x0052f3e0
-BYTE g_saveCarRecords[8 * 0xc4];
-// GLOBAL: CMR2 0x0052fa00
-BYTE g_saveDirty[8];
-// GLOBAL: CMR2 0x0052fa08
-BYTE g_saveProfiles[4 * 0x650];
-// GLOBAL: CMR2 0x00531348
-BYTE g_unk0x00531348[8];
-// GLOBAL: CMR2 0x00531350
-SaveSlot g_saveSlots[16];
+// PORT: one object in the port (SaveBlock, SavedGame.h): g_saveCarRecords
+// (0x52f3e0), g_saveDirty (0x52fa00), g_saveProfiles (0x52fa08),
+// g_unk0x00531348 and g_saveSlots (0x531350).
+SaveBlock g_saveBlock;
 
 // A save slot (g_saveSlots, 0x30 bytes): packed first word and a time.
 
