@@ -23,8 +23,16 @@ fun:*RallyData_DrawCarSplitTimesPanel*
 fun:*Track_SetFogAndSkyAlpha*
 # *(unsigned int *)&param1 over an unsigned short parameter, used & 0xffff
 fun:*ApplyControllerButtonBindings*
-# *(unsigned int *)&g_unk0x0052af58[0] & 0xff, the menu's device
+# *(unsigned int *)&g_unk0x0052af58[0] & 0xff, the in-race menu's device
+# (two bytes the original otherwise reads as bytes)
 fun:*InRaceMenu_UpdateStateMachineFrame*
+fun:*InRaceMenu_DrawHeaderBar*
+# *(unsigned int *)&i, a byte counter passed as a dword; the callee keeps
+# its low byte
+fun:*InRaceMenu_AdvanceScreenEntries*
+# the sample after a curve's last, read at its maximum, where it is weighted
+# by zero
+fun:*NetRace_InterpolateWordCurve*
 # *(unsigned int *)&CGameInfo::m_unk0x005a01bc & 0xff, the session count
 fun:*Network_GetEnumeratedSessionCount*
 
@@ -47,13 +55,13 @@ fun:*RallyData_LayoutPlayerSplitBars*
 fun:*CarEffects_Init*
 fun:*GlassShard_Draw*
 fun:*Debris_Draw*
-# camera records addressed from four bytes before their array
-fun:*View_BlendCameraStates*
-fun:*View_UpdateCamera*
 # end as &g_menuScrollers[12].pMenu
 fun:*FrontendScroller_RecomputeAllAttached*
-# end as g_saveProfiles + 0x1954
+# end as g_saveProfiles + 0x1954, the profiles from their +0x14
 fun:*Profile_AssignAvailableCategory*
+fun:*Profile_LoadAndLinkSavedRecord*
+fun:*SaveProfiles_GetAvailableProfileIndex*
+fun:*SaveProfiles_GetAvailableProfileName*
 # clears five maps and rect pairs of four, into the members after them
 fun:*RallyData_LoadCurrentRallyWeatherTextures*
 # items[-1] when the menu lacks the item: the original writes the menu's
