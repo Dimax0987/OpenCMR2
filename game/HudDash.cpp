@@ -324,12 +324,15 @@ void Dash_Update(int player)
         g_dashGear[player] = 0;
     else
         g_dashGear[player] = g_dashGear[player] + 1;
+    // PORT: the marker moves on the HUD's screen (see Hud_BeginLayout).
+    Hud_BeginLayout();
     y = FixMul(g_pGraphics->resY << 16, g_dashGear[player] * -0xae1 + 0xbe66) >> 16;
     if (g_dashGearMarker[player] == -1)
         g_dashGearMarker[player] = y;
     g_dashGearMarkerY[player] = g_dashGearMarker[player];
     d = y - g_dashGearMarker[player];
     lim = FixMul(g_pGraphics->resY << 16, 0x2d7) >> 16;
+    Hud_EndLayout();
     if (d > lim)
         d = lim;
     if (d < -lim)

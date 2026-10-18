@@ -297,6 +297,12 @@ const char s_defaultSettings[] =
     "; fov = 70\n"
     "; 1 = keep running when the window loses the focus or is minimised.\n"
     "; run_in_background = 0\n"
+    "; Size of the in-race HUD in percent of the original's at the screen's\n"
+    "; height; 0 = the original's layout in pixels.\n"
+    "; hud_scale = 100\n"
+    "; Widest shape the HUD spreads over, centred on wider screens: an aspect\n"
+    "; ratio (16:9, 21:9) or full.\n"
+    "; hud_aspect = 16:9\n"
     "; 1 = stretch the movies over the whole window, 0 = keep their proportions.\n"
     "; stretch_movies = 0\n"
     "; 1 = every car with the player's model and textures (at high car detail),\n"
@@ -1143,6 +1149,11 @@ extern "C" const char *Sys_GetInstallSetting(const char *name)
 extern "C" int Sys_GetOption(const char *name, int fallback)
 {
     return Platform_GetSettingInt(name, fallback);
+}
+
+extern "C" const char *Sys_GetOptionText(const char *name, const char *fallback)
+{
+    return Platform_GetSetting(name, fallback);
 }
 
 extern "C" BOOL Sys_SetOption(const char *name, int value)

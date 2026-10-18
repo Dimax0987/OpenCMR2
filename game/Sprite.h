@@ -120,4 +120,11 @@ void Tri2D_Queue(int *pA, int *pB, int *pC, BYTE *pColour, int layer);
 void Tri2D_SetVertex(GfxTLVertex *pVertex, int *pPos, BYTE *pColour);
 int Tri2D_Shutdown(void);
 
+// PORT: lays the in-race HUD out on any screen (see Sprite.cpp).
+void Hud_BeginView(int view);
+void Hud_Element(void);
+void Hud_EndView(void);
+void Hud_BeginLayout(void);
+void Hud_EndLayout(void);
+
 #endif

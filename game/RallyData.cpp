@@ -2786,6 +2786,8 @@ void RallyData_DrawAndHandleCarHUD(int car, short *pRect)
                           StageTiming_GetClockTime() / 100),
                       pRect[0] + 10, pRect[3] + pRect[1] - 10, (int *)colour, 0x21);
     }
+    // PORT: each panel is an element of the HUD (see Hud_Element).
+    Hud_Element();
     pView = (int *)StageObject_GetPlayerViewRectangle(car);
     *(int *)&rect[0] = pView[0];
     *(int *)&rect[2] = pView[1];
@@ -2797,6 +2799,7 @@ void RallyData_DrawAndHandleCarHUD(int car, short *pRect)
             Race_DrawPlayerMessage(CFrontend::GetTextString(0xbe), (int *)g_gapTextColour, car, 0, -1, -1);
         }
     }
+    Hud_Element();
     if (g_unk0x00536c88[car] != 0) {
         sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(0xbd));
         Race_DrawPlayerMessage(CFrontend::m_stringDest, (int *)&g_unk0x005170e8, car, 1, -1, -1);
@@ -2813,6 +2816,7 @@ void RallyData_DrawAndHandleCarHUD(int car, short *pRect)
         sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(0x83));
         Race_DrawPlayerMessage(CFrontend::m_stringDest, (int *)&g_unk0x005170e8, car, 1, -1, -1);
     }
+    Hud_Element();
     if ((*RallyData_GetDriverKnockoutOrTeamRecord(StageUI_GetRaceEndEventCount() + (char)car) & 4) != 0) {
         if (CGameInfo::GetConfiguredGameMode() == 7 || CGameInfo::GetConfiguredGameMode() == 5 ||
             CGameInfo::GetConfiguredGameMode() == 6 || CGameInfo::GetConfiguredGameMode() == 3 ||
@@ -2830,6 +2834,7 @@ void RallyData_DrawAndHandleCarHUD(int car, short *pRect)
             RallyData_DrawNetworkStandingsPanel(rect);
         }
     }
+    Hud_Element();
     if ((*RallyData_GetDriverKnockoutOrTeamRecord(StageUI_GetRaceEndEventCount() + (char)car) & 8) != 0) {
         if (CGameInfo::GetConfiguredGameMode() == 5 || CGameInfo::GetConfiguredGameMode() == 6 ||
             CGameInfo::GetConfiguredGameMode() == 7 || CGameInfo::GetConfiguredGameMode() == 0xb ||
@@ -2839,12 +2844,14 @@ void RallyData_DrawAndHandleCarHUD(int car, short *pRect)
             RallyData_DrawStageTimePanel(car, rect);
         }
     }
+    Hud_Element();
     if ((*RallyData_GetDriverKnockoutOrTeamRecord(StageUI_GetRaceEndEventCount() + (char)car) & 0x20) != 0) {
         if (CGameInfo::GetConfiguredGameMode() == 5 || CGameInfo::GetConfiguredGameMode() == 6 ||
             CGameInfo::GetConfiguredGameMode() == 7 || CGameInfo::GetConfiguredGameMode() == 0xb ||
             CGameInfo::GetConfiguredGameMode() == 0xc || (BYTE)RallyData_GetFlag25()) {
             StageUI_DrawHudRouteMap(car, rect);
         }
+        Hud_Element();
         RallyData_DrawTargetTimeGap(car, rect);
     }
 }
@@ -6334,14 +6341,24 @@ void RallyData_UpdateViewFrameAndDebugOverlay(CallbackStateMachine *param1, int 
     if ((BYTE)RallyData_IsChampionshipFinalStage() != 0)
         return;
     if ((BYTE)RallyDataState() == 1 && param3 != 0) {
+        // PORT: the HUD laid out for the screen, element by element.
+        Hud_BeginView(maskedView);
         Dash_Draw(maskedView, g_viewScreenRect);
+        Hud_Element();
         RallyData_DrawAndHandleCarHUD(maskedView, (short *)g_viewScreenRect);
+        Hud_Element();
         Race_DrawPlayerCallSlots(maskedView, g_viewScreenRect);
+        Hud_EndView();
     }
     if ((BYTE)RallyDataState() == 2 && param3 != 0) {
+        // PORT: the HUD laid out for the screen, element by element.
+        Hud_BeginView(maskedView);
         Dash_Draw(maskedView, g_viewScreenRect);
+        Hud_Element();
         RallyData_DrawAndHandleCarHUD(maskedView, (short *)g_viewScreenRect);
+        Hud_Element();
         Race_DrawPlayerCallSlots(maskedView, g_viewScreenRect);
+        Hud_EndView();
     }
 }
 
@@ -6805,6 +6822,8 @@ void RallyData_LayoutPlayerSplitBars(void)
     SplitMarker *pSpan;
 
     total = RallyData_BuildStageRouteDistanceColumn();
+    // PORT: the bars are laid out on the HUD's screen (see Hud_BeginLayout).
+    Hud_BeginLayout();
     if (CGameInfo::GetConfiguredGameMode() == 8 || CGameInfo::GetConfiguredGameMode() == 9 ||
         CGameInfo::GetConfiguredGameMode() == 0xb) {
         barStart = (int)g_pGraphics->resX * 0xc00 >> 16;
@@ -6896,6 +6915,7 @@ storeSplitColour:
             car++;
         } while (car <= 1);
     }
+    Hud_EndLayout();
 }
 
 

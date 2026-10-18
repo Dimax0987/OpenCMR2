@@ -2,6 +2,11 @@
 #include "FloatToInt.h"
 #include "Game.h"
 #include "Graphics.h"
+#include "GameInfo.h"
+#include "Frontend.h"
+#include "port/sys.h"
+#include <math.h>
+#include <stdio.h>
 
 Sprite g_spriteLayer1[SPRITE_LAYER_MAX];
 Sprite g_spriteLayer2[SPRITE_LAYER_MAX];
@@ -843,4 +848,236 @@ void Quad2D_QueueFixedTriangle(int, Quad2DInputVertex *pA,
     p->verts.v[2].colour = GFX_RGBA(pC->colour[0], pC->colour[1],
                                       pC->colour[2], pC->colour[3]);
     p->verts.v[2].specular = 0xff000000;
+}
+
+// PORT: the in-race HUD on any screen. The HUD lays itself out for a 4:3
+// screen: its textures and fonts keep their size in pixels for 640x480, or
+// for 1024x768 with the high-resolution set, at positions taken as fractions
+// of the screen (resX * 0xf333 >> 16) and panels sized from its width
+// (resX * 75 / 640). On a larger screen it shrinks, and on a wider one its
+// elements spread apart and its panels stretch around their text.
+//
+// Between Hud_BeginView and Hud_EndView the game draws a view's HUD on that
+// 4:3 screen: resX, resY and the view rectangles are those of 640x480 or
+// 1024x768. Each element (the 2D queued up to Hud_Element) is then placed on
+// the real view: scaled with its height, by [video] hud_scale percent, and
+// moved to the edge or the middle it is nearest to, within the widest shape
+// [video] hud_aspect allows. hud_scale = 0 keeps the original's layout.
+
+int *RallyData_GetViewScreenRectangle(int view);
+
+struct HudFrame {
+    int active;
+    int view;
+    int resX, resY;                     // the real screen
+    float vx0, vy0, vx1, vy1;           // the view on the HUD's 4:3 screen
+    float rx0, ry0, rx1, ry1;           // where its HUD goes on the real one
+    float scale;
+    unsigned int sprites[4], tris[4];   // queued before the current element
+};
+
+static HudFrame g_hud;
+
+#define HUD_MIN(a, b) ((a) < (b) ? (a) : (b))
+#define HUD_MAX(a, b) ((a) > (b) ? (a) : (b))
+
+static unsigned int *const g_hudSpriteCounts[4] = { &g_spriteCount1, &g_spriteCount2, &g_spriteCount3, &g_spriteCount4 };
+static Sprite *const g_hudSpriteLayers[4] = { g_spriteLayer1, g_spriteLayer2, g_spriteLayer3, g_spriteLayer4 };
+static unsigned int *const g_hudTriCounts[4] = { &g_tri2DCount1, &g_tri2DCount2, &g_tri2DCount3, &g_tri2DCount4 };
+static Tri2D *const g_hudTriLayers[4] = { g_tri2DLayer1, g_tri2DLayer2, g_tri2DLayer3, g_tri2DLayer4 };
+
+// Widest width / height the HUD spreads over: "16:9", "2.39", or "full".
+static float Hud_MaxAspect(void)
+{
+    const char *text = Sys_GetOptionText("video.hud_aspect", "16:9");
+    float w = 0.0f, h = 1.0f;
+    if (sscanf(text, "%f:%f", &w, &h) < 1 || w <= 0.0f || h <= 0.0f)
+        return 0.0f;
+    return w / h < 4.0f / 3.0f ? 4.0f / 3.0f : w / h;
+}
+
+static void Hud_MarkQueues(void)
+{
+    for (int i = 0; i < 4; i++) {
+        g_hud.sprites[i] = *g_hudSpriteCounts[i];
+        g_hud.tris[i] = *g_hudTriCounts[i];
+    }
+}
+
+// Gives g_pGraphics the size of the HUD's 4:3 screen, keeping the real one.
+// Returns 0 when the HUD keeps the original's layout (hud_scale = 0).
+static int Hud_SetScreen(int *pResX, int *pResY)
+{
+    if (Sys_GetOption("video.hud_scale", 100) <= 0)
+        return 0;
+    *pResX = g_pGraphics->resX;
+    *pResY = g_pGraphics->resY;
+    if (CGameInfo::GetScreenWidth() >= 0x400 && CFrontend::IsTextureWidthSupported(0x400) &&
+        CFrontend::IsTextureHeightSupported(0x400)) {
+        g_pGraphics->resX = 1024;
+        g_pGraphics->resY = 768;
+    } else {
+        g_pGraphics->resX = 640;
+        g_pGraphics->resY = 480;
+    }
+    return 1;
+}
+
+// Layouts the game works out before drawing the HUD (the dash's gear marker,
+// the split bars) are made on its 4:3 screen too.
+static struct {
+    int active;
+    int resX, resY;
+} g_hudLayout;
+
+void Hud_BeginLayout(void)
+{
+    if (!g_hud.active && !g_hudLayout.active)
+        g_hudLayout.active = Hud_SetScreen(&g_hudLayout.resX, &g_hudLayout.resY);
+}
+
+void Hud_EndLayout(void)
+{
+    if (g_hudLayout.active) {
+        g_pGraphics->resX = g_hudLayout.resX;
+        g_pGraphics->resY = g_hudLayout.resY;
+        g_hudLayout.active = 0;
+    }
+}
+
+void Hud_BeginView(int view)
+{
+    short *pReal;
+    short *pVirtual;
+    float aspect;
+    float maxWidth;
+    float k;
+
+    if (g_hud.active || g_hudLayout.active)
+        return;
+    pReal = (short *)RallyData_GetViewScreenRectangle(view);
+    g_hud.rx0 = pReal[0];
+    g_hud.ry0 = pReal[1];
+    g_hud.rx1 = pReal[0] + pReal[2];
+    g_hud.ry1 = pReal[1] + pReal[3];
+    if (!Hud_SetScreen(&g_hud.resX, &g_hud.resY))
+        return;
+    pVirtual = (short *)RallyData_GetViewScreenRectangle(view);
+    g_hud.vx0 = pVirtual[0];
+    g_hud.vy0 = pVirtual[1];
+    g_hud.vx1 = pVirtual[0] + pVirtual[2];
+    g_hud.vy1 = pVirtual[1] + pVirtual[3];
+    // On a screen wider than hud_aspect the HUD keeps to the middle.
+    aspect = Hud_MaxAspect();
+    if (aspect > 0.0f) {
+        maxWidth = (g_hud.ry1 - g_hud.ry0) * aspect * 0.75f * (g_hud.vx1 - g_hud.vx0) / (g_hud.vy1 - g_hud.vy0);
+        if (g_hud.rx1 - g_hud.rx0 > maxWidth) {
+            g_hud.rx0 = (g_hud.rx0 + g_hud.rx1 - maxWidth) * 0.5f;
+            g_hud.rx1 = g_hud.rx0 + maxWidth;
+        }
+    }
+    k = (g_hud.rx1 - g_hud.rx0) / (g_hud.vx1 - g_hud.vx0);
+    if ((g_hud.ry1 - g_hud.ry0) / (g_hud.vy1 - g_hud.vy0) < k)
+        k = (g_hud.ry1 - g_hud.ry0) / (g_hud.vy1 - g_hud.vy0);
+    g_hud.scale = k * (float)Sys_GetOption("video.hud_scale", 100) / 100.0f;
+    g_hud.view = view;
+    g_hud.active = 1;
+    Hud_MarkQueues();
+}
+
+// Maps v from [v0, v1] on the HUD's screen to [r0, r1] on the real one,
+// keeping its distance to the start, the middle or the end.
+static float Hud_Map(float v, float v0, float v1, float r0, float r1, int anchor)
+{
+    if (anchor < 0)
+        return r0 + (v - v0) * g_hud.scale;
+    if (anchor > 0)
+        return r1 - (v1 - v) * g_hud.scale;
+    return (r0 + r1) * 0.5f + (v - (v0 + v1) * 0.5f) * g_hud.scale;
+}
+
+// The edge (-1, 1) or the middle (0) the span [lo, hi] is nearest to.
+static int Hud_Anchor(float lo, float hi, float v0, float v1)
+{
+    float centre = (lo + hi) * 0.5f;
+    float third = (v1 - v0) / 3.0f;
+    if (centre < v0 + third)
+        return -1;
+    if (centre > v1 - third)
+        return 1;
+    return 0;
+}
+
+void Hud_Element(void)
+{
+    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    int ax, ay;
+    int i;
+    unsigned int n;
+
+    if (!g_hud.active)
+        return;
+    for (i = 0; i < 4; i++) {
+        for (n = g_hud.sprites[i]; n < *g_hudSpriteCounts[i]; n++) {
+            Sprite *p = &g_hudSpriteLayers[i][n];
+            x0 = HUD_MIN(x0, (float)p->dst.x);
+            y0 = HUD_MIN(y0, (float)p->dst.y);
+            x1 = HUD_MAX(x1, (float)(p->dst.x + p->dst.w));
+            y1 = HUD_MAX(y1, (float)(p->dst.y + p->dst.h));
+        }
+        for (n = g_hud.tris[i]; n < *g_hudTriCounts[i]; n++) {
+            for (int v = 0; v < 3; v++) {
+                GfxTLVertex *p = &g_hudTriLayers[i][n].v[v];
+                x0 = HUD_MIN(x0, p->sx);
+                y0 = HUD_MIN(y0, p->sy);
+                x1 = HUD_MAX(x1, p->sx);
+                y1 = HUD_MAX(y1, p->sy);
+            }
+        }
+    }
+    if (x0 > x1) {
+        Hud_MarkQueues();
+        return;
+    }
+    ax = Hud_Anchor(x0, x1, g_hud.vx0, g_hud.vx1);
+    ay = Hud_Anchor(y0, y1, g_hud.vy0, g_hud.vy1);
+#define HUD_X(x) Hud_Map((x), g_hud.vx0, g_hud.vx1, g_hud.rx0, g_hud.rx1, ax)
+#define HUD_Y(y) Hud_Map((y), g_hud.vy0, g_hud.vy1, g_hud.ry0, g_hud.ry1, ay)
+    for (i = 0; i < 4; i++) {
+        for (n = g_hud.sprites[i]; n < *g_hudSpriteCounts[i]; n++) {
+            Sprite *p = &g_hudSpriteLayers[i][n];
+            short left = (short)lroundf(HUD_X(p->dst.x));
+            short top = (short)lroundf(HUD_Y(p->dst.y));
+            p->dst.w = (short)lroundf(HUD_X(p->dst.x + p->dst.w)) - left;
+            p->dst.h = (short)lroundf(HUD_Y(p->dst.y + p->dst.h)) - top;
+            p->dst.x = left;
+            p->dst.y = top;
+            // (-1, -1, -1) is the sprite's middle, wherever it goes.
+            if (p->centre[0] != -1 || p->centre[1] != -1 || p->centre[2] != -1) {
+                p->centre[0] = (int)lroundf(HUD_X(p->centre[0]));
+                p->centre[1] = (int)lroundf(HUD_Y(p->centre[1]));
+            }
+        }
+        for (n = g_hud.tris[i]; n < *g_hudTriCounts[i]; n++) {
+            for (int v = 0; v < 3; v++) {
+                GfxTLVertex *p = &g_hudTriLayers[i][n].v[v];
+                p->sx = HUD_X(p->sx);
+                p->sy = HUD_Y(p->sy);
+            }
+        }
+    }
+#undef HUD_X
+#undef HUD_Y
+    Hud_MarkQueues();
+}
+
+void Hud_EndView(void)
+{
+    if (!g_hud.active)
+        return;
+    Hud_Element();
+    g_pGraphics->resX = g_hud.resX;
+    g_pGraphics->resY = g_hud.resY;
+    g_hud.active = 0;
+    RallyData_GetViewScreenRectangle(g_hud.view);
 }

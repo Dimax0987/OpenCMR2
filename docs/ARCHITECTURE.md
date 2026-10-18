@@ -74,9 +74,13 @@ COM disappear: the game asks for what it needs and the backend provides it.
 The display modes offered to the game are the original 4:3 ones up to
 1024x768 and the display's own aspect ratio from 540 lines up to the desktop
 resolution. A new configuration starts at the display's aspect ratio at 720
-lines (540 on Android): the game draws its menus, text and HUD in pixels for
+lines (540 on Android): the game draws its menus and text in pixels for
 640x480, so they shrink as the resolution grows, and higher modes are there
-for a sharper 3D picture. As in SilentPatch, the projection keeps the
+for a sharper 3D picture. The in-race HUD is laid out on a 4:3 screen of
+640x480, or 1024x768 with the high-resolution textures, and each of its
+elements is placed on the real screen (`Hud_BeginView`): scaled with its
+height and kept at the edge or the middle it belongs to, within 16:9 by
+default (`[video] hud_scale` and `hud_aspect`). As in SilentPatch, the projection keeps the
 vertical view at any aspect ratio instead of stretching it, and the field of
 view is configurable (`View_SetPlayerProjection`). Further rendering
 improvements will be added one at a time, each behind an option, with the

@@ -50,6 +50,8 @@ as it is made.
 * Bink intro and country videos with a built-in decoder
 * Multiplayer over LAN and the internet using UDP instead of DirectPlay
 * Folder dialog on first launch to locate the game installation
+* In-race HUD scaled with the screen and kept at its edges on wide screens,
+  with a configurable size
 * Fixes for some original bugs, such as German in the language menu loading
   Spanish
 
@@ -141,6 +143,8 @@ It is created with comments on first launch.
 | `[video] fov` | `70` | Field of view in degrees, 30 to 150 (70 is the original) |
 | `[video] run_in_background` | `0` | Keep running when the window loses focus |
 | `[video] car_detail` | `1` | Every car with the model and textures of the player's car (`1`), or the original's lower detail for the other cars (`0`); applies with Car Detail set to High |
+| `[video] hud_scale` | `100` | Size of the in-race HUD in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
+| `[video] hud_aspect` | `16:9` | Widest shape the HUD spreads over, centred on wider screens: an aspect ratio such as `16:9` or `21:9`, or `full` for the whole screen |
 | `[video] stretch_movies` | `0` | Stretch the movies over the whole window (`1`) instead of keeping their 4:3 proportions |
 | `[install] language` | `English` | English, American, French, German, Italian, Spanish or Polish |
 | `[install] sku` | `EUROPE` | Game edition: `EUROPE`, `AMERICA`, `POLAND` or `JAPAN` |

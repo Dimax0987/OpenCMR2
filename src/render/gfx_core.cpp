@@ -329,8 +329,8 @@ extern "C" int Gfx_GetDisplayModeCount(void)
 
 extern "C" void Gfx_GetDefaultDisplayMode(int *width, int *height)
 {
-    // The display's aspect ratio, at a height where the game's 2D (menus,
-    // text, HUD), drawn in pixels for 640x480, stays readable: 720 lines, as
+    // The display's aspect ratio, at a height where the game's menus and
+    // text, drawn in pixels for 640x480, stay readable: 720 lines, as
     // the game was played at 1024x768, and 540 on Android's small screens.
     // Higher modes stay available for a sharper 3D picture.
 #ifdef __ANDROID__
