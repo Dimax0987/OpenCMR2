@@ -11,7 +11,8 @@ to modern platforms, built on the [CMR2Decomp](https://github.com/pablocpas/CMR2
 decompilation. It runs the original game code natively on Linux, Windows,
 macOS and Android. There is no emulation and no Wine or DirectX wrapper: DirectDraw,
 Direct3D 7, DirectSound, DirectInput, DirectPlay and Bink are replaced with
-SDL3, the SDL GPU API (Vulkan, Metal) and the port's own code.
+SDL3, the SDL GPU API (Vulkan, Direct3D 12, Metal) or OpenGL 3.3 and the
+port's own code.
 
 https://github.com/user-attachments/assets/3c7322dc-576b-4fb0-8d6a-4d17de6fe17d
 
@@ -42,8 +43,9 @@ as it is made.
 
 * Native SDL3 platform layer for windowing, input, audio and files, with saves
   and settings in the user directory
-* SDL GPU renderer (Vulkan, Metal) reproducing the Direct3D 7 fixed-function
-  pipeline in shaders
+* SDL GPU renderer (Vulkan, Direct3D 12, Metal) reproducing the Direct3D 7
+  fixed-function pipeline in shaders, and an OpenGL 3.3 renderer with the same
+  shaders for GPUs without Vulkan or Direct3D 12 (Linux and Windows)
 * Fullscreen on the desktop resolution or a resizable window, switched with
   Alt+Enter
 * Keyboard, mouse and gamepads through SDL3, and on-screen controls on Android
@@ -150,6 +152,7 @@ the game.
 | `[video] menu_scale` | `100` | Size of the menus in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
 | `[video] outline_fonts` | `1` | Draw the text from outlines, sharp at any size (`1`), or from the original's bitmaps (`0`) |
 | `[video] vsync` | `1` | Wait for the display's refresh (`1`) or draw frames as soon as they are ready (`0`) |
+| `[video] graphics_api` | `auto` | Renderer: `sdl_gpu` (Vulkan, Direct3D 12, Metal), `opengl` (OpenGL 3.3, Linux and Windows), or `auto` for SDL GPU when the system has a device for it and OpenGL otherwise |
 | `[video] window_scale` | `1` | Size of the window in multiples of the game's resolution, applied when leaving fullscreen |
 | `[video] smooth_scaling` | `1` | Smooth the picture when it is scaled to the window or screen (`1`), or keep sharp pixels (`0`) |
 | `[video] anisotropy` | `1` | Anisotropic texture filtering, `2` to `16`; `1` is off, as in the original |
@@ -219,8 +222,10 @@ cmake --preset macos
 cmake --build --preset macos
 ```
 
-Metal needs MSL shaders, so the build fetches SPIRV-Cross to translate them
-(or uses `spirv-cross` from the `PATH`).
+Metal needs MSL shaders, and the OpenGL renderer on Linux and Windows GLSL
+330 ones, so the build fetches SPIRV-Cross to translate them (or uses
+`spirv-cross` from the `PATH`). `-DOPENCMR2_RENDERER_GL=OFF` leaves the OpenGL
+renderer out.
 
 ### Windows
 

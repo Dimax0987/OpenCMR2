@@ -155,6 +155,32 @@ struct GpuVertexBuffer {
     uint32_t version = 0;
 };
 
+// The device the renderer asks SDL_GPU for: its shader formats, and no
+// optional feature it does not use.
+SDL_PropertiesID DeviceProperties()
+{
+    SDL_GPUShaderFormat formats = SDL_GPU_SHADERFORMAT_SPIRV;
+#ifdef OPENCMR2_SHADERS_MSL
+    formats |= SDL_GPU_SHADERFORMAT_MSL;
+#endif
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN,
+                           (formats & SDL_GPU_SHADERFORMAT_SPIRV) != 0);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_MSL_BOOLEAN,
+                           (formats & SDL_GPU_SHADERFORMAT_MSL) != 0);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN,
+                           Platform_GetSettingInt("video.gpu_debug", 0) != 0);
+    // SDL asks Vulkan for these features by default. The renderer does not
+    // use them (anisotropy only when video.anisotropy is set, see Sampler),
+    // and many Android GPUs lack some, for which SDL would refuse the device.
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_CLIP_DISTANCE_BOOLEAN, false);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN,
+                           Platform_GetSettingInt("video.anisotropy", 1) > 1);
+    return props;
+}
+
 struct Executor : GfxExecutor {
     SDL_GPUDevice *device = nullptr;
     SDL_Window *window = nullptr;
@@ -260,26 +286,9 @@ struct Executor : GfxExecutor {
             Sys_Log("gfx: no window");
             return false;
         }
-        bool debug = Platform_GetSettingInt("video.gpu_debug", 0) != 0;
-        SDL_GPUShaderFormat formats = SDL_GPU_SHADERFORMAT_SPIRV;
-#ifdef OPENCMR2_SHADERS_MSL
-        formats |= SDL_GPU_SHADERFORMAT_MSL;
-#endif
-        SDL_PropertiesID props = SDL_CreateProperties();
-        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN,
-                               (formats & SDL_GPU_SHADERFORMAT_SPIRV) != 0);
-        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_MSL_BOOLEAN,
-                               (formats & SDL_GPU_SHADERFORMAT_MSL) != 0);
-        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, debug);
-        // SDL asks Vulkan for these features by default. The renderer does not
-        // use them (anisotropy only when video.anisotropy is set, see Sampler),
-        // and many Android GPUs lack some, for which SDL would refuse the device.
-        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_CLIP_DISTANCE_BOOLEAN, false);
-        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
-        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
         anisotropy = Platform_GetSettingInt("video.anisotropy", 1);
         smoothScaling = Platform_GetSettingInt("video.smooth_scaling", 1);
-        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN, anisotropy > 1);
+        SDL_PropertiesID props = DeviceProperties();
         device = SDL_CreateGPUDeviceWithProperties(props);
         SDL_DestroyProperties(props);
         if (device == NULL) {
@@ -367,25 +376,9 @@ struct Executor : GfxExecutor {
         return true;
     }
 
-    // Fullscreen on the desktop resolution, or a centred window of the back
-    // buffer size times video.window_scale.
     void SetFullscreen(bool fullscreen) override
     {
-        if (window == NULL)
-            return;
-        bool wasFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
-        SDL_SetWindowFullscreen(window, fullscreen);
-        if (fullscreen)
-            return;
-        // Leaving fullscreen restores the earlier window size; the new size
-        // only applies once the window is out of fullscreen.
-        if (wasFullscreen)
-            SDL_SyncWindow(window);
-        int scale = Platform_GetSettingInt("video.window_scale", 1);
-        if (scale < 1)
-            scale = 1;
-        SDL_SetWindowSize(window, backWidth * scale, backHeight * scale);
-        SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        Gfx_SetWindowMode(window, fullscreen, backWidth, backHeight);
     }
 
     // ---- textures ----
@@ -1315,17 +1308,10 @@ struct Executor : GfxExecutor {
         readback.ready = true;
     }
 
-    // OPENCMR2_FRAME_HASH=file: one line per presented frame, its number, size
-    // and a hash of the back buffer's pixels, to compare renderer changes;
-    // OPENCMR2_FRAME_DUMP=dir also saves every OPENCMR2_FRAME_DUMP_EVERY'th
-    // frame (default 600) as a BMP. Each waits for the GPU: not for timing.
+    // The back buffer's pixels for Gfx_HashFrame.
     void HashFrame()
     {
-        static FILE *file = getenv("OPENCMR2_FRAME_HASH") ? fopen(getenv("OPENCMR2_FRAME_HASH"), "w") : NULL;
-        static const char *dump = getenv("OPENCMR2_FRAME_DUMP");
-        static int every = getenv("OPENCMR2_FRAME_DUMP_EVERY") ? atoi(getenv("OPENCMR2_FRAME_DUMP_EVERY")) : 600;
-        static unsigned frame;
-        if (file == NULL)
+        if (!Gfx_FrameHashWanted())
             return;
         uint32_t bytes = (uint32_t)backWidth * backHeight * 4;
         SDL_GPUTransferBufferCreateInfo tbi = { SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, bytes, 0 };
@@ -1343,23 +1329,9 @@ struct Executor : GfxExecutor {
         SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
         SDL_WaitForGPUFences(device, true, &fence, 1);
         SDL_ReleaseGPUFence(device, fence);
-        uint8_t *map = (uint8_t *)SDL_MapGPUTransferBuffer(device, tb, false);
-        uint64_t h = 14695981039346656037ull;
-        for (uint32_t i = 0; i < bytes; i++)
-            h = (h ^ map[i]) * 1099511628211ull;
-        fprintf(file, "%u %dx%d %016llx\n", frame, backWidth, backHeight, (unsigned long long)h);
-        if (dump != NULL && every > 0 && frame % every == 0) {
-            char path[1024];
-            snprintf(path, sizeof(path), "%s/frame-%06u.bmp", dump, frame);
-            SDL_Surface *s = SDL_CreateSurfaceFrom(backWidth, backHeight, SDL_PIXELFORMAT_ARGB8888, map, backWidth * 4);
-            if (s != NULL) {
-                SDL_SaveBMP(s, path);
-                SDL_DestroySurface(s);
-            }
-        }
+        Gfx_HashFrame((const uint8_t *)SDL_MapGPUTransferBuffer(device, tb, false), backWidth, backHeight);
         SDL_UnmapGPUTransferBuffer(device, tb);
         SDL_ReleaseGPUTransferBuffer(device, tb);
-        frame++;
     }
 };
 
@@ -1368,4 +1340,12 @@ struct Executor : GfxExecutor {
 GfxExecutor *Gfx_CreateGpuExecutor(void)
 {
     return new Executor;
+}
+
+bool Gfx_GpuIsAvailable(void)
+{
+    SDL_PropertiesID props = DeviceProperties();
+    bool available = SDL_GPUSupportsProperties(props);
+    SDL_DestroyProperties(props);
+    return available;
 }

@@ -84,14 +84,23 @@ elseif(OPENCMR2_BUILT_SDL AND NOT ANDROID)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_SONAME_FILE:SDL3::SDL3> $<TARGET_FILE_DIR:opencmr2>)
 endif()
 
-# ---- shaders (GLSL -> SPIR-V, plus MSL for Metal; embedded) ----------------------
+# ---- shaders (GLSL -> SPIR-V, plus MSL for Metal and GLSL 330; embedded) ---------
 # SDL_GPU takes SPIR-V on Vulkan (Linux, Windows) and MSL on Metal (macOS).
 # The MSL comes from the same SPIR-V through SPIRV-Cross; the SPIR-V bindings
 # already follow SDL_GPU's resource order, so they become the Metal indices.
+# The OpenGL 3.3 renderer (render/gfx_gl.cpp), for GPUs without Vulkan or
+# Direct3D 12, takes GLSL 330 from the same SPIR-V: drawn upside down, so
+# that images keep Direct3D's rows, with the depth range of OpenGL.
 option(OPENCMR2_SHADERS_MSL "Also build Metal (MSL) shaders" ${APPLE})
+if(APPLE OR ANDROID)
+    set(OPENCMR2_RENDERER_GL_DEFAULT OFF)
+else()
+    set(OPENCMR2_RENDERER_GL_DEFAULT ON)
+endif()
+option(OPENCMR2_RENDERER_GL "Build the OpenGL 3.3 renderer" ${OPENCMR2_RENDERER_GL_DEFAULT})
 # Recent glslang releases use glslang.exe; older packages keep glslangValidator.
 find_program(GLSLANG_VALIDATOR NAMES glslangValidator glslang REQUIRED)
-if(OPENCMR2_SHADERS_MSL)
+if(OPENCMR2_SHADERS_MSL OR OPENCMR2_RENDERER_GL)
     find_program(SPIRV_CROSS_EXECUTABLE spirv-cross)
     if(SPIRV_CROSS_EXECUTABLE)
         set(SPIRV_CROSS ${SPIRV_CROSS_EXECUTABLE})
@@ -134,6 +143,28 @@ foreach(shader IN LISTS SHADER_SOURCES)
             DEPENDS ${output}
             COMMENT "Translating shader ${shader} to MSL")
         list(APPEND SHADER_FILES ${msl})
+    endif()
+    # The clears of the OpenGL renderer need no shader. GLSL 330 links the
+    # vertex shader's outputs to the fragment shader's inputs by name: both
+    # are named after their location.
+    if(OPENCMR2_RENDERER_GL AND NOT shader MATCHES "^clear")
+        set(glsl ${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader}.glsl)
+        if(shader MATCHES "\\.vert$")
+            set(interface out)
+        else()
+            set(interface in)
+        endif()
+        set(renames)
+        foreach(location RANGE 5)
+            list(APPEND renames --rename-interface-variable ${interface} ${location} varying${location})
+        endforeach()
+        add_custom_command(
+            OUTPUT ${glsl}
+            COMMAND ${SPIRV_CROSS} --version 330 --no-es --no-420pack-extension --flip-vert-y --fixup-clipspace
+                ${renames} --output ${glsl} ${output}
+            DEPENDS ${output}
+            COMMENT "Translating shader ${shader} to GLSL 330")
+        list(APPEND SHADER_FILES ${glsl})
     endif()
 endforeach()
 set(SHADER_HEADER ${CMAKE_CURRENT_BINARY_DIR}/generated/shaders_spirv.h)
@@ -217,6 +248,10 @@ target_sources(opencmr2_platform PRIVATE
     input/input_sdl.cpp
     video/movie.cpp
     net/net_api.cpp)
+if(OPENCMR2_RENDERER_GL)
+    target_sources(opencmr2_platform PRIVATE render/gfx_gl.cpp)
+    target_compile_definitions(opencmr2_platform PRIVATE OPENCMR2_RENDERER_GL)
+endif()
 target_include_directories(opencmr2_platform PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated
     ${PROJECT_SOURCE_DIR}/third_party/stb)
 target_link_libraries(opencmr2_platform PRIVATE opencmr2_bink opencmr2_net)

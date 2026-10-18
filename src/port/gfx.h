@@ -215,6 +215,12 @@ enum GfxTextureTransform {
 
 /* ---- device and frame ------------------------------------------------------ */
 
+/* The SDL window flags the renderer needs, set up before the window is made
+   (SDL_WindowFlags; OpenGL's context is chosen with its window). */
+unsigned long long Gfx_PrepareWindow(void);
+/* The renderer's name for the graphics menu: "OpenCMR2 SDL_GPU" or
+   "OpenCMR2 OpenGL". */
+const char *Gfx_GetRendererName(void);
 /* Creates the GPU device on first use and sets the back buffer size and
    window mode (it may be called again to change them). */
 BOOL Gfx_SetVideoMode(int width, int height, BOOL fullscreen);

@@ -23,6 +23,7 @@ extern "C" void Sys_GetDesktopSize(int *w, int *h) { *w = 640; *h = 480; }
 extern "C" void Sys_Log(const char *, ...) {}
 extern "C" int Sys_GetOption(const char *, int fallback) { return fallback; }
 int Platform_GetSettingInt(const char *, int value) { return value; }
+const char *Platform_GetSetting(const char *, const char *value) { return value; }
 extern "C" AudioStream *Audio_CreateStream(DWORD, int) { return nullptr; }
 extern "C" BOOL Audio_QueueStream(AudioStream *, const float *, DWORD) { return FALSE; }
 extern "C" void Audio_StartStream(AudioStream *) {}

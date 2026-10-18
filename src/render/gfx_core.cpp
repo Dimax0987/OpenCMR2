@@ -285,16 +285,78 @@ extern "C" void Gfx_GetPixelFormat(int format, GfxPixelFormat *out)
     }
 }
 
+// ---- renderer choice -------------------------------------------------------------------
+
+namespace {
+
+enum Backend { BACKEND_NONE, BACKEND_NULL, BACKEND_GPU, BACKEND_GL };
+
+// SDL_GPU (Vulkan, Direct3D 12, Metal) where the system has a device for it,
+// otherwise OpenGL 3.3, for GPUs older than Vulkan; [video] graphics_api
+// (auto, sdl_gpu, opengl) chooses one. Decided once, before the window is
+// made: OpenGL needs its window to be made for it.
+Backend ChooseBackend()
+{
+    static Backend backend = BACKEND_NONE;
+    if (backend != BACKEND_NONE)
+        return backend;
+    const char *headless = SDL_getenv("OPENCMR2_HEADLESS");
+    if ((headless != NULL && *headless != '0') || Platform_GetSettingInt("video.headless", 0))
+        return backend = BACKEND_NULL;
+    const char *wanted = Platform_GetSetting("video.graphics_api", "auto");
+#ifdef OPENCMR2_RENDERER_GL
+    if (SDL_strcasecmp(wanted, "opengl") == 0)
+        backend = BACKEND_GL;
+    else if (SDL_strcasecmp(wanted, "sdl_gpu") == 0)
+        backend = BACKEND_GPU;
+    else if (Gfx_GpuIsAvailable())
+        backend = BACKEND_GPU;
+    else {
+        Sys_Log("gfx: no Vulkan, Direct3D 12 or Metal device for SDL_GPU: OpenGL 3.3");
+        backend = BACKEND_GL;
+    }
+#else
+    if (SDL_strcasecmp(wanted, "opengl") == 0)
+        Sys_Log("gfx: this build has no OpenGL renderer");
+    backend = BACKEND_GPU;
+#endif
+    return backend;
+}
+
+} // namespace
+
+extern "C" unsigned long long Gfx_PrepareWindow(void)
+{
+#ifdef OPENCMR2_RENDERER_GL
+    if (ChooseBackend() == BACKEND_GL)
+        return Gfx_PrepareGlWindow();
+#endif
+    return 0;
+}
+
+extern "C" const char *Gfx_GetRendererName(void)
+{
+    return ChooseBackend() == BACKEND_GL ? "OpenCMR2 OpenGL" : "OpenCMR2 SDL_GPU";
+}
+
 // ---- device and frame ----------------------------------------------------------------
 
 extern "C" BOOL Gfx_SetVideoMode(int width, int height, BOOL fullscreen)
 {
     if (s_executor == NULL) {
-        const char *headless = SDL_getenv("OPENCMR2_HEADLESS");
-        if ((headless != NULL && *headless != '0') || Platform_GetSettingInt("video.headless", 0))
+        switch (ChooseBackend()) {
+        case BACKEND_NULL:
             s_executor = Gfx_CreateNullExecutor();
-        else
+            break;
+#ifdef OPENCMR2_RENDERER_GL
+        case BACKEND_GL:
+            s_executor = Gfx_CreateGlExecutor();
+            break;
+#endif
+        default:
             s_executor = Gfx_CreateGpuExecutor();
+            break;
+        }
     }
     s_width = width;
     s_height = height;
@@ -1039,4 +1101,55 @@ struct NullExecutor : GfxExecutor {
 GfxExecutor *Gfx_CreateNullExecutor(void)
 {
     return new NullExecutor;
+}
+
+// ---- shared by the executors -----------------------------------------------------------
+
+void Gfx_SetWindowMode(SDL_Window *window, bool fullscreen, int width, int height)
+{
+    if (window == NULL)
+        return;
+    bool wasFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+    SDL_SetWindowFullscreen(window, fullscreen);
+    if (fullscreen)
+        return;
+    // Leaving fullscreen restores the earlier window size; the new size
+    // only applies once the window is out of fullscreen.
+    if (wasFullscreen)
+        SDL_SyncWindow(window);
+    int scale = Platform_GetSettingInt("video.window_scale", 1);
+    if (scale < 1)
+        scale = 1;
+    SDL_SetWindowSize(window, width * scale, height * scale);
+    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+}
+
+bool Gfx_FrameHashWanted(void)
+{
+    return getenv("OPENCMR2_FRAME_HASH") != NULL;
+}
+
+void Gfx_HashFrame(const uint8_t *bgra, int width, int height)
+{
+    static FILE *file = getenv("OPENCMR2_FRAME_HASH") ? fopen(getenv("OPENCMR2_FRAME_HASH"), "w") : NULL;
+    static const char *dump = getenv("OPENCMR2_FRAME_DUMP");
+    static int every = getenv("OPENCMR2_FRAME_DUMP_EVERY") ? atoi(getenv("OPENCMR2_FRAME_DUMP_EVERY")) : 600;
+    static unsigned frame;
+    if (file == NULL)
+        return;
+    const size_t bytes = (size_t)width * height * 4;
+    uint64_t h = 14695981039346656037ull;
+    for (size_t i = 0; i < bytes; i++)
+        h = (h ^ bgra[i]) * 1099511628211ull;
+    fprintf(file, "%u %dx%d %016llx\n", frame, width, height, (unsigned long long)h);
+    if (dump != NULL && every > 0 && frame % every == 0) {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/frame-%06u.bmp", dump, frame);
+        SDL_Surface *s = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_ARGB8888, (void *)bgra, width * 4);
+        if (s != NULL) {
+            SDL_SaveBMP(s, path);
+            SDL_DestroySurface(s);
+        }
+    }
+    frame++;
 }

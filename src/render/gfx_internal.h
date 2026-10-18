@@ -1,6 +1,6 @@
 // Internals of the renderer: the state gfx_core.cpp records and the
-// executor that turns a recorded frame into GPU work (gfx_gpu.cpp, or the
-// null one for headless runs).
+// executor that turns a recorded frame into GPU work (gfx_gpu.cpp on
+// SDL_GPU, gfx_gl.cpp on OpenGL 3.3, or the null one for headless runs).
 #ifndef OPENCMR2_GFX_INTERNAL_H
 #define OPENCMR2_GFX_INTERNAL_H
 
@@ -173,6 +173,27 @@ struct GfxExecutor {
 
 GfxExecutor *Gfx_CreateGpuExecutor(void);
 GfxExecutor *Gfx_CreateNullExecutor(void);
+// Whether SDL_GPU has a device on this system (gfx_gpu.cpp).
+bool Gfx_GpuIsAvailable(void);
+#ifdef OPENCMR2_RENDERER_GL
+GfxExecutor *Gfx_CreateGlExecutor(void);
+// Sets up an OpenGL 3.3 context's attributes; returns the window flags it
+// needs (gfx_gl.cpp).
+unsigned long long Gfx_PrepareGlWindow(void);
+#endif
+
+// Shared by the executors (gfx_core.cpp).
+struct SDL_Window;
+// Fullscreen on the desktop resolution, or a centred window of the back
+// buffer's size times video.window_scale.
+void Gfx_SetWindowMode(SDL_Window *window, bool fullscreen, int width, int height);
+// OPENCMR2_FRAME_HASH=file: one line per presented frame, its number, size
+// and a hash of the back buffer's pixels, to compare renderers and renderer
+// changes; OPENCMR2_FRAME_DUMP=dir also saves every OPENCMR2_FRAME_DUMP_EVERY'th
+// frame (default 600) as a BMP. Reading the pixels waits for the GPU: not for
+// timing.
+bool Gfx_FrameHashWanted(void);
+void Gfx_HashFrame(const uint8_t *bgra, int width, int height);
 
 // Decodes a BC1/BC3 4x4 block into 16 BGRA pixels.
 void Gfx_DecodeBlock(int format, const uint8_t *block, uint32_t out[16]);

@@ -135,6 +135,7 @@ char CGraphics::m_direct3DTLHAL[18] = "Direct3D T&L HAL";
 // FUNCTION: CMR2 0x00405830
 // PORT: the "graphics card" is the OpenCMR2 renderer, so the configuration
 // is reset once (first run), and with a log line instead of a message box.
+// The name kept is the same whichever API it draws with.
 bool CGraphics::InitializeDirectX(void) {
     static const char deviceName[] = "OpenCMR2 SDL_GPU";
 
@@ -501,9 +502,9 @@ DWORD CGraphics::GetTextureFormatCap80000(int param_1) {
 }
 
 // FUNCTION: CMR2 0x004a8b30
-// PORT: one driver, named after the renderer.
+// PORT: one driver, named after the renderer and the API it draws with.
 BOOL CGraphics::EnumerateDisplayDriverDescriptions(void) {
-    sprintf(m_unk0x006634d8[m_unk0x00663b18].unk_0x00, CRegKey::m_regKeyPathFormatValue, "OpenCMR2 SDL_GPU");
+    sprintf(m_unk0x006634d8[m_unk0x00663b18].unk_0x00, CRegKey::m_regKeyPathFormatValue, Gfx_GetRendererName());
     m_unk0x00663b18++;
     return TRUE;
 }
@@ -568,7 +569,7 @@ DWORD CGraphics::GetSelectedRenderDeviceSurfaceCaps(void) {
 // caps 2, "Direct3D T&L HAL").
 HRESULT CGraphics::EnumeratePreferredHalDevices(void) {
     m_unk0x00660040[0].surfaceCap = 2;
-    sprintf(m_unk0x0065ff90[0].deviceDesc, CRegKey::m_regKeyPathFormatValue, "OpenCMR2 SDL_GPU");
+    sprintf(m_unk0x0065ff90[0].deviceDesc, CRegKey::m_regKeyPathFormatValue, Gfx_GetRendererName());
     sprintf(m_unk0x0065ff90[0].deviceName, CRegKey::m_regKeyPathFormatValue, m_direct3DTLHAL);
     m_unk0x00663b20 = 1;
     return TRUE;

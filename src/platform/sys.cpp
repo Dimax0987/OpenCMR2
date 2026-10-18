@@ -3,6 +3,7 @@
 #include "platform/platform.h"
 #include "platform/testing.h"
 #include "port/sys.h"
+#include "port/gfx.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -312,6 +313,9 @@ const char s_defaultSettings[] =
     "; stretch_movies = 0\n"
     "; 1 = wait for the display's refresh, 0 = draw frames as soon as they are ready.\n"
     "; vsync = 1\n"
+    "; Renderer: sdl_gpu (Vulkan, Direct3D 12, Metal), opengl (OpenGL 3.3, for\n"
+    "; older GPUs), or auto = SDL_GPU when the system has a device for it.\n"
+    "; graphics_api = auto\n"
     "; Window size in multiples of the game's resolution, when leaving fullscreen.\n"
     "; window_scale = 1\n"
     "; 1 = smooth the picture when it is scaled to the window, 0 = sharp pixels.\n"
@@ -895,8 +899,9 @@ extern "C" BOOL Sys_CreateWindow(const char *title, BOOL fullscreen)
 {
     if (s_window != NULL)
         return TRUE;
-    // The renderer sizes the window once it knows the resolution.
-    SDL_WindowFlags flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    // The renderer sizes the window once it knows the resolution, and says
+    // what kind of window it draws in (OpenGL's).
+    SDL_WindowFlags flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY | (SDL_WindowFlags)Gfx_PrepareWindow();
     if (fullscreen)
         flags |= SDL_WINDOW_FULLSCREEN;
     s_window = SDL_CreateWindow(title, 640, 480, flags);
