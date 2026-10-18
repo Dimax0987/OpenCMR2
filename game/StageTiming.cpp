@@ -2978,8 +2978,15 @@ int StageTiming_FreeSceneAndFinishResources(void)
                 SceneNode_FindByType(pRecord->rootNode, 4)->pObject = pRecord->originalWheelObjects[3];
             SceneNode_Destroy(pRecord->rootNode);
         }
-        if (pRecord->alternateWheelScene != NULL)
+        // PORT: the scene is forgotten once destroyed. A stage resets the
+        // body and root nodes of all 16 records but sets this one only for
+        // the cars it loads, so after an arcade race, whose six cars can all
+        // have one, a stage with fewer cars destroyed the others' again when
+        // it was left.
+        if (pRecord->alternateWheelScene != NULL) {
             SceneNode_Destroy(pRecord->alternateWheelScene);
+            pRecord->alternateWheelScene = NULL;
+        }
         if (*pNodeList != NULL)
             SceneNode_Destroy(*pNodeList);
         if (pRecord->bodyNode != NULL)
