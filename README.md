@@ -145,7 +145,13 @@ It is created with comments on first launch.
 | `[video] car_detail` | `1` | Every car with the model and textures of the player's car (`1`), or the original's lower detail for the other cars (`0`); applies with Car Detail set to High |
 | `[video] hud_scale` | `100` | Size of the in-race HUD in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
 | `[video] hud_aspect` | `16:9` | Widest shape the HUD spreads over, centred on wider screens: an aspect ratio such as `16:9` or `21:9`, or `full` for the whole screen |
+| `[video] vsync` | `1` | Wait for the display's refresh (`1`) or draw frames as soon as they are ready (`0`) |
+| `[video] window_scale` | `1` | Size of the window in multiples of the game's resolution, applied when leaving fullscreen |
+| `[video] smooth_scaling` | `1` | Smooth the picture when it is scaled to the window or screen (`1`), or keep sharp pixels (`0`) |
+| `[video] anisotropy` | `1` | Anisotropic texture filtering, `2` to `16`; `1` is off, as in the original |
 | `[video] stretch_movies` | `0` | Stretch the movies over the whole window (`1`) instead of keeping their 4:3 proportions |
+| `[input] key_repeat_delay` | `750` | Milliseconds before a key held in the menus repeats |
+| `[input] key_repeat_interval` | `100` | Milliseconds between the repeats of a held key |
 | `[install] language` | `English` | English, American, French, German, Italian, Spanish or Polish |
 | `[install] sku` | `EUROPE` | Game edition: `EUROPE`, `AMERICA`, `POLAND` or `JAPAN` |
 | `[install] menu_shortcut` | asked | Entry in the applications menu (Linux) or Start menu (Windows): `1` keeps it pointing at this copy, `0` removes it |
