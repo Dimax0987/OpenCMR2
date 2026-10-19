@@ -4646,6 +4646,24 @@ int g_menuPathInit;
 // GLOBAL: CMR2 0x0081a620
 short g_menuDotRect[4];
 
+// PORT: the last point of the path FrontendAnimation_EvaluatePathSpline
+// worked out, in 16.16 640x480 units: it returns whole units only.
+static int g_menuPathPointFine[2];
+
+// PORT: a point of the path in 16.16 640x480 units on the screen: the whole
+// pixel in pX, pY and its fraction for the next sprite, so that what moves
+// along the path glides instead of stepping a 640x480 pixel at a time, two
+// or more pixels of a larger screen.
+static void FrontendAnimation_PlaceOnScreen(const int *pFine, int dx, int dy, short *pX, short *pY)
+{
+    long long x = (long long)g_pGraphics->resX * pFine[0] / 640 + ((long long)dx << 16);
+    long long y = (long long)g_pGraphics->resY * pFine[1] / 480 + ((long long)dy << 16);
+
+    *pX = (short)(x >> 16);
+    *pY = (short)(y >> 16);
+    Sprite_SetNextSubpixelOffset((int)(x & 0xffff), (int)(y & 0xffff));
+}
+
 // Point of the path at t (16.16, 0..1): cubic Hermite spline through the
 // control points 1..17 with Catmull-Rom style tangents.
 // match 54%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)
@@ -4668,11 +4686,15 @@ void FrontendAnimation_EvaluatePathSpline(int *pPoints, int t, int *pOut)
     if (t == 0) {
         pOut[0] = pPoints[2];
         pOut[1] = pPoints[3];
+        g_menuPathPointFine[0] = pOut[0] << 16; // PORT
+        g_menuPathPointFine[1] = pOut[1] << 16;
         return;
     }
     if (t == 0x10000) {
         pOut[0] = pPoints[0x22];
         pOut[1] = pPoints[0x23];
+        g_menuPathPointFine[0] = pOut[0] << 16; // PORT
+        g_menuPathPointFine[1] = pOut[1] << 16;
         return;
     }
     seg = ((t << 4) >> 16) + 1;
@@ -4692,6 +4714,8 @@ void FrontendAnimation_EvaluatePathSpline(int *pPoints, int t, int *pOut)
     tanB = (p[5] - p[1]) * (0x10000 - g_menuPathTension) / 2;
     pOut[0] = x >> 16;
     pOut[1] = (p[3] * h00 + (FixMul(h11, tanA) + p[1] * h01) + FixMul(h10, tanB)) >> 16;
+    g_menuPathPointFine[0] = x; // PORT
+    g_menuPathPointFine[1] = p[3] * h00 + (FixMul(h11, tanA) + p[1] * h01) + FixMul(h10, tanB);
 }
 
 // Resets the main menu animation: letters spread along the path, dots at
@@ -4914,6 +4938,7 @@ void FrontendAnimation_DrawLetters(void)
     int point[2];
     unsigned int i;
     int *pPos;
+    short x, y;
 
     colour[0] = 0xff;
     colour[1] = 0xff;
@@ -4924,8 +4949,9 @@ void FrontendAnimation_DrawLetters(void)
     pPos = g_menuLetterPos;
     do {
         FrontendAnimation_EvaluatePathSpline(g_pMenuPath, *pPos, point);
-        Font_DrawChar(g_strColinMcrae[i % strlen(g_strColinMcrae)], (int)(g_pGraphics->resX * point[0]) / 640,
-                      (int)(g_pGraphics->resY * point[1]) / 480);
+        // PORT: at the fraction of a pixel the path is at.
+        FrontendAnimation_PlaceOnScreen(g_menuPathPointFine, 0, 0, &x, &y);
+        Font_DrawChar(g_strColinMcrae[i % strlen(g_strColinMcrae)], x, y);
         pPos++;
         i++;
     } while ((INT_PTR)pPos < (INT_PTR)(g_menuLetterPos + 200)); // 0x819cb4 in the original
@@ -4949,8 +4975,8 @@ void FrontendAnimation_DrawDotTrail(void)
     do {
         colour[3] = 0xff - fade / 15;
         FrontendAnimation_EvaluatePathSpline(g_pMenuPath, *(int *)((BYTE *)g_menuTrailPos + k), point);
-        g_menuDotRect[0] = (int)(g_pGraphics->resX * point[0]) / 640 - 2;
-        g_menuDotRect[1] = (int)(g_pGraphics->resY * point[1]) / 480 + 3;
+        // PORT: at the fraction of a pixel the path is at.
+        FrontendAnimation_PlaceOnScreen(g_menuPathPointFine, -2, 3, &g_menuDotRect[0], &g_menuDotRect[1]);
         pTexture = g_menuDotTextures[k / 15];
         g_menuDotRect[2] = pTexture->width;
         g_menuDotRect[3] = pTexture->height;
@@ -4984,8 +5010,8 @@ void FrontendAnimation_DrawDotStreams(void)
         do {
             colour[3] = 0xff - fade / 10;
             FrontendAnimation_EvaluatePathSpline(g_pMenuPath, *pPos, pPoint - 1);
-            g_menuDotRect[0] = (int)(pPoint[-1] * g_pGraphics->resX) / 640 - 2;
-            g_menuDotRect[1] = (int)(g_pGraphics->resY * pPoint[0]) / 480 + 3;
+            // PORT: at the fraction of a pixel the path is at.
+            FrontendAnimation_PlaceOnScreen(g_menuPathPointFine, -2, 3, &g_menuDotRect[0], &g_menuDotRect[1]);
             pTexture = g_menuDotTextures[(int)k / 10];
             g_menuDotRect[2] = pTexture->width;
             g_menuDotRect[3] = pTexture->height;

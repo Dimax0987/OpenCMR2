@@ -19,7 +19,7 @@ struct Sprite {
     BYTE colour[4];         // 0x1c
     int layer;              // 0x20
     short angle;            // 0x24 12-bit angle (from degrees in 16.16)
-    BYTE pad[2];
+    BYTE subpixel[2];       // 0x26 PORT: x, y offset in 1/256 pixel (padding in the original)
     int centre[3];          // 0x28
     int param;              // 0x34
 };
@@ -110,6 +110,9 @@ extern unsigned int g_tri2DCount4;
 
 void Sprite_Init(void);
 void Sprite_Queue(SpriteRect *pSrc, SpriteRect *pDst, Texture *pTexture, int layer, short angleDeg, int *pCentre, SpriteRect *pUv2, BYTE *pColour, int param);
+// PORT: moves the next queued sprite right and down by a fraction of a pixel
+// (16.16, 0 to 0xffff).
+void Sprite_SetNextSubpixelOffset(int x, int y);
 int Sprite_Shutdown(void);
 int Sprite_FillRect(BYTE *unused, short *pRect, BYTE *pColour, int layer);
 void Line2D_Init(void);

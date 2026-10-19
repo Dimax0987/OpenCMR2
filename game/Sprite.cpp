@@ -49,6 +49,10 @@ void Graphics_InvalidateTextureStageCache(void);
 // larger than 1 when the menus are scaled up (see MenuScreen_Begin).
 static float g_spriteScreenScale = 1.0f;
 
+// PORT: the fraction of a pixel the next queued sprite is moved by
+// (Sprite_SetNextSubpixelOffset).
+static int g_spriteNextSubpixel[2];
+
 #define SPRITE_VERTEX(v, px, py, u, vv)                                             \
     (v)->sx = (float)(px);                                                          \
     (v)->sy = (float)(py);                                                          \
@@ -157,6 +161,11 @@ void Sprite_DrawLayer(int layer)
         x1 = pSprite->dst.x + pSprite->dst.w;
         y0 = pSprite->dst.y;
         y1 = pSprite->dst.y + pSprite->dst.h;
+        // PORT: at the fraction of a pixel it was queued at.
+        x0 += pSprite->subpixel[0] / 256.0f;
+        x1 += pSprite->subpixel[0] / 256.0f;
+        y0 += pSprite->subpixel[1] / 256.0f;
+        y1 += pSprite->subpixel[1] / 256.0f;
         field = Gfx_GetDistanceFieldScale(pSprite->pTexture->pSurface);
         inset = field > 0 ? X87S_DIV(0.5f, X87S_LOAD(field)) : 0.5f;
         if (pSprite->src.w > 0 && X87S_MUL(X87S_LOAD(pSprite->dst.w), g_spriteScreenScale) > pSprite->src.w) {
@@ -363,14 +372,27 @@ void Tri2D_Queue(int *pA, int *pB, int *pC, BYTE *pColour, int layer)
         p->centre[1] = 0;                                                       \
         p->centre[2] = 0;                                                       \
     }                                                                           \
-    p->param = param;
+    p->param = param;                                                           \
+    p->subpixel[0] = subX;                                                      \
+    p->subpixel[1] = subY;
+
+void Sprite_SetNextSubpixelOffset(int x, int y)
+{
+    g_spriteNextSubpixel[0] = x;
+    g_spriteNextSubpixel[1] = y;
+}
 
 // Appends a sprite to one of the four 2D layers.
 // FUNCTION: CMR2 0x004a3290
 void Sprite_Queue(SpriteRect *pSrc, SpriteRect *pDst, Texture *pTexture, int layer, short angleDeg, int *pCentre, SpriteRect *pUv2, BYTE *pColour, int param)
 {
     Sprite *p;
+    // PORT: the offset of Sprite_SetNextSubpixelOffset, for this sprite only.
+    BYTE subX = (BYTE)(g_spriteNextSubpixel[0] >> 8);
+    BYTE subY = (BYTE)(g_spriteNextSubpixel[1] >> 8);
 
+    g_spriteNextSubpixel[0] = 0;
+    g_spriteNextSubpixel[1] = 0;
     if (layer == 1) {
         QUEUE_SPRITE(g_spriteLayer1, g_spriteCount1, 1)
         return;
