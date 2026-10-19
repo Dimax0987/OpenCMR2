@@ -24,6 +24,16 @@ DWORD Sys_GetTicks(void);
 /* Unix seconds used for the game's initial random seed. */
 unsigned int Sys_GetUnixTime(void);
 void Sys_Sleep(DWORD ms);
+/* A clock of fixed steps, for what the original advanced once per frame at
+   the display's refresh: Sys_TakeSteps returns the steps of rate per second
+   since its last call (one on the first call or after a pause of over a
+   quarter second), at most max. */
+typedef struct SysStepClock {
+    DWORD last;
+    DWORD remainder;
+    int started;
+} SysStepClock;
+int Sys_TakeSteps(SysStepClock *clock, int rate, int max);
 
 /* ---- events ---- */
 

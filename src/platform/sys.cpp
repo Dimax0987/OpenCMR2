@@ -756,6 +756,22 @@ extern "C" DWORD Sys_GetTicks(void)
     return (DWORD)SDL_GetTicks();
 }
 
+extern "C" int Sys_TakeSteps(SysStepClock *clock, int rate, int max)
+{
+    const DWORD now = Sys_GetTicks();
+    const DWORD elapsed = now - clock->last;
+    clock->last = now;
+    if (!clock->started || elapsed > 250) {
+        clock->started = 1;
+        clock->remainder = 0;
+        return 1;
+    }
+    const DWORD units = clock->remainder + elapsed * (DWORD)rate;
+    clock->remainder = units % 1000;
+    const int steps = (int)(units / 1000);
+    return steps < max ? steps : max;
+}
+
 extern "C" unsigned int Sys_GetUnixTime(void)
 {
     return s_testClock ? s_testClock->unixTime : (unsigned int)time(NULL);

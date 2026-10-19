@@ -1,3 +1,4 @@
+#include "port/sys.h"
 #include "FrontendMenus.h"
 #include "GameInfo.h"
 #include "Graphics.h"
@@ -901,20 +902,26 @@ void FrontendControls_UpdateAxisCalibration(Menu *pMenu)
             g_axisBindings[pMenu->cursor].saturation = *(int *)(pDevice + pMenu->cursor * 0x14 + 0x478);
         }
         held = pKeys->field_0x4;
-        if (CInput::IsShiftPressed() == 0) {
-            if (held & 1) {
-                if (g_axisBindings[pMenu->cursor].saturation < 0x26de)
-                    g_axisBindings[pMenu->cursor].saturation += 0x32;
+        // PORT: the original moved the marks once per frame, at the display's
+        // refresh; without vertical sync that was a few hundred times a
+        // second. They move at 60 steps a second.
+        static SysStepClock clock;
+        for (j = Sys_TakeSteps(&clock, 60, 5); j > 0; j--) {
+            if (CInput::IsShiftPressed() == 0) {
+                if (held & 1) {
+                    if (g_axisBindings[pMenu->cursor].saturation < 0x26de)
+                        g_axisBindings[pMenu->cursor].saturation += 0x32;
+                } else if (held & 2) {
+                    if (g_axisBindings[pMenu->cursor].saturation > 0x32)
+                        g_axisBindings[pMenu->cursor].saturation -= 0x32;
+                }
+            } else if (held & 1) {
+                if (g_axisBindings[pMenu->cursor].deadzone > 0x32)
+                    g_axisBindings[pMenu->cursor].deadzone -= 0x32;
             } else if (held & 2) {
-                if (g_axisBindings[pMenu->cursor].saturation > 0x32)
-                    g_axisBindings[pMenu->cursor].saturation -= 0x32;
+                if (g_axisBindings[pMenu->cursor].deadzone < 0x26de)
+                    g_axisBindings[pMenu->cursor].deadzone += 0x32;
             }
-        } else if (held & 1) {
-            if (g_axisBindings[pMenu->cursor].deadzone > 0x32)
-                g_axisBindings[pMenu->cursor].deadzone -= 0x32;
-        } else if (held & 2) {
-            if (g_axisBindings[pMenu->cursor].deadzone < 0x26de)
-                g_axisBindings[pMenu->cursor].deadzone += 0x32;
         }
         if (g_unk0x0082a7e8 != 0)
             return;
