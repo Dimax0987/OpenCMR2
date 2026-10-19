@@ -5502,13 +5502,13 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
                     }
                 }
             }
-        }
-        if ((char)CGameInfo::GetGameModeOptionBit19() != 0) {
-            if (CGameInfo::GetConfiguredGameMode() == 0xb || CGameInfo::GetConfiguredGameMode() == 0xc)
-                SurfaceSound_UpdateNearestNetworkCarEngines();
-        } else if ((CGameInfo::GetConfiguredGameMode() == 5 || CGameInfo::GetConfiguredGameMode() == 6) &&
-                   (BYTE)RallyDataState() == 1) {
-            SurfaceSound_UpdateNearestLocalCarEngines();
+            if ((char)CGameInfo::GetGameModeOptionBit19() != 0) {
+                if (CGameInfo::GetConfiguredGameMode() == 0xb || CGameInfo::GetConfiguredGameMode() == 0xc)
+                    SurfaceSound_UpdateNearestNetworkCarEngines();
+            } else if ((CGameInfo::GetConfiguredGameMode() == 5 || CGameInfo::GetConfiguredGameMode() == 6) &&
+                       (BYTE)RallyDataState() == 1) {
+                SurfaceSound_UpdateNearestLocalCarEngines();
+            }
         }
         if (param2 == 0) {
             for (g_unk0x00537f04 = 0; g_unk0x00537f04 < (BYTE)RallyDataState(); g_unk0x00537f04++) {
