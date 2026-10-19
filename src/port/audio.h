@@ -29,6 +29,9 @@ typedef struct AudioStream AudioStream;
 /* Opens the output device. channels is 1 or 2. */
 BOOL Audio_Init(int sampleRate, int channels);
 void Audio_Shutdown(void);
+/* Holds the output while the game is in the background, as DirectSound
+   silenced a window without the focus; the buffers keep their positions. */
+void Audio_SetPaused(BOOL paused);
 
 /* A buffer of 8- or 16-bit PCM. */
 AudioBuffer *Audio_CreateBuffer(DWORD sampleRate, int bits, int channels, DWORD bytes);

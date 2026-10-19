@@ -43,6 +43,7 @@ struct AudioStream {
 namespace {
 
 SDL_AudioStream *s_stream;
+bool s_paused;
 SDL_Mutex *s_lock;
 int s_outputRate = 44100;
 std::vector<AudioBuffer *> s_buffers;
@@ -155,8 +156,20 @@ extern "C" BOOL Audio_Init(int sampleRate, int channels)
         Sys_Log("audio: %s", SDL_GetError());
         return FALSE;
     }
-    SDL_ResumeAudioStreamDevice(s_stream);
+    if (!s_paused)
+        SDL_ResumeAudioStreamDevice(s_stream);
     return TRUE;
+}
+
+extern "C" void Audio_SetPaused(BOOL paused)
+{
+    s_paused = paused != 0;
+    if (s_stream == NULL)
+        return;
+    if (s_paused)
+        SDL_PauseAudioStreamDevice(s_stream);
+    else
+        SDL_ResumeAudioStreamDevice(s_stream);
 }
 
 extern "C" AudioStream *Audio_CreateStream(DWORD sampleRate, int channels)

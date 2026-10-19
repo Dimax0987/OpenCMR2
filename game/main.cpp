@@ -1,4 +1,5 @@
 #include "port/sys.h"
+#include "port/audio.h"
 #include "port/diagnostics.h"
 #include "main.h"
 #include "Graphics.h"
@@ -194,6 +195,9 @@ void CMain::SetGameActiveState(int param1)
 	if (param1 != 0) {
 		CInput::SetMouseCoopLevel(0);
 		CSound::RunSoundDeviceCallback();
+		// PORT: DirectSound silenced the game's buffers while another
+		// window had the focus; the SDL output is held instead.
+		Audio_SetPaused(TRUE);
 		m_unk0x00663dbc = GetFrameTime();
 		CGame::m_isActive = 1;
 		return;
@@ -201,6 +205,7 @@ void CMain::SetGameActiveState(int param1)
 
 	CInput::SetMouseCoopLevel(1);
 	CSound::RunSoundDeviceCallback();
+	Audio_SetPaused(FALSE);
 	CInput::ClearFirstJoystickControlBindings();
 	ResetFpsWarmup();
 	frameTime = GetFrameTime();
