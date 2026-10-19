@@ -173,7 +173,7 @@ struct GfxExecutor {
 
 GfxExecutor *Gfx_CreateGpuExecutor(void);
 GfxExecutor *Gfx_CreateNullExecutor(void);
-// Whether SDL_GPU has a device on this system (gfx_gpu.cpp).
+// Whether SDL_GPU has a hardware device on this system (gfx_gpu.cpp).
 bool Gfx_GpuIsAvailable(void);
 #ifdef OPENCMR2_RENDERER_GL
 GfxExecutor *Gfx_CreateGlExecutor(void);

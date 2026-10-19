@@ -1345,6 +1345,9 @@ GfxExecutor *Gfx_CreateGpuExecutor(void)
 bool Gfx_GpuIsAvailable(void)
 {
     SDL_PropertiesID props = DeviceProperties();
+    // A software Vulkan driver (lavapipe, often installed beside the GPU's
+    // own driver) does not count: an old GPU draws faster on its OpenGL.
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_VULKAN_REQUIRE_HARDWARE_ACCELERATION_BOOLEAN, true);
     bool available = SDL_GPUSupportsProperties(props);
     SDL_DestroyProperties(props);
     return available;

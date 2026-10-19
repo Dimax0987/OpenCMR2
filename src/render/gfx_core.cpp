@@ -291,8 +291,8 @@ namespace {
 
 enum Backend { BACKEND_NONE, BACKEND_NULL, BACKEND_GPU, BACKEND_GL };
 
-// SDL_GPU (Vulkan, Direct3D 12, Metal) where the system has a device for it,
-// otherwise OpenGL 3.3, for GPUs older than Vulkan; [video] graphics_api
+// SDL_GPU (Vulkan, Direct3D 12, Metal) where the system has a hardware
+// device for it, otherwise OpenGL 3.3, for GPUs older than Vulkan; [video] graphics_api
 // (auto, sdl_gpu, opengl) chooses one. Decided once, before the window is
 // made: OpenGL needs its window to be made for it.
 Backend ChooseBackend()
@@ -312,7 +312,7 @@ Backend ChooseBackend()
     else if (Gfx_GpuIsAvailable())
         backend = BACKEND_GPU;
     else {
-        Sys_Log("gfx: no Vulkan, Direct3D 12 or Metal device for SDL_GPU: OpenGL 3.3");
+        Sys_Log("gfx: no hardware Vulkan, Direct3D 12 or Metal device for SDL_GPU: OpenGL 3.3");
         backend = BACKEND_GL;
     }
 #else

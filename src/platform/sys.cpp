@@ -314,7 +314,7 @@ const char s_defaultSettings[] =
     "; 1 = wait for the display's refresh, 0 = draw frames as soon as they are ready.\n"
     "; vsync = 1\n"
     "; Renderer: sdl_gpu (Vulkan, Direct3D 12, Metal), opengl (OpenGL 3.3, for\n"
-    "; older GPUs), or auto = SDL_GPU when the system has a device for it.\n"
+    "; older GPUs), or auto = SDL_GPU when the GPU has a driver for it.\n"
     "; graphics_api = auto\n"
     "; Window size in multiples of the game's resolution, when leaving fullscreen.\n"
     "; window_scale = 1\n"
