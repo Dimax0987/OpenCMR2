@@ -324,6 +324,9 @@ void Game_DrawLogoAndLoadingSprites(CallbackStateMachine *p1, BYTE p2)
     int count;
     int i;
 
+    // PORT: its pictures hold text, sharp only in the screen's own pixels
+    // (see MenuScreen_Suspend).
+    MenuScreen_Suspend();
     screen.x = 0;
     screen.y = 0;
     screen.w = g_pGraphics->resX;
@@ -394,6 +397,7 @@ void Game_DrawLogoAndLoadingSprites(CallbackStateMachine *p1, BYTE p2)
     Game_DrawSceneViewport(g_splashSceneRoot, g_splashCamera, &screen, 0, 1);
     if (g_bootLoadingDone == 0)
         Graphics_PresentFrameAndResetCounters();
+    MenuScreen_Resume();
 }
 
 int Game_DrawFadingBootLabel(int, int, char *, char);

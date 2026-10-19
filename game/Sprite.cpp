@@ -1232,6 +1232,33 @@ void MenuScreen_End(void)
     g_menuScreen.active = 0;
 }
 
+// PORT: a boot screen drawn in the real screen's pixels while the menus draw
+// on their own: the copyright screen, whose text is in its pictures, stays
+// sharp only unscaled.
+static int g_menuScreenSuspended;
+
+void MenuScreen_Suspend(void)
+{
+    if (!g_menuScreen.active || g_menuScreenSuspended)
+        return;
+    g_menuScreenSuspended = 1;
+    g_pGraphics->resX = g_menuScreen.resX;
+    g_pGraphics->resY = g_menuScreen.resY;
+    Gfx_SetVirtualScreen(0, 0);
+    g_spriteScreenScale = 1.0f;
+}
+
+void MenuScreen_Resume(void)
+{
+    if (!g_menuScreenSuspended)
+        return;
+    g_menuScreenSuspended = 0;
+    g_pGraphics->resX = g_menuScreen.screenX;
+    g_pGraphics->resY = g_menuScreen.screenY;
+    Gfx_SetVirtualScreen(g_menuScreen.screenX, g_menuScreen.screenY);
+    g_spriteScreenScale = X87S_DIV(X87S_FILD(float, g_menuScreen.resY), X87S_LOAD(g_menuScreen.screenY));
+}
+
 // The largest menu_scale the display takes: above it the menus' screen
 // would be narrower than the original's, which they keep (see MenuScreen_Size).
 int MenuScreen_GetLargestScale(void)

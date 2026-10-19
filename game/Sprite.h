@@ -129,6 +129,9 @@ void Hud_EndLayout(void);
 // PORT: the menus laid out for the screen's size (Sprite.cpp).
 void MenuScreen_Begin(void);
 void MenuScreen_End(void);
+// A screen drawn in the real screen's pixels between the menus' own.
+void MenuScreen_Suspend(void);
+void MenuScreen_Resume(void);
 // The menus over a race, drawn among its own 2D.
 void MenuScreen_BeginOverlay(void);
 void MenuScreen_EndOverlay(void);
