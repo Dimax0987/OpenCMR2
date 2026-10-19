@@ -5817,7 +5817,12 @@ void StageTiming_IntegrateTerrainBodyPitch(ViewLightingRamp *pData, int param_2)
     direction.z = g_sinTable[(orientation + 0x400) & 0xfff];
     StageObject_DeriveLoadedScaleVector(&vec);
     value = FixVecDot(&direction, &vec);
-    p->sunYaw += FixMul(0xf5c, value);
+    // PORT: the original turned the clouds by this much every frame, so
+    // they spun faster the higher the frame rate (and a few times too fast
+    // without vertical sync). The turn is scaled by the frame's time step,
+    // as the rest of the weather is, which is the original's at 25 frames
+    // a second.
+    p->sunYaw += FixMul(FixMul(0xf5c, value), g_unk0x0051bd3c);
     angle = p->sunYaw;
     if (angle > 0x1680000) {
         p->sunYaw = angle - 0x1680000;
