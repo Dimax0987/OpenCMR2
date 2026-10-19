@@ -3915,8 +3915,10 @@ void InRaceMenu_BuildCameraOffsetOptions(void)
 {
     Menu_Init(&g_menu0x0052a870, 0, 0, 0, &g_menu0x00529ed8, NULL, 1, 0, 1);
     Menu_AddItemType3(&g_menu0x0052a870, 0, 0x5e, 0x15, 10, 0, 0, 0, 0);
-    Menu_AddItemType3(&g_menu0x0052a870, 0, 0x5f, 0x15, 10, 0, 0, 0, 1);
-    Menu_AddItemType3(&g_menu0x0052a870, 0, 0x60, 0x15, 10, 0, 0, 0, 2);
+    // PORT: distance and stiffness have ten more steps below the original's
+    // range (see InRaceMenu_ReadCameraOffsetSliders).
+    Menu_AddItemType3(&g_menu0x0052a870, 0, 0x5f, 0x1f, 10, 0, 0, 0, 1);
+    Menu_AddItemType3(&g_menu0x0052a870, 0, 0x60, 0x1f, 10, 0, 0, 0, 2);
     Menu_AddItemType3(&g_menu0x0052a870, 0, 0x61, 0x15, 10, 0, 0, 0, 3);
     Menu_AddItemType4(&g_menu0x0052a870, 0, 0x62, (MenuItemAction)InRaceMenu_ResetCameraDefaults, 4);
     Menu_AddItemType2(&g_menu0x0052a870, 0, 0x3b, &g_menu0x00529ed8, 0, 5);
@@ -3965,12 +3967,15 @@ int g_unk0x0052aa5c;
 
 // Callback of the camera options menu: turns the four sliders into values.
 // FUNCTION: CMR2 0x00403200
+// PORT: the distance (5 to 10 in steps of 0.25) and the stiffness (8 to 16
+// in steps of 0.4) reach ten steps lower, to 2.5 and 4: a closer camera and
+// a stiffer one. The steps and the stored values are the original's.
 void InRaceMenu_ReadCameraOffsetSliders(Menu *pMenu)
 {
-    g_unk0x0052aa5c = (int)(pMenu->items[2].max << 19) / (pMenu->items[2].min - 1) + 0x80000;
+    g_unk0x0052aa5c = (int)(pMenu->items[2].max * 0xc0000) / (pMenu->items[2].min - 1) + 0x40000;
     g_unk0x0052a86c = (short)((int)(pMenu->items[3].max * 0x11c) / (pMenu->items[3].min - 1));
     g_unk0x0052aa54 = (int)(pMenu->items[0].max * 0xcccd) / (pMenu->items[0].min - 1) + 0x13333;
-    g_unk0x0052aa58 = (int)(pMenu->items[1].max * 0x50000) / (pMenu->items[1].min - 1) + 0x50000;
+    g_unk0x0052aa58 = (int)(pMenu->items[1].max * 0x78000) / (pMenu->items[1].min - 1) + 0x28000;
 }
 
 int Race_IsFlag24Clear(void);
@@ -4471,6 +4476,9 @@ void NetRace_FadeOutPlayerScreen(BYTE index, FadeCallback pfnDone, int param3, i
 void View_SetShake(int view, int start);
 void RallyData_SetDriverCarSelection(BYTE index, int value);
 
+// PORT: the clock of the camera menu's preview.
+static SysStepClock g_cameraPreviewClock;
+
 // One frame of the in-race state machine: while the race menu is up it pushes
 // the camera settings and the driver names of the active player, then updates
 // the car order, the input menu and the race-start/restart transitions.
@@ -4514,28 +4522,34 @@ void InRaceMenu_UpdateStateMachineFrame(CallbackStateMachine *param1)
     RallyData_SetDriverCarSelection(first, 5);
 
 pushCamera:
-    g_unk0x00529ed0 = HudDash_GetPlayerGaugeValue(g_unk0x0052af58[1]);
-    HudDash_GetCameraUpVector(&g_unk0x00529cd8, g_unk0x0052af58[1]);
-    g_unk0x0052a2a0 = HudDash_GetGaugeTarget(g_unk0x0052af58[1]);
-    g_unk0x0052aa64 = g_unk0x0052aa5c - g_unk0x00529ed0;
-    g_unk0x00529ec8 = g_unk0x0052aa54 - g_unk0x00529cdc;
-    g_unk0x0052aa6c = g_unk0x0052a86c - g_unk0x0052a2a0;
-    g_unk0x0052a0bc = g_unk0x0052aa58 - g_unk0x00529ce0;
-    g_unk0x0052a86c = g_unk0x0052a2a0 + FixMul(g_unk0x0052aa6c, 0x1999);
-    g_cameraMenuOffset.x = 0;
-    g_unk0x0052aa54 = g_unk0x00529cdc + FixMul(g_unk0x00529ec8, 0x1999);
-    g_unk0x0052aa58 = g_unk0x00529ce0 + FixMul(g_unk0x0052a0bc, 0x1999);
-    HudDash_SetPlayerGaugeValue(g_unk0x0052af58[1], g_unk0x0052aa5c);
-    HudDash_SetCameraOffset(g_unk0x0052af58[1], &g_cameraMenuOffset);
-    HudDash_SetGaugeTarget(g_unk0x0052af58[1], g_unk0x0052a86c);
+    // PORT: the original eased the camera towards the sliders, and shook it
+    // on the stiffness slider, once per frame at the display's refresh;
+    // without vertical sync the preview ran many times too fast. It runs
+    // at 60 steps a second.
+    for (i = Sys_TakeSteps(&g_cameraPreviewClock, 60, 5); i > 0; i--) {
+        g_unk0x00529ed0 = HudDash_GetPlayerGaugeValue(g_unk0x0052af58[1]);
+        HudDash_GetCameraUpVector(&g_unk0x00529cd8, g_unk0x0052af58[1]);
+        g_unk0x0052a2a0 = HudDash_GetGaugeTarget(g_unk0x0052af58[1]);
+        g_unk0x0052aa64 = g_unk0x0052aa5c - g_unk0x00529ed0;
+        g_unk0x00529ec8 = g_unk0x0052aa54 - g_unk0x00529cdc;
+        g_unk0x0052aa6c = g_unk0x0052a86c - g_unk0x0052a2a0;
+        g_unk0x0052a0bc = g_unk0x0052aa58 - g_unk0x00529ce0;
+        g_unk0x0052a86c = g_unk0x0052a2a0 + FixMul(g_unk0x0052aa6c, 0x1999);
+        g_cameraMenuOffset.x = 0;
+        g_unk0x0052aa54 = g_unk0x00529cdc + FixMul(g_unk0x00529ec8, 0x1999);
+        g_unk0x0052aa58 = g_unk0x00529ce0 + FixMul(g_unk0x0052a0bc, 0x1999);
+        HudDash_SetPlayerGaugeValue(g_unk0x0052af58[1], g_unk0x0052aa5c);
+        HudDash_SetCameraOffset(g_unk0x0052af58[1], &g_cameraMenuOffset);
+        HudDash_SetGaugeTarget(g_unk0x0052af58[1], g_unk0x0052a86c);
 
-    if (g_unk0x0052ad54 != 0) {
-        View_SnapCameras(g_unk0x0052af58[1]);
-        result = Race_ReadState37F60();
-        View_BlendCameraStates(g_unk0x0052af58[1], result);
-        result = g_pMenu0x0052af44 == &g_menu0x0052a870 &&
-                 g_pMenu0x0052af44->cursor == 2 ? 1 : 0;
-        View_SetShake(g_unk0x0052af58[1], result);
+        if (g_unk0x0052ad54 != 0) {
+            View_SnapCameras(g_unk0x0052af58[1]);
+            result = Race_ReadState37F60();
+            View_BlendCameraStates(g_unk0x0052af58[1], result);
+            result = g_pMenu0x0052af44 == &g_menu0x0052a870 &&
+                     g_pMenu0x0052af44->cursor == 2 ? 1 : 0;
+            View_SetShake(g_unk0x0052af58[1], result);
+        }
     }
 
 updateMenus:
@@ -5358,10 +5372,11 @@ void InRaceMenu_Close(void)
 // FUNCTION: CMR2 0x00403110
 void InRaceMenu_FillCameraOffsetSliders(Menu *pMenu)
 {
-    int distance = FixDiv((pMenu->items[2].min - 1) * (g_unk0x0052aa5c - 0x80000), 0x80000);
+    // PORT: the ranges of InRaceMenu_ReadCameraOffsetSliders.
+    int distance = FixDiv((pMenu->items[2].min - 1) * (g_unk0x0052aa5c - 0x40000), 0xc0000);
     int angle = FixDiv((pMenu->items[3].min - 1) * g_unk0x0052a86c, 0x11c);
     int height = FixDiv((pMenu->items[0].min - 1) * (g_unk0x0052aa54 - 0x13333), 0xcccd);
-    int depth = FixDiv((pMenu->items[1].min - 1) * (g_unk0x0052aa58 - 0x50000), 0x50000);
+    int depth = FixDiv((pMenu->items[1].min - 1) * (g_unk0x0052aa58 - 0x28000), 0x78000);
     pMenu->items[2].max = (BYTE)((distance + 0x8000) >> 16);
     pMenu->items[3].max = (BYTE)((angle + 0x8000) >> 16);
     pMenu->items[0].max = (BYTE)((height + 0x8000) >> 16);
