@@ -4947,10 +4947,22 @@ void Graphics_UpdateFrameStatistics(void)
         }
     }
     {
-        double dt = (double)(g_unk0x006dd8a4 - g_unk0x006dd898);
+        // PORT: the original divided by the frame time in whole milliseconds.
+        // Above 1000 frames a second some frames last under one, the rate
+        // became infinite and the weather took its longest step (that of 15
+        // frames a second) on them: the clouds turned and the wind changed
+        // tens of times too fast (#29). The frame time is measured in
+        // fractions of a millisecond, and a frame the clock did not see keeps
+        // the last rate.
+        static double previous = Sys_GetTicksPrecise() - 40.0;
+        double now = Sys_GetTicksPrecise();
+        double dt = now - previous;
 
-        g_frameScale2 = X87S_DIV(g_netFontInverseScale, dt);
-        g_frameScale = X87S_DIV(g_netFontInverseScale, dt);
+        previous = now;
+        if (dt > 0.0) {
+            g_frameScale2 = X87S_DIV(g_netFontInverseScale, dt);
+            g_frameScale = X87S_DIV(g_netFontInverseScale, dt);
+        }
     }
 }
 

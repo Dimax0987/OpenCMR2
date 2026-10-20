@@ -21,6 +21,9 @@ extern "C" {
 
 /* Milliseconds since an arbitrary start, wrapping at 2^32 (timeGetTime). */
 DWORD Sys_GetTicks(void);
+/* The same clock in fractions of a millisecond, for durations shorter than
+   one (frames above 1000 per second). */
+double Sys_GetTicksPrecise(void);
 /* Unix seconds used for the game's initial random seed. */
 unsigned int Sys_GetUnixTime(void);
 void Sys_Sleep(DWORD ms);

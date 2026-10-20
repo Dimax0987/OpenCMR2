@@ -8,6 +8,7 @@ struct PlatformTestClock {
     DWORD (*ticks)();
     void (*sleep)(DWORD);
     unsigned int unixTime;
+    double (*ticksPrecise)(); // optional: ticks with fractions of a millisecond
 };
 void Platform_SetTestClock(const PlatformTestClock *clock);
 void Platform_SetTestKeyboard(const BYTE *keys); // 256 DIK entries, NULL disables

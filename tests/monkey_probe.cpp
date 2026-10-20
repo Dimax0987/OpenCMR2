@@ -132,7 +132,7 @@ int main(int argc, char **argv)
     char *platformArgs[] = {argv[0], dataArg, argv[1], userArg, getenv("XDG_DATA_HOME")};
     if (!Platform_Init(5, platformArgs))
         return 1;
-    const PlatformTestClock clock{Ticks, Sleep, 1700000000};
+    const PlatformTestClock clock{Ticks, Sleep, 1700000000, nullptr};
     BYTE *keys = g_keys;
     Platform_SetTestClock(&clock);
     Platform_SetTestKeyboard(keys);

@@ -73,7 +73,9 @@ extern char g_winnerFormat[];
 extern char g_ghostName[4];
 
 static DWORD virtualTime = 1000;
+static double virtualFraction; // of the current millisecond, above 1000 FPS
 static DWORD Ticks() { return virtualTime; }
+static double TicksPrecise() { return virtualTime + virtualFraction; }
 static void Sleep(DWORD ms) { virtualTime += ms; }
 
 struct Probe : Diagnostics::TimingObserver {
@@ -431,7 +433,7 @@ int main(int argc, char **argv) {
     const bool variable = strcmp(argv[3], "variable") == 0;
     const unsigned fps = variable ? 60 : unsigned(strtoul(argv[3], nullptr, 10));
     const unsigned ticks = unsigned(strtoul(argv[4], nullptr, 10));
-    if (fps < 10 || fps > 1000 || !ticks || ticks > 100000) return 2;
+    if (fps < 10 || fps > 4000 || !ticks || ticks > 100000) return 2;
     FILE *file = fopen(argv[2], "w");
     if (!file) { perror(argv[2]); return 2; }
     Probe probe(file, ticks);
@@ -445,7 +447,7 @@ int main(int argc, char **argv) {
     char userArg[] = "--user-dir";
     char *platformArgs[] = {argv[0], dataArg, argv[1], userArg, getenv("XDG_DATA_HOME")};
     if (!Platform_Init(5, platformArgs)) { fclose(file); return 1; }
-    const PlatformTestClock clock{Ticks, Sleep, 1700000000};
+    const PlatformTestClock clock{Ticks, Sleep, 1700000000, TicksPrecise};
     BYTE keys[256]{};
     Platform_SetTestClock(&clock);
     Platform_SetTestKeyboard(keys);
@@ -612,7 +614,11 @@ int main(int argc, char **argv) {
             if (variable) {
                 const DWORD pattern[] = {7, 13, 33, 5, 22, 48, 9, 23};
                 virtualTime += pattern[(raceFrame - 1) % 8];
-            } else virtualTime = raceOrigin + DWORD(uint64_t(raceFrame) * 1000 / fps);
+            } else {
+                const uint64_t micros = uint64_t(raceFrame) * 1000000 / fps;
+                virtualTime = raceOrigin + DWORD(micros / 1000);
+                virtualFraction = double(micros % 1000) / 1000.0;
+            }
         } else virtualTime += 33;
     }
     Diagnostics::observer = nullptr;

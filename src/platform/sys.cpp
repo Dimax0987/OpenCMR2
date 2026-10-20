@@ -756,6 +756,13 @@ extern "C" DWORD Sys_GetTicks(void)
     return (DWORD)SDL_GetTicks();
 }
 
+extern "C" double Sys_GetTicksPrecise(void)
+{
+    if (s_testClock)
+        return s_testClock->ticksPrecise ? s_testClock->ticksPrecise() : (double)s_testClock->ticks();
+    return (double)SDL_GetTicksNS() / 1000000.0;
+}
+
 extern "C" int Sys_TakeSteps(SysStepClock *clock, int rate, int max)
 {
     const DWORD now = Sys_GetTicks();
