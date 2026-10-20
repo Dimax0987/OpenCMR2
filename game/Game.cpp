@@ -2583,6 +2583,15 @@ int Game_DrawSceneViewport(SceneNode *pRoot, SceneNode *pCamera, void *pRect, in
     Graphics_SwitchAlphaBlendAndTest(1);
     CGraphics::SetCullMode(3);
     Graphics_SetLightingMode(5);
+    // PORT: the background layer is drawn before the scene and with the
+    // depth state the previous drawing left, which is off at the end of a
+    // frame but on after the car reflections (Graphics_RenderNodeCubeMapFaces)
+    // were rendered for this one. Its 2D triangles have depth 0, so the
+    // full-screen fill of the in-race display options page hid the whole
+    // stage but the sky (#26). It is drawn without depth, as on every other
+    // frame.
+    CGraphics::SetZWriteEnable(0);
+    CGraphics::SetZEnable(0);
     ScreenLine2D_Draw(4);
     Tri2D_DrawLayer(4);
     Sprite_DrawLayer(4);
