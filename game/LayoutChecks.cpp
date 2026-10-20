@@ -316,7 +316,7 @@ CMR2_LAYOUT_CHECK(WeatherWindTransitionSizeCheck, sizeof(WeatherWindTransition) 
 CMR2_LAYOUT_CHECK(WeatherWindTransition_targetStrengthOffsetCheck, offsetof(WeatherWindTransition, targetStrength) == 0x0);
 CMR2_LAYOUT_CHECK(WeatherWindTransition_changeRateOffsetCheck, offsetof(WeatherWindTransition, changeRate) == 0x4);
 CMR2_LAYOUT_CHECK(WeatherWindTransition_holdTimeOffsetCheck, offsetof(WeatherWindTransition, holdTime) == 0x8);
-CMR2_LAYOUT_CHECK(StageLightPresetSizeCheck, sizeof(StageLightPreset) == 0x48);
+CMR2_LAYOUT_CHECK(StageLightPresetSizeCheck, offsetof(StageLightPreset, colourCorrection) == 0x48);
 CMR2_LAYOUT_CHECK(StageLightPreset_meshHeightParametersOffsetCheck, offsetof(StageLightPreset, meshHeightParameters) == 0x0);
 CMR2_LAYOUT_CHECK(StageLightPreset_field_0xcOffsetCheck, offsetof(StageLightPreset, field_0xc) == 0xc);
 CMR2_LAYOUT_CHECK(StageLightPreset_sunIconSizeOffsetCheck, offsetof(StageLightPreset, sunIconSize) == 0x10);
@@ -392,7 +392,7 @@ CMR2_LAYOUT_CHECK(CarPartFloatVertex_pos_GeometryOffsetCheck, offsetof(DeformFlo
 CMR2_LAYOUT_CHECK(CarPartFloatVertex_normal_GeometryOffsetCheck, offsetof(DeformFloatVertex, normal) == 0xc);
 CMR2_LAYOUT_CHECK(CarPartFloatVertex_colour_GeometryOffsetCheck, offsetof(DeformFloatVertex, colour) == 0x18);
 CMR2_LAYOUT_CHECK(MeshTriangle_vertexIndex_GeometryOffsetCheck, offsetof(MeshTriangle, vertexIndex) == 0x40);
-CMR2_LAYOUT_CHECK(MeshTriangle_textureIndex_OffsetCheck, offsetof(MeshTriangle, textureIndex) == 0x4);
+CMR2_LAYOUT_CHECK(MeshTriangle_textures_OffsetCheck, offsetof(MeshTriangle, textures) == 0x4);
 CMR2_LAYOUT_CHECK(Mesh_pVertexData_GeometryOffsetCheck, offsetof(Mesh, pVertexData) == 0xc);
 CMR2_LAYOUT_CHECK(Mesh_pTriangles_GeometryOffsetCheck, offsetof(Mesh, pTriangles) == 0x24);
 CMR2_LAYOUT_CHECK(Mesh_triangleCount_GeometryOffsetCheck, offsetof(Mesh, triangleCount) == 0x28);
@@ -627,9 +627,9 @@ CMR2_LAYOUT_CHECK(g_carInteriorProfilePointers_CINCapacityCheck, sizeof(g_carInt
 CMR2_LAYOUT_CHECK(g_carInteriorNodeRows_CINCapacityCheck, sizeof(g_carInteriorNodeRows) / sizeof(g_carInteriorNodeRows[0]) == 2);
 
 extern BYTE g_viewObjectCarIndices[16];
-extern int g_viewObjectLevels[64];
+extern int g_viewCarLift[64];
 CMR2_LAYOUT_CHECK(ViewObjectCarIndexCapacityCheck, sizeof(g_viewObjectCarIndices) == 16);
-CMR2_LAYOUT_CHECK(ViewObjectLevelCapacityCheck, sizeof(g_viewObjectLevels) / sizeof(g_viewObjectLevels[0]) == 64);
+CMR2_LAYOUT_CHECK(ViewObjectLevelCapacityCheck, sizeof(g_viewCarLift) / sizeof(g_viewCarLift[0]) == 64);
 
 // Stage interior resources and shared light records (tandas 19–21).
 CMR2_LAYOUT_CHECK(CarDriverPoseState_RecoveredSizeCheck, (sizeof(CarDriverPoseState) == 0x24));

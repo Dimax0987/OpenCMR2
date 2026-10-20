@@ -704,9 +704,9 @@ void FixBasis_Integrate(FixVector *pRows, FixVector *pW)
     }
 }
 
-extern int g_unk0x00538df0[2];
-extern int g_unk0x00538e04[2];
-extern int g_unk0x005391cc[2];
+extern int g_viewNearPlanes[2];
+extern int g_viewFarPlanes[2];
+extern int g_viewZooms[2];
 int Race_IsMultiplayerRecordMode10(void);
 int RallyData_IsChampionshipFinalStage(void);
 int RallyData_IsHeadToHeadRaceMode(void);
@@ -731,7 +731,7 @@ static int View_GetFovScale(void)
 void View_SetPlayerProjection(unsigned int player)
 {
     BYTE i = (BYTE)player;
-    int zoom = g_unk0x005391cc[i];
+    int zoom = g_viewZooms[i];
     // PORT (SilentPatchCMR2): the original scales X by resX/resY, which is
     // right only at 4:3 and stretches wider resolutions. (16/9) * (resY/resX)
     // is the same at 4:3 and keeps the vertical view on any other shape.
@@ -746,14 +746,14 @@ void View_SetPlayerProjection(unsigned int player)
             fovX *= 2;
     }
     if (CGameInfo::IsActiveCheatEnabled(2)) {
-        CGraphics::SetProjection(-fovX, fovY, g_unk0x00538e04[i], g_unk0x00538df0[i]);
+        CGraphics::SetProjection(-fovX, fovY, g_viewFarPlanes[i], g_viewNearPlanes[i]);
         return;
     }
-    if ((BYTE)RallyData_IsChampionshipFinalStage() && g_unk0x00538e04[i] < 0x960000) {
-        CGraphics::SetProjection(fovX, fovY, 0x960000, g_unk0x00538df0[i]);
+    if ((BYTE)RallyData_IsChampionshipFinalStage() && g_viewFarPlanes[i] < 0x960000) {
+        CGraphics::SetProjection(fovX, fovY, 0x960000, g_viewNearPlanes[i]);
         return;
     }
-    CGraphics::SetProjection(fovX, fovY, g_unk0x00538e04[i], g_unk0x00538df0[i]);
+    CGraphics::SetProjection(fovX, fovY, g_viewFarPlanes[i], g_viewNearPlanes[i]);
 }
 
 // Layout of one force-feedback slot (0x539200). The full definition lives in
@@ -776,8 +776,8 @@ struct Unk0x00539278 {
     int field_0x34;                 // slot in use
 };
 extern Unk0x00539278 g_forceFeedbackSlots[2];
-extern Unk0x00539278 *g_unk0x00539278;
-extern Car *g_unk0x0053937c;
+extern Unk0x00539278 *g_pForceFeedbackSlot;
+extern Car *g_pForceFeedbackCar;
 
 // Rebuilds the rotation part of a matrix as an orthonormal basis that keeps
 // the current forward direction and the world up axis.
@@ -818,14 +818,14 @@ void ForceFeedback_UpdateSlot(Car *pCar, FixVector *pIn, int nonzero)
 
     // PORT: the slots belong to the two local players, but collisions call
     // this for every car; the original indexes past the array with AI cars
-    // (index >= 2) and overwrites the globals that follow, g_unk0x00539278
+    // (index >= 2) and overwrites the globals that follow, g_pForceFeedbackSlot
     // among them. Those updates go to a scratch slot instead.
     static Unk0x00539278 s_otherCarSlot;
-    g_unk0x0053937c = pCar;
+    g_pForceFeedbackCar = pCar;
     if (pCar->index >= 0 && pCar->index < 2)
-        g_unk0x00539278 = &g_forceFeedbackSlots[pCar->index];
+        g_pForceFeedbackSlot = &g_forceFeedbackSlots[pCar->index];
     else
-        g_unk0x00539278 = &s_otherCarSlot;
+        g_pForceFeedbackSlot = &s_otherCarSlot;
     FixMatrix_InverseRotateVector(&v, pIn, pCar->pWorld);
     if (nonzero != 0) {
         x = v.z;
@@ -836,12 +836,12 @@ void ForceFeedback_UpdateSlot(Car *pCar, FixVector *pIn, int nonzero)
             x = 0;
         else if (x > 0x10000)
             x = 0x10000;
-        if (x > g_unk0x00539278->field_0x24) {
-            g_unk0x00539278->field_0x24 = x;
+        if (x > g_pForceFeedbackSlot->field_0x24) {
+            g_pForceFeedbackSlot->field_0x24 = x;
             if (v.z >= 0)
-                g_unk0x00539278->field_0x30 = 0;
+                g_pForceFeedbackSlot->field_0x30 = 0;
             else
-                g_unk0x00539278->field_0x30 = 1;
+                g_pForceFeedbackSlot->field_0x30 = 1;
         }
     }
     x = (unsigned int)FixVecLength(&v);
@@ -851,36 +851,35 @@ void ForceFeedback_UpdateSlot(Car *pCar, FixVector *pIn, int nonzero)
         x = 0;
     else if (x > 0x10000)
         x = 0x10000;
-    if (x > g_unk0x00539278->field_0x28)
-        g_unk0x00539278->field_0x28 = x;
+    if (x > g_pForceFeedbackSlot->field_0x28)
+        g_pForceFeedbackSlot->field_0x28 = x;
 }
 
-// Per-player camera mode (4 = free camera) and the camera up/forward vectors.
+// Chase camera state (HudDash.cpp): mode per view record, the records' up and
+// forward vectors (entries 2..5) and the pitch.
 extern BYTE g_playerCameraMode[8];
-extern FixVector g_unk0x0053d000[6];
-extern FixVector g_unk0x0053d048[4];
-// Per-player dashboard gauge values.
-extern short g_unk0x0053d090[4];
-// View offset of a player's camera (HudDash.cpp).
-void HudDash_GetCameraViewOffset(FixVector *pOut, BYTE *pSel);
+extern FixVector g_chaseCameraViewOffsets[6];
+extern FixVector g_chaseCameraOffsets[4];
+extern short g_chaseCameraPitch[4];
+void ChaseCamera_GetViewOffset(FixVector *pOut, CameraRecord *pSel);
 
-void View_BuildMatrixFromCameraBasis(BYTE *pObj, FixMatrix *pRef);
+void ChaseCamera_BuildMatrix(CameraRecord *pObj, FixMatrix *pRef);
 
 // Caches the reference matrix's up and right basis vectors in the player's
 // camera slots, then builds the view object's matrix from them.
 // FUNCTION: CMR2 0x00447a00
-void View_CacheReferenceBasisAndBuildMatrix(BYTE *pObj, FixMatrix *pRef)
+void ChaseCamera_Restart(CameraRecord *pObj, FixMatrix *pRef)
 {
-    FixMatrix_GetUp(&g_unk0x0053d048[2 + pObj[0]], pRef);
-    FixMatrix_GetRight(&g_unk0x0053d000[2 + pObj[0]], pRef);
-    View_BuildMatrixFromCameraBasis(pObj, pRef);
+    FixMatrix_GetUp(&g_chaseCameraOffsets[2 + pObj->index], pRef);
+    FixMatrix_GetRight(&g_chaseCameraViewOffsets[2 + pObj->index], pRef);
+    ChaseCamera_BuildMatrix(pObj, pRef);
 }
 
 // Builds a view object's matrix: the basis comes from the player's camera
 // up/forward vectors, the position from the player's view offset plus the
 // object's own, and then the object's remaining fields are set.
 // FUNCTION: CMR2 0x00447a40
-void View_BuildMatrixFromCameraBasis(BYTE *pObj, FixMatrix *pRef)
+void ChaseCamera_BuildMatrix(CameraRecord *pObj, FixMatrix *pRef)
 {
     FixMatrix identity;
     FixVector right;
@@ -892,20 +891,20 @@ void View_BuildMatrixFromCameraBasis(BYTE *pObj, FixMatrix *pRef)
     int index;
     int v;
 
-    sel = pObj[0];
-    HudDash_GetCameraViewOffset(&base, pObj);
+    sel = pObj->index;
+    ChaseCamera_GetViewOffset(&base, pObj);
     FixMatrix_Identity(&identity);
     FixMatrix_SetPosition(&base, &identity);
     index = sel & 0xff;
 
-    FixVecCross(&right, &g_unk0x0053d048[2 + index], &g_unk0x0053d000[2 + index]);
-    pM = (FixMatrix *)(pObj + 8);
+    FixVecCross(&right, &g_chaseCameraOffsets[2 + index], &g_chaseCameraViewOffsets[2 + index]);
+    pM = &pObj->matrix;
     FixMatrix_SetRight(&right, pM);
-    FixMatrix_SetUp(&g_unk0x0053d048[2 + index], pM);
-    FixMatrix_SetForward(&g_unk0x0053d000[2 + index], pM);
-    *(int *)(pObj + 0x38) = 0;
-    *(int *)(pObj + 0x3c) = 0;
-    *(int *)(pObj + 0x40) = 0;
+    FixMatrix_SetUp(&g_chaseCameraOffsets[2 + index], pM);
+    FixMatrix_SetForward(&g_chaseCameraViewOffsets[2 + index], pM);
+    pObj->matrix.position.x = 0;
+    pObj->matrix.position.y = 0;
+    pObj->matrix.position.z = 0;
     FixMatrix_Multiply(pM, &identity, pM);
     FixMatrix_GetPosition(&pos, pM);
     FixMatrix_GetPosition(&off, pRef);
@@ -914,17 +913,17 @@ void View_BuildMatrixFromCameraBasis(BYTE *pObj, FixMatrix *pRef)
     pos.z += off.z;
     FixMatrix_SetPosition(&pos, pM);
     if (g_playerCameraMode[index] == 4)
-        FixMatrix_RotateAboutRight(pM, (unsigned short)g_unk0x0053d090[2 + pObj[1]]);
+        FixMatrix_RotateAboutRight(pM, (unsigned short)g_chaseCameraPitch[2 + pObj->view]);
 
-    *(int *)(pObj + 0x48) = 0;
-    *(int *)(pObj + 0x4c) = 0x10000;
-    *(int *)(pObj + 0x58) = 0x10000;
-    *(int *)(pObj + 0x54) = 0xa000;
+    pObj->carLift = 0;
+    pObj->nearPlane = 0x10000;
+    pObj->liftPitch = 0x10000;
+    pObj->zoom = 0xa000;
     v = base.z;
     if (v < 0)
         v = -v;
-    *(int *)(pObj + 0x5c) = v;
-    *(int *)(pObj + 0x50) = v - 0x10000;
+    pObj->lookDistance = v;
+    pObj->field_0x50 = v - 0x10000;
 }
 
 extern CarPartSet *g_physicsPartSet;
@@ -1072,7 +1071,7 @@ void CarPhysics_IntegrateWheelSuspension(void)
 // GLOBAL: CMR2 0x00590ec0
 BYTE g_viewObjectCarIndices[16];
 extern FixVector *g_carCameraOffsets[8];
-extern int g_viewObjectLevels[64];
+extern int g_viewCarLift[64];
 
 // Positions a view from the per-mode offset of its car's CIN section 4,
 // transforms it through the current basis and adds the reference position.
@@ -1113,12 +1112,12 @@ void View_PositionFromCarProfile(CameraRecord *pObj, FixMatrix *pRef)
     pos.z += off.z;
     FixMatrix_SetPosition(&pos, pM);
 
-    base = g_viewObjectLevels[pObj->index];
-    pObj->field_0x54 = 0xa000;
-    pObj->field_0x48 = base;
-    pObj->field_0x4c = 0x1999;
-    pObj->field_0x58 = 0;
-    pObj->field_0x5c = 0x10000;
+    base = g_viewCarLift[pObj->index];
+    pObj->zoom = 0xa000;
+    pObj->carLift = base;
+    pObj->nearPlane = 0x1999;
+    pObj->liftPitch = 0;
+    pObj->lookDistance = 0x10000;
     pObj->field_0x50 = 0;
 }
 
@@ -1197,16 +1196,16 @@ extern double g_fixedDegreesToAngle12;
 // the object's split axis and applies the car's tilt rotation.
 // Differential coverage: affine axes, tilt and split positioning with real helpers.
 // FUNCTION: CMR2 0x00486910
-void StageObject_RebuildMirroredTiltMatrix(BYTE *pObj, int *pSrc)
+void StageObject_RebuildMirroredTiltMatrix(CameraRecord *pObj, int *pSrc)
 {
-    FixMatrix *pMat = (FixMatrix *)(pObj + 8);
+    FixMatrix *pMat = &pObj->matrix;
     FixMatrix *pRef = (FixMatrix *)pSrc;
     int idx;
     int angle;
     int v;
 
     memcpy(pMat, pSrc, 0x40);
-    idx = *pObj;
+    idx = pObj->index;
     if (g_carPartStateTables.modes[idx] == 2) {
         pMat->right.x = pRef->forward.x;
         pMat->right.y = pRef->forward.y;
@@ -1227,7 +1226,7 @@ void StageObject_RebuildMirroredTiltMatrix(BYTE *pObj, int *pSrc)
     v = (int)FTOI(__int64, X87S_MUL((double)angle, CGraphics::m_65536));
     FixMatrix_RotateAboutRight((FixMatrix *)pMat,
                                (unsigned short)FTOI(__int64, X87S_MUL((double)v, g_fixedDegreesToAngle12)));
-    View_PositionFromCarProfile((CameraRecord *)pObj, (FixMatrix *)pSrc);
+    View_PositionFromCarProfile(pObj, (FixMatrix *)pSrc);
 }
 
 // Rebuilds an object's local matrix from a reference matrix and interpolates
@@ -1235,7 +1234,7 @@ void StageObject_RebuildMirroredTiltMatrix(BYTE *pObj, int *pSrc)
 // match 65%: same structure and calls; register allocation of the source loads differs
 // (setne vs the original's neg/sbb mask for the angle).
 // FUNCTION: CMR2 0x00486810
-void StageObject_InterpolateReferenceMatrix(BYTE *pObj, int *pSrc, int param_3)
+void StageObject_InterpolateReferenceMatrix(CameraRecord *pObj, int *pSrc, int param_3)
 {
     int m[16];
     int angle;
@@ -1243,7 +1242,7 @@ void StageObject_InterpolateReferenceMatrix(BYTE *pObj, int *pSrc, int param_3)
     __int64 v;
 
     memcpy(m, pSrc, 0x40);
-    if (g_carPartStateTables.modes[*pObj] == 2) {
+    if (g_carPartStateTables.modes[pObj->index] == 2) {
         m[0] = pSrc[8];
         m[1] = pSrc[9];
         m[2] = pSrc[10];
@@ -1258,7 +1257,7 @@ void StageObject_InterpolateReferenceMatrix(BYTE *pObj, int *pSrc, int param_3)
         m[9] = pSrc[1];
         m[10] = pSrc[2];
     }
-    angle = g_carPartStateTables.modes[*pObj] == 0 ? 10 : 0;
+    angle = g_carPartStateTables.modes[pObj->index] == 0 ? 10 : 0;
     v = (int)FTOI(__int64, X87S_MUL((double)angle, CGraphics::m_65536));
     FixMatrix_RotateAboutRight((FixMatrix *)m,
                                (unsigned short)FTOI(__int64, X87S_MUL((double)(int)v, g_fixedDegreesToAngle12)));
@@ -1266,9 +1265,9 @@ void StageObject_InterpolateReferenceMatrix(BYTE *pObj, int *pSrc, int param_3)
         tAxis = 0x10000;
     else
         tAxis = FixMul(0x4ccc, g_physicsTimeStep);
-    FixMatrix_Interpolate((FixMatrix *)(pObj + 8), (FixMatrix *)(pObj + 8), (FixMatrix *)m,
+    FixMatrix_Interpolate(&pObj->matrix, &pObj->matrix, (FixMatrix *)m,
                           0x10000, tAxis, 0x10000, 0);
-    View_PositionFromCarProfile((CameraRecord *)pObj, (FixMatrix *)pSrc);
+    View_PositionFromCarProfile(pObj, (FixMatrix *)pSrc);
 }
 
 // (defined in StageTiming.cpp, which owns the GLOBAL annotation)
@@ -1405,12 +1404,12 @@ extern MovingObjects g_movingObjects;
 
 // 16.16 -> 12-bit angle of a turn rate (its negated twin is 0x511398 in Car.cpp);
 // defined in StageTiming.cpp, which owns the GLOBAL annotation.
-extern const double g_unk0x00511380;
+extern const double g_fixedRadiansToAngle12;
 
 // The original converts the 16.16 value on the FPU (fild / fmul / fistp) and
 // keeps the low word of the nearest-even result with the original FPU mode.
 // MSVC6 /QIfist is required; a standard C++ cast alone would truncate instead.
-#define FIX_ANGLE(v) ((short)FTOI(__int64, X87S_MUL((double)(v), g_unk0x00511380)))
+#define FIX_ANGLE(v) ((short)FTOI(__int64, X87S_MUL((double)(v), g_fixedRadiansToAngle12)))
 
 // The eight ground-probe vectors of an object: its reference axes at 0x104 (x),
 // 0x108 (y) and 0x10c (z) with the sign pattern StageObject_ProbeGroundDistance selects with its

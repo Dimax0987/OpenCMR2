@@ -8,7 +8,8 @@
 #include "LayoutChecks.h"
 #endif
 
-void StageUI_ApplySoundState(int channel, BYTE *pState);
+struct RaceCarSoundState;
+void StageUI_ApplySoundState(int channel, RaceCarSoundState *pState);
 
 void FormatGapToLeader(int iLeaderGap, unsigned int param_2, unsigned char param_3, int param_4, int param_5, void *param_6, unsigned int param_7, char *pcNegPosSymbol, int param_9);
 
@@ -42,13 +43,13 @@ extern StageSoundBank g_stageSoundBank;
 extern int g_surfacePrevB[8];        // 0x5375b0
 extern unsigned int g_stageSoundCount; // 0x5375d0
 extern BYTE g_stageSoundUsed[0x1f];  // 0x5375d4: sound groups in use
-extern BYTE g_unk0x005375f4[8];      // 0x5375f4: surface per car
+extern BYTE g_carSoundViewSet[8];      // 0x5375f4: surface per car
 extern int g_surfacePrevA[8];        // 0x5375fc
 extern int g_surfaceSlotMax;         // 0x53761c
 extern int g_surfaceVolB[8];         // 0x537620
 extern int g_surfaceVolC[8];         // 0x537640
 extern int g_unk0x00537660;          // 0x537660
-extern int g_unk0x00537664;          // 0x537664
+extern int g_carSoundVolumeScale;          // 0x537664
 extern int g_surfaceVolD[8];         // 0x537668
 extern int g_surfacePrevC[8];        // 0x537788
 
@@ -89,7 +90,8 @@ struct RaceCarSoundState {
     int countOld;              // 0xa4  count of the previous pattern
     int pattern;               // 0xa8  pattern index (0x19 = none)
     int time;                  // 0xac  timestamp of the last change
-    BYTE field_0xb0[0x4];
+    BYTE throttleSample;       // 0xb0  group 25's throttle sample (not the coasting one) is playing
+    BYTE field_0xb1[0x3];
 };
 CMR2_LAYOUT_CHECK(RaceCarSoundStateSizeCheck, sizeof(RaceCarSoundState) == 0xb4);
 extern RaceCarSoundState g_carSoundStates[8];                     // 0x5377a8

@@ -8,7 +8,7 @@
 
 extern int Car_UpdateEngineNoteFalloff(int *);
 extern BYTE g_carSimulationClockFlags;
-extern BYTE g_unk0x0052af41;
+extern BYTE g_inRaceMenuOpening;
 extern int g_unk0x00538114;
 static Car cars[3];
 
@@ -19,7 +19,7 @@ static void Reset(unsigned time = 1000) {
     memset(cars, 0, sizeof(cars));
     g_carBuffer = cars;
     g_carOrderCount = 3;
-    g_carSimulationClockFlags = g_unk0x0052af41 = g_unk0x00538114 = 0;
+    g_carSimulationClockFlags = g_inRaceMenuOpening = g_unk0x00538114 = 0;
     for (int i = 0; i < 3; ++i) {
         g_carOrder[i] = short(i);
         float rate = i == 2 ? 50.f : 25.f;
@@ -83,8 +83,8 @@ int main() {
     Check(Sample(2000) == 0, "legacy cap discards simulation debt");
     Check(Sample(2040) == 2 && cars[0].simulationStepsRemaining == 1, "next ordinary frame after stall");
     Reset();
-    g_unk0x0052af41 = 1;
-    Check(Sample(2000) == 0 && g_unk0x0052af41 == 0, "pause/menu rebase");
+    g_inRaceMenuOpening = 1;
+    Check(Sample(2000) == 0 && g_inRaceMenuOpening == 0, "pause/menu rebase");
     Check(Sample(2040) == 2 && cars[0].simulationStepsRemaining == 1, "resume after menu rebase");
     g_unk0x00538114 = 1;
     Check(Sample(4000) == 0 && g_unk0x00538114 == 0, "race transition rebase");

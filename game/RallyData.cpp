@@ -1,5 +1,7 @@
 #include "SavedGame.h"
 #include "port/sys.h"
+#include "ChampionshipDriver.h"
+#include "ProfileEventResults.h"
 #include "CallbackState.h"
 #include "FloatToInt.h"
 #include <stddef.h>
@@ -33,21 +35,15 @@ SaveBlock g_saveBlock;
 
 // A save slot (g_saveSlots, 0x30 bytes): packed first word and a time.
 
-#define g_unk0x0052f3e8 (g_saveCarRecords + 0x8)
-#define g_unk0x0052f3ec (g_saveCarRecords + 0xc)
-#define g_unk0x0052fa18 (g_saveProfiles + 0x10)
-#define g_unk0x0052fa24 (g_saveProfiles + 0x1c)
-#define g_unk0x0052fa5c (g_saveProfiles + 0x54)
 #include "AIHelper.h"
 #include "RegKey.h"
 #include "Font.h"
 #include "Sprite.h"
 #include "Graphics.h"
 #include "StageSplitData.h"
-// Views into the split data block (see StageSplitData.cpp): 0x536e00 is the
-// block seen from its second field, 0x536e88 the per-car flags at its end.
-#define g_unk0x00536e00 (g_stageSplitBlock + 4)
-#define g_unk0x00536e88 ((int *)(g_stageSplitBlock + 0x8c))
+// Per-car "stage record" finish message flags (0x536e88): a separate int[2] in
+// the original that overlaps the last time of the second split record.
+#define g_finishStageRecordMessage ((int *)(g_stageSplitBlock + 0x8c))
 #include "FixedPoint.h"
 #include <stdlib.h>
 #include "StageTiming.h"
@@ -151,16 +147,7 @@ CMR2_LAYOUT_CHECK(RallyPairingTablesSize, sizeof(RallyPairingTables) == 0x190);
 CMR2_LAYOUT_CHECK(RallyDriverGroupTableSize, sizeof(RallyDriverGroupTable) == 0x6e8);
 // GLOBAL: CMR2 0x0052ebc0
 RallyDriverGroupTable g_driverGroupTable;
-#define g_unk0x0052ebc0 (g_driverGroupTable.groups)
-#define g_unk0x0052f0e0 (g_driverGroupTable.field_0x520)
-#define g_unk0x0052f0fc (g_driverGroupTable.field_0x53c)
 #define g_rallyPairingTables (g_driverGroupTable.pairing)
-#define g_unk0x0052f290 (g_driverGroupTable.field_0x6d0)
-#define g_unk0x0052f294 (g_driverGroupTable.field_0x6d4)
-#define g_unk0x0052f100 (g_rallyPairingTables.pairs)
-#define g_unk0x0052f1a0 (g_rallyPairingTables.skills)
-#define g_unk0x0052f1f0 (g_rallyPairingTables.flags)
-#define g_unk0x0052f240 (g_rallyPairingTables.otherFlags)
 
 // Picks the AI skill of the four opponents of a slot: for each opponent a
 // random window around its rating (pRatings[1], [3], [5], [7]) is spread over
@@ -208,7 +195,7 @@ void RallyData_SelectOpponentSkillClasses(int slot, int *pClasses, char *pRating
         }
         classes[opponent] = bestClass;
     }
-    pDest = &g_unk0x0052f1a0[slot * 4];
+    pDest = &g_rallyPairingTables.skills[slot * 4];
     for (i = 0; i < 4; i++) {
         if (slot == 2 && i > 1)
             *pDest = 0;
@@ -235,11 +222,11 @@ void RallyData_ResetDriverPairingTables(int value)
     int i;
 
     for (i = 0; i < 20; i++) {
-        g_unk0x0052f100[i][0] = value;
-        g_unk0x0052f100[i][1] = value;
-        g_unk0x0052f1a0[i] = value;
-        g_unk0x0052f1f0[i] = 0;
-        g_unk0x0052f240[i] = 0;
+        g_rallyPairingTables.pairs[i][0] = value;
+        g_rallyPairingTables.pairs[i][1] = value;
+        g_rallyPairingTables.skills[i] = value;
+        g_rallyPairingTables.flags[i] = 0;
+        g_rallyPairingTables.otherFlags[i] = 0;
     }
     RallyData_InterpolateGroupGrip(0);
     RallyData_InterpolateGroupGrip(1);
@@ -780,7 +767,7 @@ void RallyData_IncrementCategoryCounter8(int index)
     record = *(unsigned int *)&g_saveSlots[index];
     if ((record & 0x3c0000) != 0x3c0000) {
         category = (record >> 18) & 15;
-        ++g_unk0x0052fa18[8 + category * 0x650];
+        ++g_saveProfiles[category].identifier.counters[0];
     }
 }
 
@@ -795,7 +782,7 @@ void RallyData_IncrementCategoryUse(int index)
     record = *(unsigned int *)&g_saveSlots[index];
     if ((record & 0x3c0000) != 0x3c0000) {
         category = (record >> 18) & 15;
-        ++g_unk0x0052fa18[9 + category * 0x650];
+        ++g_saveProfiles[category].identifier.counters[1];
     }
 }
 
@@ -810,88 +797,91 @@ void RallyData_IncrementCategoryCounter10(int index)
     record = *(unsigned int *)&g_saveSlots[index];
     if ((record & 0x3c0000) != 0x3c0000) {
         category = (record >> 18) & 15;
-        ++g_unk0x0052fa18[10 + category * 0x650];
+        ++g_saveProfiles[category].identifier.counters[2];
     }
 }
 
-// Raises the level (0..3) of one of the eight per-profile items of a category
-// and marks that category as used. `level` is stored inverted: the stored value
-// is 3 - level, and only ever raised.
-// Best result per event of a category record (profile + 0x62c): 2 bits per
-// event, 8 events for each of the three difficulties.
+// Best medals of a category profile (DriverProfile::medals), each 3 - place
+// (3 gold, 2 silver, 1 bronze, 0 none): the championship per difficulty, the
+// arcade final per difficulty (two arcade selections on the two harder ones)
+// and the rally of each of the eight countries (d<difficulty>i<country>).
+// FrontendMenu_DrawProfileRecordsSummary shows them as a medal matrix.
 struct CategoryMedals {
-    unsigned other : 16;
+    unsigned championshipD0 : 2, championshipD1 : 2, championshipD2 : 2;
+    unsigned arcadeD0 : 2, arcadeD1 : 2, arcadeD2 : 2, arcadeD1B : 2, arcadeD2B : 2;
     unsigned d0i0 : 2, d0i1 : 2, d0i2 : 2, d0i3 : 2, d0i4 : 2, d0i5 : 2, d0i6 : 2, d0i7 : 2;
     unsigned d1i0 : 2, d1i1 : 2, d1i2 : 2, d1i3 : 2, d1i4 : 2, d1i5 : 2, d1i6 : 2, d1i7 : 2;
     unsigned d2i0 : 2, d2i1 : 2, d2i2 : 2, d2i3 : 2, d2i4 : 2, d2i5 : 2, d2i6 : 2, d2i7 : 2;
 };
 
+// Records the medal of a rally finish (overall place 0..2) for `country` at
+// the current difficulty if it beats the stored one, and counts the use.
 // FUNCTION: CMR2 0x00409150
-void RallyData_RecordBestCategoryMedal(int index, int item, int level)
+void RallyData_RecordRallyMedal(int index, int country, int place)
 {
     CategoryMedals *pMedals;
-    unsigned int limit;
+    unsigned int medal;
     int category;
 
     RallyData_ValidateIndex(index);
     category = g_saveSlots[index].category;
-    pMedals = (CategoryMedals *)(g_saveProfiles + 0x62c + category * 0x650);
-    limit = 3 - level;
+    pMedals = (CategoryMedals *)g_saveProfiles[category].medals;
+    medal = 3 - place;
     switch (CGameInfo::GetConfiguredDifficulty()) {
     case 0:
-        switch (item) {
+        switch (country) {
         case 0:
-            if (limit > pMedals->d0i0) {
-                pMedals->d0i0 = limit;
+            if (medal > pMedals->d0i0) {
+                pMedals->d0i0 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 1:
-            if (limit > pMedals->d0i1) {
-                pMedals->d0i1 = limit;
+            if (medal > pMedals->d0i1) {
+                pMedals->d0i1 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 2:
-            if (limit > pMedals->d0i2) {
-                pMedals->d0i2 = limit;
+            if (medal > pMedals->d0i2) {
+                pMedals->d0i2 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 3:
-            if (limit > pMedals->d0i3) {
-                pMedals->d0i3 = limit;
+            if (medal > pMedals->d0i3) {
+                pMedals->d0i3 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 4:
-            if (limit > pMedals->d0i4) {
-                pMedals->d0i4 = limit;
+            if (medal > pMedals->d0i4) {
+                pMedals->d0i4 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 5:
-            if (limit > pMedals->d0i5) {
-                pMedals->d0i5 = limit;
+            if (medal > pMedals->d0i5) {
+                pMedals->d0i5 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 6:
-            if (limit > pMedals->d0i6) {
-                pMedals->d0i6 = limit;
+            if (medal > pMedals->d0i6) {
+                pMedals->d0i6 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 7:
-            if (limit > pMedals->d0i7) {
-                pMedals->d0i7 = limit;
+            if (medal > pMedals->d0i7) {
+                pMedals->d0i7 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
@@ -899,59 +889,59 @@ void RallyData_RecordBestCategoryMedal(int index, int item, int level)
         }
         break;
     case 1:
-        switch (item) {
+        switch (country) {
         case 0:
-            if (limit > pMedals->d1i0) {
-                pMedals->d1i0 = limit;
+            if (medal > pMedals->d1i0) {
+                pMedals->d1i0 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 1:
-            if (limit > pMedals->d1i1) {
-                pMedals->d1i1 = limit;
+            if (medal > pMedals->d1i1) {
+                pMedals->d1i1 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 2:
-            if (limit > pMedals->d1i2) {
-                pMedals->d1i2 = limit;
+            if (medal > pMedals->d1i2) {
+                pMedals->d1i2 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 3:
-            if (limit > pMedals->d1i3) {
-                pMedals->d1i3 = limit;
+            if (medal > pMedals->d1i3) {
+                pMedals->d1i3 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 4:
-            if (limit > pMedals->d1i4) {
-                pMedals->d1i4 = limit;
+            if (medal > pMedals->d1i4) {
+                pMedals->d1i4 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 5:
-            if (limit > pMedals->d1i5) {
-                pMedals->d1i5 = limit;
+            if (medal > pMedals->d1i5) {
+                pMedals->d1i5 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 6:
-            if (limit > pMedals->d1i6) {
-                pMedals->d1i6 = limit;
+            if (medal > pMedals->d1i6) {
+                pMedals->d1i6 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 7:
-            if (limit > pMedals->d1i7) {
-                pMedals->d1i7 = limit;
+            if (medal > pMedals->d1i7) {
+                pMedals->d1i7 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
@@ -959,59 +949,59 @@ void RallyData_RecordBestCategoryMedal(int index, int item, int level)
         }
         break;
     case 2:
-        switch (item) {
+        switch (country) {
         case 0:
-            if (limit > pMedals->d2i0) {
-                pMedals->d2i0 = limit;
+            if (medal > pMedals->d2i0) {
+                pMedals->d2i0 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 1:
-            if (limit > pMedals->d2i1) {
-                pMedals->d2i1 = limit;
+            if (medal > pMedals->d2i1) {
+                pMedals->d2i1 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 2:
-            if (limit > pMedals->d2i2) {
-                pMedals->d2i2 = limit;
+            if (medal > pMedals->d2i2) {
+                pMedals->d2i2 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 3:
-            if (limit > pMedals->d2i3) {
-                pMedals->d2i3 = limit;
+            if (medal > pMedals->d2i3) {
+                pMedals->d2i3 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 4:
-            if (limit > pMedals->d2i4) {
-                pMedals->d2i4 = limit;
+            if (medal > pMedals->d2i4) {
+                pMedals->d2i4 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 5:
-            if (limit > pMedals->d2i5) {
-                pMedals->d2i5 = limit;
+            if (medal > pMedals->d2i5) {
+                pMedals->d2i5 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 6:
-            if (limit > pMedals->d2i6) {
-                pMedals->d2i6 = limit;
+            if (medal > pMedals->d2i6) {
+                pMedals->d2i6 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
             break;
         case 7:
-            if (limit > pMedals->d2i7) {
-                pMedals->d2i7 = limit;
+            if (medal > pMedals->d2i7) {
+                pMedals->d2i7 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
@@ -1021,53 +1011,26 @@ void RallyData_RecordBestCategoryMedal(int index, int item, int level)
     }
 }
 
-// True when every packed 2-bit field of the two setup words of the category
-// profile of the unassigned-checked record has the "10" pattern.
+// True when every medal of the driver's category profile (championship, every
+// rally and arcade final at every difficulty) is exactly silver.
 // FUNCTION: CMR2 0x004097b0
-char RallyData_HasCompletedCategorySetupFields(int param_1)
+char RallyData_HasOnlySilverMedals(int index)
 {
-    unsigned int record;
-    unsigned int *pSetup;
-    unsigned int value;
+    CategoryMedals *pMedals;
 
-    RallyData_ValidateIndex(param_1);
-    record = *(unsigned int *)&g_saveSlots[param_1];
-    if ((record & 0x3c0000) == 0x3c0000)
+    RallyData_ValidateIndex(index);
+    if (g_saveSlots[index].category == 0xf)
         return 0;
-    pSetup = (unsigned int *)(g_saveProfiles + 0x62c + ((record >> 0x12) & 0xf) * 0x650);
-    value = *pSetup;
-    if ((value & 0x3) == 2 &&
-        (value & 0xc) == 8 &&
-        (value & 0x30) == 0x20 &&
-        (value & 0x30000) == 0x20000 &&
-        (value & 0xc0000) == 0x80000 &&
-        (value & 0x300000) == 0x200000 &&
-        (value & 0xc00000) == 0x800000 &&
-        (value & 0x3000000) == 0x2000000 &&
-        (value & 0xc000000) == 0x8000000 &&
-        (value & 0x30000000) == 0x20000000 &&
-        (value & 0xc0000000) == 0x80000000 &&
-        (pSetup[1] & 0x3) == 2 &&
-        (pSetup[1] & 0xc) == 8 &&
-        (pSetup[1] & 0x30) == 0x20 &&
-        (pSetup[1] & 0xc0) == 0x80 &&
-        (pSetup[1] & 0x300) == 0x200 &&
-        (pSetup[1] & 0xc00) == 0x800 &&
-        (pSetup[1] & 0x3000) == 0x2000 &&
-        (pSetup[1] & 0xc000) == 0x8000 &&
-        (pSetup[1] & 0x30000) == 0x20000 &&
-        (pSetup[1] & 0xc0000) == 0x80000 &&
-        (pSetup[1] & 0x300000) == 0x200000 &&
-        (pSetup[1] & 0xc00000) == 0x800000 &&
-        (pSetup[1] & 0x3000000) == 0x2000000 &&
-        (pSetup[1] & 0xc000000) == 0x8000000 &&
-        (pSetup[1] & 0x30000000) == 0x20000000 &&
-        (pSetup[1] & 0xc0000000) == 0x80000000 &&
-        (value & 0xc0) == 0x80 &&
-        (value & 0x300) == 0x200 &&
-        (value & 0x3000) == 0x2000 &&
-        (value & 0xc00) == 0x800 &&
-        (value & 0xc000) == 0x8000)
+    pMedals = (CategoryMedals *)g_saveProfiles[g_saveSlots[index].category].medals;
+    if (pMedals->championshipD0 == 2 && pMedals->championshipD1 == 2 && pMedals->championshipD2 == 2 &&
+        pMedals->d0i0 == 2 && pMedals->d0i1 == 2 && pMedals->d0i2 == 2 && pMedals->d0i3 == 2 &&
+        pMedals->d0i4 == 2 && pMedals->d0i5 == 2 && pMedals->d0i6 == 2 && pMedals->d0i7 == 2 &&
+        pMedals->d1i0 == 2 && pMedals->d1i1 == 2 && pMedals->d1i2 == 2 && pMedals->d1i3 == 2 &&
+        pMedals->d1i4 == 2 && pMedals->d1i5 == 2 && pMedals->d1i6 == 2 && pMedals->d1i7 == 2 &&
+        pMedals->d2i0 == 2 && pMedals->d2i1 == 2 && pMedals->d2i2 == 2 && pMedals->d2i3 == 2 &&
+        pMedals->d2i4 == 2 && pMedals->d2i5 == 2 && pMedals->d2i6 == 2 && pMedals->d2i7 == 2 &&
+        pMedals->arcadeD0 == 2 && pMedals->arcadeD1 == 2 && pMedals->arcadeD1B == 2 &&
+        pMedals->arcadeD2 == 2 && pMedals->arcadeD2B == 2)
         return 1;
     return 0;
 }
@@ -1100,10 +1063,10 @@ int RallyData_IsDriverViewModeAllowed(unsigned char index, int mode)
 }
 
 // FUNCTION: CMR2 0x004239e0
-void RallyData_ValidateType3Entry(int *p)
+void Camera_AfterLeave(CameraRecord *pRecord)
 {
-    if (p[1] == 3)
-        RallyData_ValidateIndex((INT_PTR)p);
+    if (pRecord->type == 3)
+        RallyData_ValidateIndex((INT_PTR)pRecord);
 }
 
 // FUNCTION: CMR2 0x00406940
@@ -1263,7 +1226,7 @@ void RallyData_CopyCountryPlayerDefaults(void)
         p = RallyData_GetDriverSkillRecord(i);
         *(CountryPlayerDefaults *)p =
             *(CountryPlayerDefaults *)(g_unk0x0051682c + (RallyDataCountryIndex() & 0xff) * 7);
-        if (g_unk0x0052f290 != 0 && g_unk0x0052f0fc > 2) {
+        if (g_driverGroupTable.field_0x6d0 != 0 && g_driverGroupTable.field_0x53c > 2) {
             c = p[0];
             if (c % 2 == 0 && c != 6)
                 p[0] = c + 1;
@@ -1383,35 +1346,35 @@ BYTE RallyData_IsLastAvailableStageSelected(void)
 
 
 
-extern int g_unk0x00531650;
+extern int g_profileFileCount;
 extern int g_unk0x00531654[4];
-extern BYTE *g_unk0x00531764;
+extern DriverProfileIdentifier *g_pProfileIdentifiers;
 void RallyData_MarkAllDriverRecordsUnassigned(void);
 void RallyData_SetPlayerDefaultCarSetup(int player);
 
 // Resets the four players' records in the save block (all cleared, then the
 // default flags, setup values and car position of each one).
-// match 95%: only the schedule of the g_unk0x00531650 store against the two
+// match 95%: only the schedule of the g_profileFileCount store against the two
 // loop pointers differs.
 // FUNCTION: CMR2 0x004eadb0
 void RallyData_ResetSavedPlayerRecords(void)
 {
     int i;
 
-    memset(g_saveProfiles, 0, 0x650 * 4);
+    memset(g_saveProfiles, 0, sizeof(g_saveProfiles));
     memset(g_saveSlots, 0, 0xc0 * 4);
-    g_unk0x00531650 = 0;
+    g_profileFileCount = 0;
     for (i = 0; i < 4; i++) {
-        *(int *)(g_saveProfiles + i * 0x650 + 0x58) = 4;
-        *(unsigned int *)(g_saveProfiles + i * 0x650 + 0x14) = (*(unsigned int *)(g_saveProfiles + i * 0x650 + 0x14) & 0xffe1f17e) | 0x1017e;
+        g_saveProfiles[i].car = 4;
+        g_saveProfiles[i].identifier.flags = (g_saveProfiles[i].identifier.flags & 0xffe1f17e) | 0x1017e;
         g_saveDirty[i] = 0;
-        *(int *)(g_saveProfiles + i * 0x650 + 0x54) |= 0x20;
+        g_saveProfiles[i].options |= 0x20;
         g_unk0x00531654[i] = 0;
-        *(int *)(g_saveProfiles + i * 0x650 + 0x4c) = 0xf11;
+        g_saveProfiles[i].awards = 0xf11;
         RallyData_SetPlayerDefaultCarSetup(i);
     }
     RallyData_MarkAllDriverRecordsUnassigned();
-    g_unk0x00531764 = NULL;
+    g_pProfileIdentifiers = NULL;
 }
 
 // Stores a driver (GetConfiguredGameMode()==4) or category (otherwise) name into the
@@ -1425,21 +1388,21 @@ void RallyData_SetEditedDriverOrCategoryName(unsigned int slot, char *pName)
     slot &= 0xff;
     RallyData_ValidateIndex(slot);
     if (CGameInfo::GetConfiguredGameMode() == 4) {
-        strcpy((char *)(g_saveCarRecords + slot * 0xc4), pName);
-        g_unk0x0052f3ec[slot * 0xc4] |= 2;
+        strcpy(g_saveCarRecords[slot].name, pName);
+        g_saveCarRecords[slot].flags |= 2;
         return;
     }
     category = g_saveSlots[slot].category;
     if (category == 0xf)
         return;
-    strcpy((char *)(g_unk0x0052fa18 + category * 0x650), pName);
+    strcpy(g_saveProfiles[category].identifier.name, pName);
     g_saveDirty[category] = 1;
-    *(unsigned int *)(g_unk0x0052fa18 + category * 0x650 + 4) =
+    g_saveProfiles[category].identifier.flags =
         (rand() & 0xf) << 0xc |
-        (*(unsigned int *)(g_unk0x0052fa18 + category * 0x650 + 4) & 0xffff0fffU);
-    *(unsigned int *)(g_unk0x0052fa18 + category * 0x650 + 4) =
+        (g_saveProfiles[category].identifier.flags & 0xffff0fffU);
+    g_saveProfiles[category].identifier.flags =
         (rand() & 0x3f) << 0x16 |
-        (*(unsigned int *)(g_unk0x0052fa18 + category * 0x650 + 4) & 0xf03fffffU);
+        (g_saveProfiles[category].identifier.flags & 0xf03fffffU);
 }
 
 // Copies the name into the category record of the given record index.
@@ -1450,7 +1413,7 @@ void RallyData_CopyCategoryRecordName(BYTE index, char *name)
 
     RallyData_ValidateIndex(index);
     category = g_saveSlots[index].category;
-    strcpy((char *)(g_unk0x0052fa24 + category * 0x650), name);
+    strcpy(g_saveProfiles[category].name, name);
     g_saveDirty[category] = 1;
 }
 
@@ -1528,123 +1491,118 @@ char RallyData_SaveEditedCategoryProfile(int param_1)
     RallyData_ValidateIndex(param_1);
     result = 1;
     category = g_saveSlots[param_1].category;
-    if ((*(unsigned int *)(g_saveProfiles + 0x14 + category * 0x650) & 0x200000) == 0 &&
+    if ((g_saveProfiles[category].identifier.flags & 0x200000) == 0 &&
         g_saveDirty[category] != 0) {
-        result = Profile_WriteSaveFile(0, g_saveProfiles + category * 0x650);
+        result = Profile_WriteSaveFile(0, (BYTE *)&g_saveProfiles[category]);
         if (result != 0)
             g_saveDirty[(g_saveSlots[param_1].category)] = 0;
     }
     return result;
 }
 
-// Returns the 2-bit display setting `param_2` (0..2) of the category profile
-// that record `param_1` points at; zero when `param_2` is out of range.
+// Championship medal of the driver's category at `difficulty` (0..2).
 // FUNCTION: CMR2 0x004eba60
-unsigned int RallyData_GetCategoryDisplaySetting(int param_1, int param_2)
+unsigned int RallyData_GetChampionshipMedal(int index, int difficulty)
 {
-    unsigned int *pSetup;
+    CategoryMedals *pMedals;
 
-    RallyData_ValidateIndex(param_1);
-    pSetup = (unsigned int *)(g_saveProfiles + 0x62c +
-        (g_saveSlots[param_1].category) * 0x650);
-    switch (param_2) {
-    case 0: return *pSetup & 3;
-    case 1: return *pSetup >> 2 & 3;
-    case 2: return *pSetup >> 4 & 3;
+    RallyData_ValidateIndex(index);
+    pMedals = (CategoryMedals *)g_saveProfiles[g_saveSlots[index].category].medals;
+    switch (difficulty) {
+    case 0: return pMedals->championshipD0;
+    case 1: return pMedals->championshipD1;
+    case 2: return pMedals->championshipD2;
     }
     return 0;
 }
 
-// Returns the 2-bit setting of record `param_1` for block `param_2` (0..7) and
-// field group `param_3` (0..2).
+// Rally medal of the driver's category for `country` (0..7) at `difficulty`.
 // FUNCTION: CMR2 0x004ebad0
-unsigned int RallyData_GetCategoryBlockSetting(int param_1, int param_2, int param_3)
+unsigned int RallyData_GetRallyMedal(int index, int country, int difficulty)
 {
-    unsigned int *pSetup;
+    CategoryMedals *pMedals;
 
-    RallyData_ValidateIndex(param_1);
-    pSetup = (unsigned int *)(g_saveProfiles + 0x62c +
-        (g_saveSlots[param_1].category) * 0x650);
-    switch (param_3) {
+    RallyData_ValidateIndex(index);
+    pMedals = (CategoryMedals *)g_saveProfiles[g_saveSlots[index].category].medals;
+    switch (difficulty) {
     case 0:
-        switch (param_2) {
-        case 0: return *pSetup >> 0x10 & 3;
-        case 1: return *pSetup >> 0x12 & 3;
-        case 2: return *pSetup >> 0x14 & 3;
-        case 3: return *pSetup >> 0x16 & 3;
-        case 4: return *pSetup >> 0x18 & 3;
-        case 5: return *pSetup >> 0x1a & 3;
-        case 6: return *pSetup >> 0x1c & 3;
-        case 7: return *pSetup >> 0x1e & 3;
+        switch (country) {
+        case 0: return pMedals->d0i0;
+        case 1: return pMedals->d0i1;
+        case 2: return pMedals->d0i2;
+        case 3: return pMedals->d0i3;
+        case 4: return pMedals->d0i4;
+        case 5: return pMedals->d0i5;
+        case 6: return pMedals->d0i6;
+        case 7: return pMedals->d0i7;
         }
         break;
     case 1:
-        switch (param_2) {
-        case 0: return *(unsigned int *)((BYTE *)pSetup + 4) & 3;
-        case 1: return *(unsigned int *)((BYTE *)pSetup + 4) >> 2 & 3;
-        case 2: return *(unsigned int *)((BYTE *)pSetup + 4) >> 4 & 3;
-        case 3: return *(unsigned int *)((BYTE *)pSetup + 4) >> 6 & 3;
-        case 4: return *(unsigned int *)((BYTE *)pSetup + 4) >> 8 & 3;
-        case 5: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0xa & 3;
-        case 6: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0xc & 3;
-        case 7: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0xe & 3;
+        switch (country) {
+        case 0: return pMedals->d1i0;
+        case 1: return pMedals->d1i1;
+        case 2: return pMedals->d1i2;
+        case 3: return pMedals->d1i3;
+        case 4: return pMedals->d1i4;
+        case 5: return pMedals->d1i5;
+        case 6: return pMedals->d1i6;
+        case 7: return pMedals->d1i7;
         }
         break;
     case 2:
-        switch (param_2) {
-        case 0: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0x10 & 3;
-        case 1: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0x12 & 3;
-        case 2: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0x14 & 3;
-        case 3: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0x16 & 3;
-        case 4: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0x18 & 3;
-        case 5: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0x1a & 3;
-        case 6: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0x1c & 3;
-        case 7: return *(unsigned int *)((BYTE *)pSetup + 4) >> 0x1e & 3;
+        switch (country) {
+        case 0: return pMedals->d2i0;
+        case 1: return pMedals->d2i1;
+        case 2: return pMedals->d2i2;
+        case 3: return pMedals->d2i3;
+        case 4: return pMedals->d2i4;
+        case 5: return pMedals->d2i5;
+        case 6: return pMedals->d2i6;
+        case 7: return pMedals->d2i7;
         }
         break;
     }
     return 0;
 }
 
-// Returns the 2-bit setting of record `param_1` for the fourth and fifth
-// blocks (param_3 0/1/2) selected by `param_2` (0..1 for param_3 1 and 2).
+// Arcade final medal of the driver's category at `difficulty`; the two harder
+// difficulties keep one per arcade selection (`arcade` 0 or 1).
 // FUNCTION: CMR2 0x004ebcd0
-unsigned int RallyData_GetCategoryFourthFifthBlockSetting(int param_1, int param_2, int param_3)
+unsigned int RallyData_GetArcadeMedal(int index, int arcade, int difficulty)
 {
-    unsigned int *pSetup;
+    CategoryMedals *pMedals;
 
-    RallyData_ValidateIndex(param_1);
-    pSetup = (unsigned int *)(g_saveProfiles + 0x62c +
-        (g_saveSlots[param_1].category) * 0x650);
-    switch (param_3) {
+    RallyData_ValidateIndex(index);
+    pMedals = (CategoryMedals *)g_saveProfiles[g_saveSlots[index].category].medals;
+    switch (difficulty) {
     case 0:
-        return *pSetup >> 6 & 3;
+        return pMedals->arcadeD0;
     case 1:
-        if (param_2 == 0)
-            return *pSetup >> 8 & 3;
-        return *pSetup >> 0xc & 3;
+        if (arcade == 0)
+            return pMedals->arcadeD1;
+        return pMedals->arcadeD1B;
     case 2:
-        if (param_2 == 0)
-            return *pSetup >> 0xa & 3;
-        return *pSetup >> 0xe & 3;
+        if (arcade == 0)
+            return pMedals->arcadeD2;
+        return pMedals->arcadeD2B;
     }
     return 0;
 }
 
-void GameInfo_GetDefaultCameraParameters(int *pValues, short *pOut1, int *pOut2);
+void GameInfo_GetDefaultCameraParameters(FixVector *pOffset, short *pPitch, int *pLag);
 int GameInfo_GetField98(void);
-void RallyData_SetDriverTyreChoice(BYTE index, int *pValues);
+void RallyData_SetDriverCameraRecord(BYTE index, ChaseCameraSettings *pValues);
 
 // Resets the settings of record `index` to the defaults of the options.
 // FUNCTION: CMR2 0x004ec210
 void RallyData_ResetRecordOptionDefaults(int index)
 {
-    int values[5];
+    ChaseCameraSettings values;
 
     RallyData_ValidateIndex(index);
-    memset(values, 0, sizeof(values));
-    GameInfo_GetDefaultCameraParameters(values, (short *)&values[3], &values[4]);
-    RallyData_SetDriverTyreChoice(index, values);
+    memset(&values, 0, sizeof(values));
+    GameInfo_GetDefaultCameraParameters(&values.offset, &values.pitch, &values.lag);
+    RallyData_SetDriverCameraRecord(index, &values);
 }
 
 // Marks record `index` (and its category's profile) as in use or not; when
@@ -1665,16 +1623,16 @@ void RallyData_SetPlayerProfileInUse(BYTE index, char set)
     if (category != 0xf) {
         bit = set & 1;
         record = (record & 0xfbffffff) | bit << 0x1a;
-        *(unsigned int *)(g_saveProfiles + 0x14 + category * 0x650) =
-            (*(unsigned int *)(g_saveProfiles + 0x14 + category * 0x650) & 0xffdfffff) | bit << 0x15;
+        g_saveProfiles[category].identifier.flags =
+            (g_saveProfiles[category].identifier.flags & 0xffdfffff) | bit << 0x15;
         record |= 0x2000;
         *(unsigned int *)&g_saveSlots[i] = record;
         if (set != 0) {
             *(unsigned int *)&g_saveSlots[i] = record & 0xffffe000;
             g_saveSlots[i].time = 0;
             RallyData_ResetRecordOptionDefaults(i);
-            *(int *)(g_saveProfiles + 0x58 + i * 0x650) = GameInfo_GetField98();
-            *(int *)(g_saveProfiles + 0x58 + category * 0x650) = GameInfo_GetField98();
+            g_saveProfiles[i].car = GameInfo_GetField98();
+            g_saveProfiles[category].car = GameInfo_GetField98();
         }
     }
 }
@@ -1697,7 +1655,7 @@ int SaveProfiles_CountAvailableProfiles(void)
 {
     char used[4];
     SaveSlot *pRecord;
-    BYTE *pProfile;
+    DriverProfile *pProfile;
     unsigned int p;
     int count;
     unsigned int i;
@@ -1706,8 +1664,7 @@ int SaveProfiles_CountAvailableProfiles(void)
     RALLYDATA_USED_PROFILES(used)
     i = 0;
     for (i = 0; i < 4; i++) {
-        pProfile = g_saveProfiles + 0x14 + i * 0x650;
-        if (!used[i] && pProfile[-4] != 0 && (*(unsigned int *)pProfile & 0x200000) == 0)
+        if (!used[i] && g_saveProfiles[i].identifier.name[0] != 0 && (g_saveProfiles[i].identifier.flags & 0x200000) == 0)
             count++;
     }
     return count;
@@ -1719,16 +1676,15 @@ int SaveProfiles_GetAvailableProfileIndex(int n)
 {
     char used[4];
     SaveSlot *pRecord;
-    BYTE *pProfile;
     unsigned int p;
     int count;
-    int i;
+    unsigned int i;
 
     count = 0;
     RALLYDATA_USED_PROFILES(used)
     i = 0;
-    for (pProfile = g_saveProfiles + 0x14; pProfile < g_saveProfiles + 0x1954; pProfile += 0x650, i++) {
-        if (used[i] == 0 && pProfile[-4] != 0 && (*(unsigned int *)pProfile & 0x200000) == 0) {
+    for (i = 0; i < 4; i++) {
+        if (used[i] == 0 && g_saveProfiles[i].identifier.name[0] != 0 && (g_saveProfiles[i].identifier.flags & 0x200000) == 0) {
             if (count == n)
                 return i;
             count++;
@@ -1743,18 +1699,17 @@ BYTE *SaveProfiles_GetAvailableProfileName(int n)
 {
     char used[4];
     SaveSlot *pRecord;
-    BYTE *pProfile;
     unsigned int p;
     int count;
-    int i;
+    unsigned int i;
 
     count = 0;
     RALLYDATA_USED_PROFILES(used)
     i = 0;
-    for (pProfile = g_saveProfiles + 0x14; pProfile < g_saveProfiles + 0x1954; pProfile += 0x650, i++) {
-        if (used[i] == 0 && pProfile[-4] != 0 && (*(unsigned int *)pProfile & 0x200000) == 0) {
+    for (i = 0; i < 4; i++) {
+        if (used[i] == 0 && g_saveProfiles[i].identifier.name[0] != 0 && (g_saveProfiles[i].identifier.flags & 0x200000) == 0) {
             if (count == n)
-                return g_saveProfiles + 0x10 + i * 0x650;
+                return (BYTE *)g_saveProfiles[i].identifier.name;
             count++;
         }
     }
@@ -1885,40 +1840,38 @@ int *RallyData_GetDriverSettingPair(int index)
 {
     if ((BYTE)RallyData_GetFlag24()) {
         if ((BYTE)RallyData_GetSelectionFlag26())
-            g_unk0x0052ea60[1] = *(int *)((BYTE *)&g_knockout + 0xb8 +
-                                       (((RallyData_GetSelectionBits10To11() & 0xff) * 3 + (RallyData_GetSelectionBits12To13() & 0xff)) * 3 +
-                                        (CGameInfo::GetConfiguredDifficulty() & 0xff)) * 4);
+            g_unk0x0052ea60[1] = g_knockout.settingPairs[(RallyData_GetSelectionBits10To11() & 0xff) * 3 + (RallyData_GetSelectionBits12To13() & 0xff)]
+                                                     [CGameInfo::GetConfiguredDifficulty() & 0xff];
         else
-            g_unk0x0052ea60[1] = *(int *)((BYTE *)&g_knockout + 0xb8 +
-                                       ((RallyData_GetSelectionBits10To11() & 0xff) * 3 + (RallyData_GetSelectionBits12To13() & 0xff)) * 0xc);
+            g_unk0x0052ea60[1] = g_knockout.settingPairs[(RallyData_GetSelectionBits10To11() & 0xff) * 3 + (RallyData_GetSelectionBits12To13() & 0xff)][0];
         g_unk0x0052ea60[0] = g_unk0x0052ea60[1];
         return g_unk0x0052ea60;
     }
-    return g_unk0x0052f100[index];
+    return g_rallyPairingTables.pairs[index];
 }
 
 // FUNCTION: CMR2 0x004075b0
 int *RallyData_GetDriverPairRecord(int index)
 {
-    return &g_unk0x0052f1f0[index];
+    return &g_rallyPairingTables.flags[index];
 }
 
 // FUNCTION: CMR2 0x004075c0
 int *RallyData_GetDriverSecondaryPairRecord(int index)
 {
-    return &g_unk0x0052f240[index];
+    return &g_rallyPairingTables.otherFlags[index];
 }
 
 // FUNCTION: CMR2 0x004075d0
 BYTE *RallyData_GetDriverSelectionFlagRecord(int index)
 {
-    return &g_unk0x0052f294[index];
+    return &g_driverGroupTable.field_0x6d4[index];
 }
 
 // FUNCTION: CMR2 0x004075e0
 int *RallyData_GetDriverPrimaryPairRecord(int index)
 {
-    return &g_unk0x0052f1a0[index];
+    return &g_rallyPairingTables.skills[index];
 }
 
 // FUNCTION: CMR2 0x004075f0
@@ -1931,7 +1884,7 @@ unsigned int *RallyData_GetSelectedCountryValueTable(void)
 // FUNCTION: CMR2 0x00407630
 BYTE *RallyData_GetDriverSkillRecord(int index)
 {
-    return g_unk0x0052f0e0[index];
+    return g_driverGroupTable.field_0x520[index];
 }
 
 // GLOBAL: CMR2 0x00516188
@@ -2000,15 +1953,15 @@ void RallyData_SetDriverCarSelection(BYTE index, int value)
     RallyData_ValidateIndex(index);
     if (CGameInfo::GetConfiguredGameMode() == 4) {
         CGameInfo::SetGameInfoField98(value);
-        *(int *)(g_saveCarRecords + 4 + index * 0xc4) = value;
-        g_unk0x0052f3e8[4 + index * 0xc4] |= 2;
+        g_saveCarRecords[index].car = value;
+        g_saveCarRecords[index].flags |= 2;
         return;
     }
     category = g_saveSlots[index].category;
     if (category != 0xf) {
-        if ((*(unsigned int *)(g_saveProfiles + 0x14 + category * 0x650) & 0x200000) != 0)
+        if ((g_saveProfiles[category].identifier.flags & 0x200000) != 0)
             CGameInfo::SetGameInfoField98(value);
-        *(int *)(g_saveProfiles + 0x58 + category * 0x650) = value;
+        g_saveProfiles[category].car = value;
         g_saveDirty[category] = 1;
     }
 }
@@ -2021,10 +1974,10 @@ int RallyData_GetDriverCarSelection(BYTE index)
 
     RallyData_ValidateIndex(index);
     if (CGameInfo::GetConfiguredGameMode() == 4)
-        return *(int *)(g_saveCarRecords + 4 + index * 0xc4);
+        return g_saveCarRecords[index].car;
     category = g_saveSlots[index].category;
     if (category != 0xf)
-        return *(int *)(g_saveProfiles + 0x58 + category * 0x650);
+        return g_saveProfiles[category].car;
     return 0;
 }
 
@@ -2035,78 +1988,78 @@ BYTE *RallyData_GetDriverCategoryProfile(int index)
     RallyData_ValidateIndex(index);
     category = g_saveSlots[index].category;
     if (category != 0xf)
-        return g_saveProfiles + category * 0x650;
+        return (BYTE *)&g_saveProfiles[category];
     return NULL;
 }
 
-void RallyData_MarkTyresChanged(int index);
+void RallyData_MarkDriverRecordDirty(int index);
 
 // Stores a driver's 20-byte tyre choice (driver record or category record).
 // FUNCTION: CMR2 0x004088a0
-void RallyData_SetDriverTyreChoice(BYTE index, int *pValues)
+void RallyData_SetDriverCameraRecord(BYTE index, ChaseCameraSettings *pValues)
 {
     unsigned int category;
 
     if (CGameInfo::GetConfiguredGameMode() == 4) {
-        memcpy(g_unk0x0052f3e8 + 0xa8 + index * 0xc4, pValues, 5 * sizeof(int));
-        g_unk0x0052f3e8[4 + index * 0xc4] |= 2;
+        memcpy(&g_saveCarRecords[index].chaseCamera, pValues, sizeof(ChaseCameraSettings));
+        g_saveCarRecords[index].flags |= 2;
         return;
     }
     category = g_saveSlots[index].category;
     if (category != 0xf) {
-        memcpy(g_saveProfiles + 0x634 + category * 0x650, pValues, 5 * sizeof(int));
-        RallyData_MarkTyresChanged(index);
+        memcpy(g_saveProfiles[category].chaseCamera, pValues, sizeof(ChaseCameraSettings));
+        RallyData_MarkDriverRecordDirty(index);
     }
 }
 
 // FUNCTION: CMR2 0x00408930
-BYTE *RallyData_GetDriverTyreChoiceRecord(BYTE index)
+ChaseCameraSettings *RallyData_GetDriverCameraRecord(BYTE index)
 {
     unsigned int category;
 
     RallyData_ValidateIndex(index);
     if (CGameInfo::GetConfiguredGameMode() == 4)
-        return g_unk0x0052f3e8 + 0xa8 + index * 0xc4;
+        return &g_saveCarRecords[index].chaseCamera;
     category = g_saveSlots[index].category;
     if (category != 0xf)
-        return g_saveProfiles + 0x634 + category * 0x650;
+        return (ChaseCameraSettings *)g_saveProfiles[category].chaseCamera;
     return NULL;
 }
 
 // Stores a driver's byte setting (driver record or category record).
 // FUNCTION: CMR2 0x00408990
-void RallyData_SetDriverByteSetting(BYTE index, BYTE *pValue)
+void RallyData_SetDriverHudFlags(BYTE index, BYTE *pValue)
 {
     unsigned int category;
 
     RallyData_ValidateIndex(index);
     if (CGameInfo::GetConfiguredGameMode() == 4) {
-        g_unk0x0052f3e8[5 + index * 0xc4] = *pValue;
+        g_saveCarRecords[index].hudFlags = *pValue;
         return;
     }
     category = g_saveSlots[index].category;
     if (category != 0xf)
-        g_saveProfiles[0x588 + category * 0x650] = *pValue;
+        g_saveProfiles[category].hudFlags = *pValue;
 }
 
 // Driver record of a car: its knockout entry, or its team's record.
 // FUNCTION: CMR2 0x00408a00
-BYTE *RallyData_GetDriverKnockoutOrTeamRecord(BYTE index)
+BYTE *RallyData_GetDriverHudFlags(BYTE index)
 {
     unsigned int category;
 
     RallyData_ValidateIndex(index);
     if (CGameInfo::GetConfiguredGameMode() == 4)
-        return g_unk0x0052f3e8 + 5 + index * 0xc4;
+        return &g_saveCarRecords[index].hudFlags;
     category = g_saveSlots[index].category;
     if (category != 0xf)
-        return g_saveProfiles + 0x588 + category * 0x650;
+        return &g_saveProfiles[category].hudFlags;
     return NULL;
 }
 
 // Tyre record of a driver (NULL for the ghost cars of the time trials).
 // FUNCTION: CMR2 0x00408a60
-BYTE *RallyData_GetTyreRecord(BYTE index)
+TyreWear *RallyData_GetDriverTyreWear(BYTE index)
 {
     unsigned int category;
 
@@ -2116,18 +2069,18 @@ BYTE *RallyData_GetTyreRecord(BYTE index)
             return NULL;
     }
     if (CGameInfo::GetConfiguredGameMode() == 4)
-        return g_unk0x0052f3e8 + 8 + index * 0xc4;
+        return &g_saveCarRecords[index].wear;
     RallyData_ValidateIndex(index);
     category = g_saveSlots[index].category;
     if (category != 0xf)
-        return g_saveProfiles + 0x58c + category * 0x650;
+        return (TyreWear *)g_saveProfiles[category].wear;
     return NULL;
 }
 
 // Category colour of a driver's car: hue (5 bits), shade (4 bits) and value
 // byte, or 0x45 each when the driver has no category.
 // FUNCTION: CMR2 0x00408b10
-void RallyData_GetDriverCategoryColour(int index, unsigned int *pHue, unsigned int *pShade, unsigned int *pValue)
+void RallyData_GetDriverDateOfBirth(int index, unsigned int *pHue, unsigned int *pShade, unsigned int *pValue)
 {
     unsigned int category;
 
@@ -2135,11 +2088,11 @@ void RallyData_GetDriverCategoryColour(int index, unsigned int *pHue, unsigned i
     category = g_saveSlots[index].category;
     if (category != 0xf) {
     if (pHue != NULL)
-        *pHue = ((*(unsigned int *)(g_saveProfiles + 0x14 + category * 0x650)) >> 16) & 0x1f;
+        *pHue = ((g_saveProfiles[category].identifier.flags) >> 16) & 0x1f;
     if (pShade != NULL)
-        *pShade = ((*(unsigned int *)(g_saveProfiles + 0x14 + category * 0x650)) >> 8) & 0xf;
+        *pShade = ((g_saveProfiles[category].identifier.flags) >> 8) & 0xf;
     if (pValue != NULL)
-        *pValue = (*(unsigned int *)(g_saveProfiles + 0x14 + category * 0x650)) & 0xff;
+        *pValue = (g_saveProfiles[category].identifier.flags) & 0xff;
     } else {
 
         if (pHue != NULL)
@@ -2155,54 +2108,54 @@ void RallyData_GetDriverCategoryColour(int index, unsigned int *pHue, unsigned i
 
 // Stores a driver's camera offsets (y/z of pPos), heading and value.
 // FUNCTION: CMR2 0x00408bd0
-void RallyData_SetDriverCameraOffsets(int *pPos, short heading, int value, int index)
+void RallyData_SetDriverCameraOffsets(FixVector *pOffset, short pitch, int lag, int index)
 {
-    int record[5];
+    ChaseCameraSettings record;
 
     RallyData_ValidateIndex(index);
-    record[0] = 0;
-    *(short *)&record[3] = heading;
-    record[1] = pPos[1];
-    record[2] = pPos[2];
-    record[4] = value;
-    RallyData_SetDriverTyreChoice(index, record);
+    record.offset.x = 0;
+    record.pitch = pitch;
+    record.offset.y = pOffset->y;
+    record.offset.z = pOffset->z;
+    record.lag = lag;
+    RallyData_SetDriverCameraRecord(index, &record);
 }
 
 // Reads a driver's stored position, heading and value.
 // FUNCTION: CMR2 0x00408c20
-void RallyData_GetDriverCameraOffsets(int *pPos, short *pHeading, int *pValue, int index)
+void RallyData_GetDriverCameraOffsets(FixVector *pOffset, short *pPitch, int *pLag, int index)
 {
-    int *p;
+    ChaseCameraSettings *p;
 
     RallyData_ValidateIndex(index);
-    p = (int *)RallyData_GetDriverTyreChoiceRecord(index);
-    pPos[0] = p[0];
-    pPos[1] = p[1];
-    pPos[2] = p[2];
-    *pHeading = *(short *)(RallyData_GetDriverTyreChoiceRecord(index) + 0xc);
-    *pValue = *(int *)(RallyData_GetDriverTyreChoiceRecord(index) + 0x10);
+    p = RallyData_GetDriverCameraRecord(index);
+    pOffset->x = p->offset.x;
+    pOffset->y = p->offset.y;
+    pOffset->z = p->offset.z;
+    *pPitch = RallyData_GetDriverCameraRecord(index)->pitch;
+    *pLag = RallyData_GetDriverCameraRecord(index)->lag;
 }
 
 // FUNCTION: CMR2 0x00408c70
-BYTE *RallyData_GetCategoryOptionRecord(int index)
+ProfileEventResults *RallyData_GetDriverEventResults(int index)
 {
     unsigned int category;
     RallyData_ValidateIndex(index);
     category = g_saveSlots[index].category;
     if (category != 0xf)
-        return g_unk0x0052fa5c + category * 0x650 + 0xc;
+        return (ProfileEventResults *)g_saveProfiles[category].eventResults;
     return NULL;
 }
 
 // Marks the tyre record of a driver as changed.
 // FUNCTION: CMR2 0x00408d00
-void RallyData_MarkTyresChanged(int index)
+void RallyData_MarkDriverRecordDirty(int index)
 {
     unsigned int category;
 
     RallyData_ValidateIndex(index);
     if (CGameInfo::GetConfiguredGameMode() == 4) {
-        g_unk0x0052f3e8[4 + index * 0xc4] |= 2;
+        g_saveCarRecords[index].flags |= 2;
         return;
     }
     category = g_saveSlots[index].category;
@@ -2259,16 +2212,16 @@ void RallyData_UpdateStageWetShares(void)
     unsigned short track;
 
     index = 0;
-    pOther = g_unk0x0052f240;
-    pPairs = &g_unk0x0052f100[0][1];
-    pFlag = g_unk0x0052f1f0;
+    pOther = g_rallyPairingTables.otherFlags;
+    pPairs = &g_rallyPairingTables.pairs[0][1];
+    pFlag = g_rallyPairingTables.flags;
     do {
         *pFlag = 0;
         *pOther = 0;
         if (pPairs[-1] == 2 && pPairs[0] == 2) {
             if (((BYTE)RallyDataCountryIndex() == 6 &&
-                 (pPairs == &g_unk0x0052f100[2][1] || pPairs == &g_unk0x0052f100[5][1] ||
-                  pPairs == &g_unk0x0052f100[7][1])) ||
+                 (pPairs == &g_rallyPairingTables.pairs[2][1] || pPairs == &g_rallyPairingTables.pairs[5][1] ||
+                  pPairs == &g_rallyPairingTables.pairs[7][1])) ||
                 ((BYTE)RallyDataCountryIndex() == 7 && (index / 4 == 0 || index / 4 == 2))) {
                 track = (unsigned short)RallyData_GetIndexedStageScoreScale(g_selectedRallyData & 0x1f, index, 0);
                 if (track < 0x834) {
@@ -2307,7 +2260,7 @@ void RallyData_UpdateStageWetShares(void)
         pFlag++;
         pPairs += 2;
         pOther++;
-    } while ((INT_PTR)pPairs < (INT_PTR)&g_unk0x0052f100[11][1]);
+    } while ((INT_PTR)pPairs < (INT_PTR)&g_rallyPairingTables.pairs[11][1]);
 }
 
 // Recomputes the grip byte of the four stages of a rally group, interpolating
@@ -2326,7 +2279,7 @@ void RallyData_InterpolateGroupGrip(int group)
     int track;
 
     index = group << 2;
-    pPairs = &g_unk0x0052f100[index][1];
+    pPairs = &g_rallyPairingTables.pairs[index][1];
     k = 4;
     do {
         m = pPairs[-1];
@@ -2348,15 +2301,15 @@ void RallyData_InterpolateGroupGrip(int group)
             FixMul(g_unk0x005169e0[(BYTE)RallyDataCountryIndex()], fade);
         track = (unsigned short)RallyData_GetIndexedStageScoreScale((BYTE)RallyDataCountryIndex(), index, 0);
         if (track <= 0x1f4 || track >= 0x834) {
-            g_unk0x0052f294[index] = (BYTE)(n >> 16);
+            g_driverGroupTable.field_0x6d4[index] = (BYTE)(n >> 16);
         } else if (track < 0x4b0) {
-            g_unk0x0052f294[index] =
+            g_driverGroupTable.field_0x6d4[index] =
                 (BYTE)((FixMul(FixDiv((track / 100 - 5) << 16, 0x70000), m - n) + n) >> 16);
         } else if (track > 0x640) {
-            g_unk0x0052f294[index] =
+            g_driverGroupTable.field_0x6d4[index] =
                 (BYTE)((FixMul(FixDiv((track / 100 - 0x10) << 16, 0x50000), n - m) + m) >> 16);
         } else {
-            g_unk0x0052f294[index] = (BYTE)(m >> 16);
+            g_driverGroupTable.field_0x6d4[index] = (BYTE)(m >> 16);
         }
         index++;
         pPairs += 2;
@@ -2504,7 +2457,7 @@ void *RallyData_GetAssignedCategoryRecord(unsigned int param1)
     category = g_saveSlots[(param1 & 0xff)].category;
     RallyData_ValidateIndex(param1 & 0xff);
     if (category != 0xf)
-        return g_unk0x0052fa24 + category * 0x650;
+        return (BYTE *)g_saveProfiles[category].name;
     return NULL;
 }
 
@@ -2532,8 +2485,8 @@ void RallyData_SetDriverCategoryOption(BYTE index, BYTE value)
 
     RallyData_ValidateIndex(index);
     if (CGameInfo::GetConfiguredGameMode() == 4) {
-        *(unsigned int *)(g_unk0x0052f3e8 + index * 0xc4) = value;
-        g_unk0x0052f3e8[4 + index * 0xc4] |= 2;
+        g_saveCarRecords[index].options = value;
+        g_saveCarRecords[index].flags |= 2;
         return;
     }
     record = *(unsigned int *)&g_saveSlots[index];
@@ -2541,8 +2494,8 @@ void RallyData_SetDriverCategoryOption(BYTE index, BYTE value)
     if (category != 0xf) {
         g_saveDirty[category] = 1;
         *(unsigned int *)&g_saveSlots[index] = ((value ^ record) & 0x3f) ^ record;
-        *(unsigned int *)(g_saveProfiles + 0x54 + category * 0x650) ^=
-            (*(unsigned int *)(g_saveProfiles + 0x54 + category * 0x650) ^ value) & 0x1f;
+        g_saveProfiles[category].options ^=
+            (g_saveProfiles[category].options ^ value) & 0x1f;
     }
 }
 
@@ -2550,14 +2503,14 @@ void RallyData_SetDriverCategoryOption(BYTE index, BYTE value)
 BYTE RallyData_GetDriverRecordSelectionValue(BYTE index)
 {
     if (CGameInfo::GetConfiguredGameMode() == 4)
-        return *(BYTE *)((int *)g_unk0x0052f3e8 + index * 49);
+        return (BYTE)g_saveCarRecords[index].options;
     return *(int *)&g_saveSlots[index] & 0x3f;
 }
 
 // Returns bit 0 of the record flag, or bit 5 of the category flag when the
 // record belongs to a category.
 // FUNCTION: CMR2 0x004086f0
-BYTE RallyData_GetDriverOrCategoryFlag(BYTE param1)
+BYTE RallyData_GetDriverAutomaticGearbox(BYTE param1)
 {
     unsigned int category;
     BYTE flag;
@@ -2565,13 +2518,13 @@ BYTE RallyData_GetDriverOrCategoryFlag(BYTE param1)
     param1 = param1 & 0xff;
     RallyData_ValidateIndex(param1);
     if (CGameInfo::GetConfiguredGameMode() == 4) {
-        flag = *(BYTE *)(g_unk0x0052f3e8 + param1 * 196 + 4);
+        flag = g_saveCarRecords[param1].flags;
         flag &= 1;
         return flag;
     }
     category = g_saveSlots[param1].category;
     if (category != 0xf)
-        return (*(unsigned int *)(g_unk0x0052fa5c + category * 0x650) >> 5) & 1;
+        return (g_saveProfiles[category].options >> 5) & 1;
     return 1;
 }
 
@@ -2670,7 +2623,7 @@ int RallyData_GetActiveCarRaceRecordField0(Car *p);
 int RallyData_GetRouteAvailabilityState(void);
 extern int g_unk0x00536c88[2];
 extern int g_unk0x00536c00[2];
-extern int g_unk0x00536c28[2];
+extern int g_finishLeaderMessage[2];
 void StageUI_NoOpMapEvent(int, short *);
 BYTE StageTiming_GetCheckpointField1A(int index);
 extern BYTE g_gapTextColour[4];
@@ -2808,16 +2761,16 @@ void RallyData_DrawAndHandleCarHUD(int car, short *pRect)
         sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(0x30));
         Race_DrawPlayerMessage(CFrontend::m_stringDest, (int *)&g_unk0x005170e8, car, 1, -1, -1);
     }
-    if (g_unk0x00536e88[car] != 0) {
+    if (g_finishStageRecordMessage[car] != 0) {
         sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(0x6a));
         Race_DrawPlayerMessage(CFrontend::m_stringDest, (int *)&g_unk0x005170e8, car, 1, -1, -1);
     }
-    if (g_unk0x00536c28[car] != 0) {
+    if (g_finishLeaderMessage[car] != 0) {
         sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(0x83));
         Race_DrawPlayerMessage(CFrontend::m_stringDest, (int *)&g_unk0x005170e8, car, 1, -1, -1);
     }
     Hud_Element();
-    if ((*RallyData_GetDriverKnockoutOrTeamRecord(StageUI_GetRaceEndEventCount() + (char)car) & 4) != 0) {
+    if ((*RallyData_GetDriverHudFlags(StageUI_GetRaceEndEventCount() + (char)car) & 4) != 0) {
         if (CGameInfo::GetConfiguredGameMode() == 7 || CGameInfo::GetConfiguredGameMode() == 5 ||
             CGameInfo::GetConfiguredGameMode() == 6 || CGameInfo::GetConfiguredGameMode() == 3 ||
             CGameInfo::GetConfiguredGameMode() == 0xa || CGameInfo::GetConfiguredGameMode() == 0xc) {
@@ -2835,7 +2788,7 @@ void RallyData_DrawAndHandleCarHUD(int car, short *pRect)
         }
     }
     Hud_Element();
-    if ((*RallyData_GetDriverKnockoutOrTeamRecord(StageUI_GetRaceEndEventCount() + (char)car) & 8) != 0) {
+    if ((*RallyData_GetDriverHudFlags(StageUI_GetRaceEndEventCount() + (char)car) & 8) != 0) {
         if (CGameInfo::GetConfiguredGameMode() == 5 || CGameInfo::GetConfiguredGameMode() == 6 ||
             CGameInfo::GetConfiguredGameMode() == 7 || CGameInfo::GetConfiguredGameMode() == 0xb ||
             CGameInfo::GetConfiguredGameMode() == 0xc || (BYTE)RallyData_GetFlag25()) {
@@ -2845,7 +2798,7 @@ void RallyData_DrawAndHandleCarHUD(int car, short *pRect)
         }
     }
     Hud_Element();
-    if ((*RallyData_GetDriverKnockoutOrTeamRecord(StageUI_GetRaceEndEventCount() + (char)car) & 0x20) != 0) {
+    if ((*RallyData_GetDriverHudFlags(StageUI_GetRaceEndEventCount() + (char)car) & 0x20) != 0) {
         if (CGameInfo::GetConfiguredGameMode() == 5 || CGameInfo::GetConfiguredGameMode() == 6 ||
             CGameInfo::GetConfiguredGameMode() == 7 || CGameInfo::GetConfiguredGameMode() == 0xb ||
             CGameInfo::GetConfiguredGameMode() == 0xc || (BYTE)RallyData_GetFlag25()) {
@@ -3082,7 +3035,7 @@ int StageTiming_GetCheckpointGroupIndex(int index);
 int StageTiming_GetCheckpointSplitIndex(int index);
 int StageTiming_GetCheckpointField14(int index);
 int StageTiming_GetCarSplitTime(int car, int index);
-void NetRace_SendType9PlayerValue(int index, int value);
+void NetRace_SendStageTime(int index, int value);
 int NetPlayers_IsNewLocalRecord(void);
 unsigned int NetPlayers_GetPreviousBestTime(void);
 
@@ -3186,14 +3139,14 @@ void RallyData_RecordStageStartAndGhostSplit(int car)
             g_stageSplitData[car].times[g_lastSplitGroup + 1] = time;
             g_stageSplitData[car].lastSplitTime = g_stageSplitData[car].times[0];
             g_stageSplitData[car].split = g_lastSplitGroup;
-            NetRace_SendType9PlayerValue(g_lastSplitGroup, g_stageSplitData[car].times[0]);
+            NetRace_SendStageTime(g_lastSplitGroup, g_stageSplitData[car].times[0]);
             g_stageStartRecorded = 1;
         } else {
             if (g_lastSplitGroup >= 1 && g_lastSplitGroup < 10) {
                 g_stageSplitData[car].times[g_lastSplitGroup + 1] = g_stageSplitData[car].times[0];
                 g_stageSplitData[car].lastSplitTime = g_stageSplitData[car].times[0];
                 g_stageSplitData[car].split = g_lastSplitGroup;
-                NetRace_SendType9PlayerValue(g_lastSplitGroup, g_stageSplitData[car].times[0]);
+                NetRace_SendStageTime(g_lastSplitGroup, g_stageSplitData[car].times[0]);
             }
             g_stageStartRecorded = 1;
         }
@@ -3241,27 +3194,32 @@ BYTE RallyData_IsDriverRecordUsable(BYTE param1);
 extern BYTE g_itemColour[4];
 extern char g_classRowHeaderFormat[];
 int RallyData_DrawListItem(int x, int y, char *pText, char last, BYTE alpha);
-BYTE *RallyData_GetAvailableCategorySaveRecord(int index);
+CategoryBestResults *RallyData_GetDriverBestResults(int index);
 unsigned char RallyData_GetSelectionFlag26(void);
 unsigned int RallyData_GetSetupFlag11(void);
 
 // GLOBAL: CMR2 0x00536c00
 int g_unk0x00536c00[2];
 // GLOBAL: CMR2 0x00536c28
-int g_unk0x00536c28[2];
+int g_finishLeaderMessage[2];
 // GLOBAL: CMR2 0x00536c3c
-int g_unk0x00536c3c;
+int g_profileBestStageTime;
 // GLOBAL: CMR2 0x00536ec4
 int g_unk0x00536ec4[2];
-// Name of the stage leader (8 bytes in the original; longer names run into the
-// split values at +8/+0xc as there), kept as one block up to 0x536fe0.
+// Name of the fastest driver on the stage so far (8 bytes in the original;
+// longer names run into the next fields as there), the last split passed and
+// the screen width the split bars were laid out for; kept as one block up to
+// 0x536fe0.
+struct StageLeaderBlock {
+    char name[8];
+    int lastSplit;     // 0x536ed8
+    int splitBarResX;  // 0x536edc
+    BYTE rest[0x100];
+};
 // GLOBAL: CMR2 0x00536ed0
-BYTE g_unk0x00536ed0Block[0x110];
-#define g_unk0x00536ed0 ((char *)g_unk0x00536ed0Block)
-#define g_unk0x00536ed8 (*(int *)(g_unk0x00536ed0Block + 8))
-#define g_unk0x00536edc (*(int *)(g_unk0x00536ed0Block + 0xc))
+StageLeaderBlock g_stageLeader;
 // GLOBAL: CMR2 0x0053706c
-int g_unk0x0053706c;
+int g_stageLeaderTime;
 
 // GLOBAL: CMR2 0x005170d0
 unsigned int g_stageResultTextColour = 0xb4ffffff;
@@ -3274,8 +3232,8 @@ unsigned int g_stageResultPanelColour = 0x96dcbebc;
 // FUNCTION: CMR2 0x004147f0
 void RallyData_DrawStageResultRows(int car, short *position)
 {
-    BYTE *record;
-    BYTE *gameInfo;
+    CategoryBestResults *record;
+    GameInfo0xa4 *gameInfo;
     unsigned int carTime;
     unsigned int recordTime;
     unsigned int time;
@@ -3298,27 +3256,26 @@ void RallyData_DrawStageResultRows(int car, short *position)
     int index;
 
     if (CGameInfo::GetConfiguredGameMode() == 3) {
-        record = RallyData_GetAvailableCategorySaveRecord((StageUI_GetRaceEndEventCount() & 0xff) + car);
+        record = RallyData_GetDriverBestResults((StageUI_GetRaceEndEventCount() & 0xff) + car);
         index = (RallyDataCountryIndex() & 0xff) * 12 + (RallyDataStageIndex() & 0xff);
-        carTime = *(unsigned int *)(record + 0x154 + index * 8);
+        carTime = record->rallyStageTimes[0][index].time; // [country][stage] as one index
         index = (RallyDataCountryIndex() & 0xff) * 11;
         index += (RallyDataStageIndex() & 0xff);
-        gameInfo = (BYTE *)CGameInfo::GetGameInfoFieldA4Address();
-        recordTime = (*(unsigned int *)(gameInfo + 0x658 + index * 8) >> 7) & 0xffff;
+        gameInfo = CGameInfo::GetGameInfoFieldA4Address();
+        recordTime = (gameInfo->rallyStageRecordTimes[index].value >> 7) & 0xffff;
         index = (RallyDataCountryIndex() & 0xff) * 11 + (RallyDataStageIndex() & 0xff);
-        gameInfo = (BYTE *)CGameInfo::GetGameInfoFieldA4Address();
-        sprintf(recordName, (char *)(gameInfo + 0x654 + index * 8));
+        gameInfo = CGameInfo::GetGameInfoFieldA4Address();
+        sprintf(recordName, gameInfo->rallyStageRecordTimes[index].ident);
     } else {
-        record = RallyData_GetAvailableCategorySaveRecord((StageUI_GetRaceEndEventCount() & 0xff) + car);
-        index = (RallyData_GetSelectionBits10To11() & 0xff) * 3 + (RallyData_GetSelectionBits12To13() & 0xff);
-        carTime = *(unsigned int *)(record + 0x4c0 + index * 8);
+        record = RallyData_GetDriverBestResults((StageUI_GetRaceEndEventCount() & 0xff) + car);
+        carTime = record->arcadeStageTimes[RallyData_GetSelectionBits10To11() & 0xff][RallyData_GetSelectionBits12To13() & 0xff].time;
         index = (RallyData_GetSelectionBits10To11() & 0xff) * 3;
         index += (RallyData_GetSelectionBits12To13() & 0xff);
-        gameInfo = (BYTE *)CGameInfo::GetGameInfoFieldA4Address();
-        recordTime = (*(unsigned int *)(gameInfo + 0x1214 + index * 8) >> 7) & 0xffff;
+        gameInfo = CGameInfo::GetGameInfoFieldA4Address();
+        recordTime = (gameInfo->arcadeRecordTimes[index].value >> 7) & 0xffff;
         index = (RallyData_GetSelectionBits10To11() & 0xff) * 3 + (RallyData_GetSelectionBits12To13() & 0xff);
-        gameInfo = (BYTE *)CGameInfo::GetGameInfoFieldA4Address();
-        sprintf(recordName, (char *)(gameInfo + 0x1210 + index * 8));
+        gameInfo = CGameInfo::GetGameInfoFieldA4Address();
+        sprintf(recordName, gameInfo->arcadeRecordTimes[index].ident);
     }
 
     baseHeight = (int)g_pGraphics->resY * 0xccc >> 16;
@@ -3382,7 +3339,7 @@ void RallyData_DrawStageResultRows(int car, short *position)
                         time = NetPlayers_GetSplitRecordTime(8);
                 } else {
                     time = CGameInfo::GetNetworkStageBestTime(0);
-                    if (g_unk0x00536c28[car] != 0 && fade != 0)
+                    if (g_finishLeaderMessage[car] != 0 && fade != 0)
                         highlight = 1;
                     else
                         highlight = 0;
@@ -3391,16 +3348,16 @@ void RallyData_DrawStageResultRows(int car, short *position)
                 sprintf(CFrontend::m_stringDest, CRegKey::m_regKeyPathFormatValue,
                         RallyData_GetRecord((BYTE)(StageUI_GetRaceEndEventCount() + car)));
                 time = carTime;
-                if (g_unk0x00536e88[car] != 0 && fade != 0)
+                if (g_finishStageRecordMessage[car] != 0 && fade != 0)
                     highlight = 1;
                 else
                     highlight = 0;
             }
         } else if (shownRow == 2) {
             sprintf(CFrontend::m_stringDest, g_standingsRowFormat,
-                    CFrontend::GetTextString(0x84), g_unk0x00536ed0);
-            time = g_unk0x0053706c;
-            if (g_unk0x00536c28[car] != 0 && fade != 0)
+                    CFrontend::GetTextString(0x84), g_stageLeader.name);
+            time = g_stageLeaderTime;
+            if (g_finishLeaderMessage[car] != 0 && fade != 0)
                 highlight = 1;
             else
                 highlight = 0;
@@ -3464,33 +3421,33 @@ void RallyData_SetFinishLineResultMessages(int car)
     time = StageTiming_GetCarSplitTime(car, StageTiming_GetCheckpointGroupIndex(car));
     g_unk0x00536c00[car] = 0;
     g_unk0x00536c88[car] = 0;
-    g_unk0x00536c28[car] = 0;
-    g_unk0x00536e88[car] = 0;
+    g_finishLeaderMessage[car] = 0;
+    g_finishStageRecordMessage[car] = 0;
     g_unk0x00536ec4[car] = 0;
     if ((!(BYTE)CGameInfo::GetNetworkOptionBit11() || !(BYTE)RallyData_GetFlag24()) && !CGameInfo::GetGameModeOptionBit19()) {
         if (StageTiming_GetCarTimingByte84(car)) {
             g_unk0x00536c00[car] = 1;
             g_unk0x00536c08[car] = 0x7d;
         }
-        if ((g_unk0x00536c3c == 0 || g_unk0x00536c3c > time) &&
+        if ((g_profileBestStageTime == 0 || g_profileBestStageTime > time) &&
             !RallyData_IsDriverRecordUsable((BYTE)(StageUI_GetRaceEndEventCount() + car))) {
-            g_unk0x00536e88[car] = 1;
+            g_finishStageRecordMessage[car] = 1;
             g_unk0x00536c08[car] = 0x7d;
         }
     }
     if (CGameInfo::GetGameModeOptionBit19()) {
         if (CGameInfo::GetConfiguredGameMode() != 0xc || !NetPlayers_IsNewLocalRecord())
             goto done;
-        g_unk0x0053706c = CGameInfo::GetNetworkStageBestTime(0);
-        sprintf(g_unk0x00536ed0, (char *)RallyData_GetRecord(0));
-        g_unk0x00536c28[car] = 1;
+        g_stageLeaderTime = CGameInfo::GetNetworkStageBestTime(0);
+        sprintf(g_stageLeader.name, (char *)RallyData_GetRecord(0));
+        g_finishLeaderMessage[car] = 1;
         g_unk0x00536c08[car] = 0x7d;
     } else {
-        if (g_unk0x0053706c != 0 && g_unk0x0053706c <= time)
+        if (g_stageLeaderTime != 0 && g_stageLeaderTime <= time)
             goto done;
-        g_unk0x0053706c = time;
-        sprintf(g_unk0x00536ed0, (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + car));
-        g_unk0x00536c28[car] = 1;
+        g_stageLeaderTime = time;
+        sprintf(g_stageLeader.name, (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + car));
+        g_finishLeaderMessage[car] = 1;
         g_unk0x00536c08[car] = 0x7d;
     }
 done:
@@ -3566,7 +3523,7 @@ BYTE RallyData_IsDriverRecordUsable(BYTE param1);
 extern BYTE g_itemColour[4];
 extern char g_classRowHeaderFormat[];
 int RallyData_DrawListItem(int x, int y, char *pText, char last, BYTE alpha);
-BYTE *RallyData_GetAvailableCategorySaveRecord(int index);
+CategoryBestResults *RallyData_GetDriverBestResults(int index);
 
 // GLOBAL: CMR2 0x00516e3c
 char g_loadRecordTimeFormat[] = "%.2d:%.2d.%.2d";
@@ -3649,10 +3606,10 @@ void RallyData_DrawFadedLoadingText(BYTE alpha)
         for (i = 0; i < (int)(RallyDataState() & 0xff); i++) {
             if (!RallyData_IsDriverRecordUsable(i)) {
                 shown++;
-                if (*(RallyData_GetAvailableCategorySaveRecord(i) + 0x150 +
-                      ((RallyDataStageIndex() & 0xff) + (RallyDataCountryIndex() & 0xff) * 12) * 8) & 0x80) {
-                    time = *(unsigned int *)(RallyData_GetAvailableCategorySaveRecord(i) + 0x154 +
-                                             ((RallyDataStageIndex() & 0xff) + (RallyDataCountryIndex() & 0xff) * 12) * 8);
+                if (RallyData_GetDriverBestResults(i)
+                        ->rallyStageTimes[RallyDataCountryIndex() & 0xff][RallyDataStageIndex() & 0xff].header & 0x80) {
+                    time = RallyData_GetDriverBestResults(i)
+                               ->rallyStageTimes[RallyDataCountryIndex() & 0xff][RallyDataStageIndex() & 0xff].time;
                     LOAD_TIME_TEXT(time);
                 } else {
                     sprintf(CFrontend::m_stringDest, g_noTimeText);
@@ -3708,10 +3665,12 @@ void RallyData_DrawFadedLoadingText(BYTE alpha)
         for (i = 0; i < (int)(RallyDataState() & 0xff); i++) {
             if (!RallyData_IsDriverRecordUsable(i)) {
                 shown++;
-                if (*(RallyData_GetAvailableCategorySaveRecord(i) + 0x4bc +
-                      ((RallyData_GetSelectionBits10To11() & 0xff) * 3 + (RallyData_GetSelectionBits12To13() & 0xff)) * 8) & 0x80) {
-                    time = *(unsigned int *)(RallyData_GetAvailableCategorySaveRecord(i) + 0x4c0 +
-                                             ((RallyData_GetSelectionBits10To11() & 0xff) * 3 + (RallyData_GetSelectionBits12To13() & 0xff)) * 8);
+                if (RallyData_GetDriverBestResults(i)
+                        ->arcadeStageTimes[RallyData_GetSelectionBits10To11() & 0xff][RallyData_GetSelectionBits12To13() & 0xff]
+                        .header & 0x80) {
+                    time = RallyData_GetDriverBestResults(i)
+                               ->arcadeStageTimes[RallyData_GetSelectionBits10To11() & 0xff][RallyData_GetSelectionBits12To13() & 0xff]
+                               .time;
                     LOAD_TIME_TEXT(time);
                 } else {
                     sprintf(CFrontend::m_stringDest, g_noTimeText);
@@ -3880,11 +3839,8 @@ void RallyData_IncrementSelectedCategoryCounters(void)
     if (CGameInfo::GetConfiguredPlayerCount() <= i)
         return;
     do {
-        unsigned int offset =
-                 ((g_saveSlots[i].category) * 0x650);
-        unsigned int value = *(unsigned int *)(g_unk0x0052fa5c + offset);
-        pEntry = (ProgressFlags *)(g_unk0x0052fa5c +
-                 ((g_saveSlots[i].category) * 0x650));
+        unsigned int value = g_saveProfiles[g_saveSlots[i].category].options;
+        pEntry = (ProgressFlags *)&g_saveProfiles[g_saveSlots[i].category].options;
         if ((value & 0x7f80) < 0x7f80)
             *(unsigned int *)pEntry = value ^ ((value ^ ((value & 0xffffff80) + 0x80)) & 0x7f80);
         i++;
@@ -3896,16 +3852,16 @@ void RallyData_IncrementSelectedCategoryCounters(void)
 // FUNCTION: CMR2 0x004ec260
 void RallyData_SetPlayerDefaultCarSetup(int player)
 {
-    int values[5];
+    ChaseCameraSettings values;
 
     if (CGameInfo::GetConfiguredGameMode() != 4)
         RallyData_ValidateIndex(player);
-    *(short *)&values[3] = 0x2d;
-    values[0] = 0;
-    values[1] = 0x18000;
-    values[2] = 0x68000;
-    values[4] = 0xe0000;
-    RallyData_SetDriverTyreChoice((BYTE)player, values);
+    values.pitch = 0x2d;
+    values.offset.x = 0;
+    values.offset.y = 0x18000;
+    values.offset.z = 0x68000;
+    values.lag = 0xe0000;
+    RallyData_SetDriverCameraRecord((BYTE)player, &values);
 }
 
 // GLOBAL: CMR2 0x00520128
@@ -3920,11 +3876,6 @@ BYTE g_unk0x00520128[0x28] = {
 // walks it as an array, so it must be one block).
 // GLOBAL: CMR2 0x0082c698
 int g_championshipFlagCountries[6];
-#define g_unk0x0082c69c (g_championshipFlagCountries[1])
-#define g_unk0x0082c6a0 (g_championshipFlagCountries[2])
-#define g_unk0x0082c6a4 (g_championshipFlagCountries[3])
-#define g_unk0x0082c6a8 (g_championshipFlagCountries[4])
-#define g_unk0x0082c6ac (g_championshipFlagCountries[5])
 // GLOBAL: CMR2 0x0082c6bc
 int g_unk0x0082c6bc;
 
@@ -3934,19 +3885,19 @@ void RallyData_BuildCountryWeatherIndexMap(void)
     if ((unsigned char)RallyDataCountryIndex() == 3) {
         g_championshipFlagCountries[0] = 0;
         g_unk0x0082c6bc = 6;
-        g_unk0x0082c69c = 1;
-        g_unk0x0082c6a0 = 2;
-        g_unk0x0082c6a4 = 6;
-        g_unk0x0082c6a8 = 7;
-        g_unk0x0082c6ac = 8;
+        g_championshipFlagCountries[1] = 1;
+        g_championshipFlagCountries[2] = 2;
+        g_championshipFlagCountries[3] = 6;
+        g_championshipFlagCountries[4] = 7;
+        g_championshipFlagCountries[5] = 8;
     } else {
         g_unk0x0082c6bc = 6;
         g_championshipFlagCountries[0] = 0;
-        g_unk0x0082c69c = 1;
-        g_unk0x0082c6a0 = 2;
-        g_unk0x0082c6a4 = 3;
-        g_unk0x0082c6a8 = 4;
-        g_unk0x0082c6ac = 5;
+        g_championshipFlagCountries[1] = 1;
+        g_championshipFlagCountries[2] = 2;
+        g_championshipFlagCountries[3] = 3;
+        g_championshipFlagCountries[4] = 4;
+        g_championshipFlagCountries[5] = 5;
     }
 }
 
@@ -4562,11 +4513,11 @@ void *RallyData_GetRecord(BYTE index)
     unsigned int category;
 
     if (CGameInfo::GetConfiguredGameMode() == 4)
-        return g_saveCarRecords + index * 196;
+        return (BYTE *)&g_saveCarRecords[index];
     RallyData_ValidateIndex(index);
     category = g_saveSlots[index].category;
     if (category != 0xf)
-        return g_unk0x0052fa18 + category * 0x650;
+        return (BYTE *)g_saveProfiles[category].identifier.name;
     return NULL;
 }
 
@@ -4582,7 +4533,7 @@ char RallyData_GetUsableRecordCategory(BYTE param1)
         // knockout's computer drivers (8 and over) it reads past the eight
         // records, then ignores the result.
         // PORT: the index first.
-        if ((BYTE)param1 < 8 && strcmp((char *)(g_saveCarRecords + index * 196), CMain::m_logFileBlankLine) != 0)
+        if ((BYTE)param1 < 8 && strcmp(g_saveCarRecords[index].name, CMain::m_logFileBlankLine) != 0)
             return -1;
         return (char)((*(unsigned int *)&g_saveSlots[index] >> 0xe) & 0xf);
     }
@@ -4598,17 +4549,16 @@ unsigned char RallyData_GetSelectionFlag26(void)
     return (g_selectedRallyData >> 26) & 1;
 }
 
-// Returns the 0x650-byte record of the id, or NULL when its 0x3c0000 field is
-// already full. The record base is 0x30 bytes into the 0x52fa5c table.
+// Best results of the driver's profile, or NULL when the driver has none.
 // FUNCTION: CMR2 0x00408cb0
-BYTE *RallyData_GetAvailableCategorySaveRecord(int index)
+CategoryBestResults *RallyData_GetDriverBestResults(int index)
 {
     unsigned int value;
 
     RallyData_ValidateIndex(index);
     value = *(unsigned int *)&g_saveSlots[index];
     if ((value & 0x3c0000) != 0x3c0000)
-        return g_unk0x0052fa5c + ((value >> 0x12) & 0xf) * 0x650 + 0x30;
+        return &g_saveProfiles[(value >> 0x12) & 0xf].bestResults;
     return NULL;
 }
 
@@ -4657,7 +4607,7 @@ SceneNode *RallyData_GetChallengeRenderState(void);
 int Game_PrepareScene(SceneNode *, SceneNode *, void *, int);
 int Game_DrawSceneViewport(struct SceneNode *pRoot, struct SceneNode *pCamera, void *pRect, int bit, BYTE flag);
 void Graphics_PresentFrameAndResetCounters(void);
-float Graphics_GetFrameScale(void);
+float Graphics_GetFrameRate(void);
 void GameMenu_UpdateHeaderCallbacks(void);
 BYTE Race_ReadTransitionState3811C(void);
 extern char g_strFpsFormat0x00516e14[];
@@ -4699,7 +4649,7 @@ void RallyData_RunChallengeLoadingScreen(int param1, char param2)
                 colour[1] = 0xff;
                 colour[2] = 0xff;
                 colour[3] = 0xff;
-                sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameScale());
+                sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameRate());
                 Font_DrawText(0, CFrontend::m_stringDest, 0, 0, (int *)colour, 9);
                 if (CGraphics::GetSelectedRenderDeviceSurfaceCaps() == 2)
                     sprintf(CFrontend::m_stringDest, g_strHardwareTl0x00516d54);
@@ -4833,9 +4783,9 @@ unsigned int RallyData_GetSetupModeBits(void)
 // (0x52f2a9), so it may cover further undeclared values.
 
 // FUNCTION: CMR2 0x00407610
-Unk0x0052ebc0 *RallyData_GetDriverGroupRecord(int index)
+RallyCarDamageState *RallyData_GetDriverGroupRecord(int index)
 {
-    return &g_unk0x0052ebc0[index];
+    return &g_driverGroupTable.groups[index].damage;
 }
 
 // GLOBAL: CMR2 0x00516cd0
@@ -4960,8 +4910,8 @@ void RallyData_DrawLoadingProgress(int progress, char drawScene, BYTE alpha)
 // FUNCTION: CMR2 0x0040df60
 void RallyData_SetDriverPairingStateValues(int param1, int param2)
 {
-    g_unk0x0052f290 = param1;
-    g_unk0x0052f0fc = param2;
+    g_driverGroupTable.field_0x6d0 = param1;
+    g_driverGroupTable.field_0x53c = param2;
 }
 
 unsigned int RallyData_GetKnockoutCountryNibble(void);
@@ -5026,7 +4976,7 @@ unsigned int RallyData_GetFlag30(void)
 // FUNCTION: CMR2 0x00408290
 void RallyData_ClearDriverGroupRecords(void)
 {
-    memset(g_unk0x0052ebc0, 0, 4 * sizeof(Unk0x0052ebc0));
+    memset(g_driverGroupTable.groups, 0, 4 * sizeof(DriverCarRecord));
 }
 
 // FUNCTION: CMR2 0x004082c0
@@ -5417,42 +5367,41 @@ BYTE RallyData_SetCategoryAwardBit(int index, int bit)
         return 0;
     category = g_saveSlots[index].category;
     mask = 1 << bit;
-    if ((mask & *(unsigned int *)(g_saveProfiles + 0x4c + category * 0x650)) != 0)
+    if ((mask & g_saveProfiles[category].awards) != 0)
         return 0;
-    *(unsigned int *)(g_saveProfiles + 0x4c + category * 0x650) |= mask;
+    g_saveProfiles[category].awards |= mask;
     g_saveDirty[category] = 1;
     RallyData_IncrementCategoryCounter8(index);
     return 1;
 }
 
-// Records the best finishing place (3 - place) of the driver's category at
-// the current difficulty.
+// Records the championship medal (final place 0..2) of the driver's category at
+// the current difficulty if it beats the stored one.
 // FUNCTION: CMR2 0x00409090
-void RallyData_RecordBestFinishingPlace(int index, int place)
+void RallyData_RecordChampionshipMedal(int index, int place)
 {
-    unsigned int *pBest;
-    unsigned int value;
+    CategoryMedals *pMedals;
+    unsigned int medal;
 
     RallyData_ValidateIndex(index);
-    pBest = (unsigned int *)(g_saveProfiles + 0x62c +
-                             (g_saveSlots[index].category) * 0x650);
-    value = 3 - place;
+    pMedals = (CategoryMedals *)g_saveProfiles[g_saveSlots[index].category].medals;
+    medal = 3 - place;
     switch (CGameInfo::GetConfiguredDifficulty()) {
     case 0:
-        if (value > (*pBest & 3)) {
-            *pBest = ((*pBest ^ value) & 3) ^ *pBest;
+        if (medal > pMedals->championshipD0) {
+            pMedals->championshipD0 = medal;
             RallyData_IncrementCategoryUse(index);
         }
         break;
     case 1:
-        if (value > ((*pBest >> 2) & 3)) {
-            *pBest = ((value & 3) << 2) | (*pBest & 0xfffffff3);
+        if (medal > pMedals->championshipD1) {
+            pMedals->championshipD1 = medal;
             RallyData_IncrementCategoryUse(index);
         }
         break;
     case 2:
-        if (value > ((*pBest >> 4) & 3)) {
-            *pBest = ((value & 3) << 4) | (*pBest & 0xffffffcf);
+        if (medal > pMedals->championshipD2) {
+            pMedals->championshipD2 = medal;
             RallyData_IncrementCategoryUse(index);
         }
         break;
@@ -5540,17 +5489,17 @@ void RallyData_UpdateSplitDisplayAndStageRecord(int car)
     if (g_unk0x00536c08[car] == 0) {
         g_unk0x00536c00[car] = 0;
         g_unk0x00536c88[car] = 0;
-        g_unk0x00536e88[car] = 0;
-        g_unk0x00536c28[car] = 0;
+        g_finishStageRecordMessage[car] = 0;
+        g_finishLeaderMessage[car] = 0;
         g_unk0x00536ec4[car] = 0;
     }
     if (!(BYTE)RallyData_GetFlag24() &&
         (!(BYTE)RallyData_GetFlag25() || CGameInfo::GetConfiguredGameMode() != 3 || CGameInfo::GetGameModeOptionBit19())) {
         if (StageTiming_GetCheckpointField1A(car)) {
             int t = g_stageSplitData[car].times[0];
-            if (g_unk0x0053706c == 0 || g_unk0x0053706c > t) {
-                g_unk0x0053706c = t;
-                sprintf(g_unk0x00536ed0, (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + (char)car));
+            if (g_stageLeaderTime == 0 || g_stageLeaderTime > t) {
+                g_stageLeaderTime = t;
+                sprintf(g_stageLeader.name, (char *)RallyData_GetRecord(StageUI_GetRaceEndEventCount() + (char)car));
             }
         }
     } else {
@@ -5559,7 +5508,7 @@ void RallyData_UpdateSplitDisplayAndStageRecord(int car)
 }
 
 BYTE StageTiming_GetCheckpointField17(int index);
-void NetRace_SendType8PlayerValue(int index, int value);
+void NetRace_SendSplitTime(int index, int value);
 unsigned int NetPlayers_GetSplitRecordTime(int split);
 void RallyData_PlayAlternateStageLoopSound(BYTE param1, int param2);
 
@@ -5574,19 +5523,19 @@ void RallyData_RecordPassedSplitAndTimeToBeat(int car)
     g_splitTargetTimes[0] = 0;
     if (StageTiming_GetCheckpointField17(car) != 0) {
         split = StageTiming_GetCheckpointField14(car);
-        g_unk0x00536ed8 = split;
+        g_stageLeader.lastSplit = split;
         if (split > 0 && split <= 8) {
             g_stageSplitData[car].times[split + 1] = g_stageSplitData[car].times[0];
             g_stageSplitData[car].lastSplitTime = g_stageSplitData[car].times[0];
             g_stageSplitData[car].split = split;
-            NetRace_SendType8PlayerValue(split, g_stageSplitData[car].times[0]);
-            split = g_unk0x00536ed8;
+            NetRace_SendSplitTime(split, g_stageSplitData[car].times[0]);
+            split = g_stageLeader.lastSplit;
         }
         g_stageStartRecorded = 1;
     } else {
         if (g_stageStartRecorded == 0)
             return;
-        split = g_unk0x00536ed8;
+        split = g_stageLeader.lastSplit;
     }
     target = NetPlayers_GetSplitRecordTime(split);
     g_stageSplitData[car].targetTime = target;
@@ -5601,7 +5550,7 @@ void RallyData_RecordPassedSplitAndTimeToBeat(int car)
     }
     g_stageStartRecorded = 0;
 show:
-    if (g_unk0x00536ed8 != 0) {
+    if (g_stageLeader.lastSplit != 0) {
         ((BYTE *)g_unk0x005170e0)[car * 4 + 3] = 0xff;
         g_splitGapDisplayFrames[car] = 0x4b;
     }
@@ -5635,8 +5584,7 @@ bool RallyData_HasCategoryAward(int index, int bit, char check)
         if (bit == 7 && CGameInfo::IsRecordFlagSet(0x12))
             return true;
     }
-    return (*(unsigned int *)(g_saveProfiles + 0x4c +
-                              (g_saveSlots[index].category) * 0x650) &
+    return (g_saveProfiles[(g_saveSlots[index].category)].awards &
             (1 << bit)) ? true : false;
 }
 
@@ -5950,49 +5898,48 @@ void RallyData_DispatchActiveGameModeState(int car)
     }
 }
 
-// Sets the 2-bit difficulty field of the category of a rally entry, keeping the
-// best value seen so far. mode selects the game mode, player the player slot.
+// Records the arcade final medal (place 0..2) of the driver's category at the
+// current difficulty and arcade selection if it beats the stored one.
 // FUNCTION: CMR2 0x00409680
-void RallyData_RecordBestCategoryDifficulty(int index, int player, int difficulty)
+void RallyData_RecordArcadeMedal(int index, int arcade, int place)
 {
-    unsigned int *pRecord;
+    CategoryMedals *pMedals;
     unsigned char mode;
-    unsigned int level;
+    unsigned int medal;
 
     RallyData_ValidateIndex(index);
-    pRecord = (unsigned int *)(g_saveProfiles + 0x62c +
-        (g_saveSlots[index].category) * 0x650);
-    level = 3 - difficulty;
+    pMedals = (CategoryMedals *)g_saveProfiles[g_saveSlots[index].category].medals;
+    medal = 3 - place;
     mode = CGameInfo::GetConfiguredDifficulty();
     switch (mode) {
     case 0:
-        if (level > (*pRecord >> 6 & 3)) {
-            *pRecord = (level & 3) << 6 | *pRecord & 0xffffff3f;
+        if (medal > pMedals->arcadeD0) {
+            pMedals->arcadeD0 = medal;
             RallyData_IncrementCategoryUse(index);
         }
         break;
     case 1:
-        if (player == 0) {
-            if (level > (*pRecord >> 8 & 3)) {
-                *pRecord = (level & 3) << 8 | *pRecord & 0xfffffcff;
+        if (arcade == 0) {
+            if (medal > pMedals->arcadeD1) {
+                pMedals->arcadeD1 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
-        } else if (level > (*pRecord >> 0xc & 3)) {
-            *pRecord = (level & 3) << 0xc | *pRecord & 0xffffcfff;
+        } else if (medal > pMedals->arcadeD1B) {
+            pMedals->arcadeD1B = medal;
             RallyData_IncrementCategoryUse(index);
             return;
         }
         break;
     case 2:
-        if (player == 0) {
-            if (level > (*pRecord >> 10 & 3)) {
-                *pRecord = (level & 3) << 10 | *pRecord & 0xfffff3ff;
+        if (arcade == 0) {
+            if (medal > pMedals->arcadeD2) {
+                pMedals->arcadeD2 = medal;
                 RallyData_IncrementCategoryUse(index);
                 return;
             }
-        } else if (level > (*pRecord >> 0xe & 3)) {
-            *pRecord = (level & 3) << 0xe | *pRecord & 0xffff3fff;
+        } else if (medal > pMedals->arcadeD2B) {
+            pMedals->arcadeD2B = medal;
             RallyData_IncrementCategoryUse(index);
             return;
         }
@@ -6090,7 +6037,7 @@ unsigned int NetPlayers_GetPlayerFlag23(int index);
 void SceneNode_SetViewMaskTree(SceneNode *pNode, BYTE mask);
 int Graphics_RenderNodeCubeMapFaces(SceneNode *pNode, int bit);
 void Graphics_SetShadowGeometryState(int value);
-float Graphics_GetFrameScale(void);
+float Graphics_GetFrameRate(void);
 void StageTiming_DrawProjectedCarMarker(int param1, int param2);
 void StageTiming_DrawClockAndCountdown(void);
 void View_SetPlayerProjection(unsigned int player);
@@ -6287,7 +6234,7 @@ void RallyData_UpdateViewFrameAndDebugOverlay(CallbackStateMachine *param1, int 
         colour[1] = 0;
         colour[2] = 0;
         colour[3] = 0xff;
-        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameScale());
+        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameRate());
         Font_DrawText(1, CFrontend::m_stringDest, 0, 0, (int *)colour, 9);
         sprintf(CFrontend::m_stringDest, g_strScenePolygons0x00516dfc, CGame::GetDrawnMeshTriangleCount());
         Font_DrawText(1, CFrontend::m_stringDest, 0, 0xf, (int *)colour, 9);
@@ -7224,7 +7171,7 @@ void RallyData_ResetPlayerSplitDisplays(void)
     g_splitTargetsLoaded = 0;
     g_stageFinishBeepPlayed = 0;
     g_stageTargetTime = 0;
-    g_unk0x00536c3c = 0;
+    g_profileBestStageTime = 0;
     *(short *)&g_splitGapDisplayFrames[0] = 0;
     for (i = 0; i < 6; i++)
         ((int *)g_splitNearbyRankRows)[i] = -1;
@@ -7580,12 +7527,12 @@ int StageTiming_GetClockTime(void);
 void StageUI_NoOpMapRelease(void);
 int Frontend_StoreSelectedDeviceOption(int index);
 
-// Last graphics resolution and language the split bar was built for, plus the
-// resolution copy used to detect a mode change.
+// Screen height and split bar setting the split bars were laid out for (the
+// width is g_stageLeader.splitBarResX); a change lays them out again.
 // GLOBAL: CMR2 0x0051711c
-int g_unk0x0051711c = -1;
+int g_splitBarResY = -1;
 // GLOBAL: CMR2 0x00537080
-int g_unk0x00537080;
+int g_splitBarEnabled;
 // Per-car split bar entry: [0] split index, [0xc] current split time.
 
 // Per-frame update of one car's split bar: detects a graphics mode change and
@@ -7602,7 +7549,7 @@ int g_unk0x00537080;
 // FUNCTION: CMR2 0x00411f70
 void RallyData_UpdateCarSplitBar(int param_1, int param_2)
 {
-    BYTE *pInfo;
+    CategoryBestResults *pInfo;
     int splitTime;
     int marker;
     int splitIndex;
@@ -7611,13 +7558,13 @@ void RallyData_UpdateCarSplitBar(int param_1, int param_2)
     int range;
     int fallback;
 
-    if (g_pGraphics->resX != g_unk0x00536edc ||
-        g_pGraphics->resY != g_unk0x0051711c ||
-        g_unk0x00537080 != (CGameInfo::IsSplitBarEnabled() & 0xff)) {
+    if (g_pGraphics->resX != g_stageLeader.splitBarResX ||
+        g_pGraphics->resY != g_splitBarResY ||
+        g_splitBarEnabled != (CGameInfo::IsSplitBarEnabled() & 0xff)) {
         RallyData_LayoutPlayerSplitBars();
-        g_unk0x00536edc = g_pGraphics->resX;
-        g_unk0x0051711c = g_pGraphics->resY;
-        g_unk0x00537080 = CGameInfo::IsSplitBarEnabled() & 0xff;
+        g_stageLeader.splitBarResX = g_pGraphics->resX;
+        g_splitBarResY = g_pGraphics->resY;
+        g_splitBarEnabled = CGameInfo::IsSplitBarEnabled() & 0xff;
     }
     if (g_splitTargetsLoaded == 0 &&
         (CGameInfo::GetConfiguredGameMode() != 7 || g_splitGapDisplayFrames[param_1] == 0)) {
@@ -7626,19 +7573,16 @@ void RallyData_UpdateCarSplitBar(int param_1, int param_2)
             g_splitTargetsLoaded = 1;
             if (CGameInfo::GetConfiguredGameMode() == 7) {
                 g_stageTargetTime = CFrontend::GetCurrentRecordOptionValue();
-                pInfo = RallyData_GetAvailableCategorySaveRecord((StageUI_GetRaceEndEventCount() & 0xff) + param_1);
-                g_unk0x00536c3c = *(int *)(pInfo + 0x4c0 +
-                    ((RallyData_GetSelectionBits10To11() & 0xff) * 3 +
-                     (RallyData_GetSelectionBits12To13() & 0xff)) * 8);
+                pInfo = RallyData_GetDriverBestResults((StageUI_GetRaceEndEventCount() & 0xff) + param_1);
+                g_profileBestStageTime = pInfo->arcadeStageTimes[RallyData_GetSelectionBits10To11() & 0xff]
+                                                                [RallyData_GetSelectionBits12To13() & 0xff].time;
             }
             if (CGameInfo::GetConfiguredGameMode() == 3) {
-                g_stageTargetTime = *(unsigned int *)((BYTE *)CGameInfo::GetGameInfoFieldA4Address() + 0x658 +
-                    ((RallyDataCountryIndex() & 0xff) * 0xb +
-                     (RallyDataStageIndex() & 0xff)) * 8) >> 7 & 0xffff;
-                pInfo = RallyData_GetAvailableCategorySaveRecord((StageUI_GetRaceEndEventCount() & 0xff) + param_1);
-                g_unk0x00536c3c = *(int *)(pInfo + 0x154 +
-                    ((RallyDataStageIndex() & 0xff) +
-                     (RallyDataCountryIndex() & 0xff) * 0xc) * 8);
+                g_stageTargetTime = CGameInfo::GetGameInfoFieldA4Address()->rallyStageRecordTimes[
+                    (RallyDataCountryIndex() & 0xff) * 0xb + (RallyDataStageIndex() & 0xff)].value >> 7 & 0xffff;
+                pInfo = RallyData_GetDriverBestResults((StageUI_GetRaceEndEventCount() & 0xff) + param_1);
+                g_profileBestStageTime = pInfo->rallyStageTimes[RallyDataCountryIndex() & 0xff]
+                                                               [RallyDataStageIndex() & 0xff].time;
             }
             for (i = 0; i < 12; i++)
                 g_splitTargetTimes[i + 1] = Frontend_StoreSelectedDeviceOption(i);
@@ -7650,10 +7594,9 @@ void RallyData_UpdateCarSplitBar(int param_1, int param_2)
             }
             if (CGameInfo::GetConfiguredGameMode() == 6 || CGameInfo::GetConfiguredGameMode() == 5) {
                 g_stageTargetTime = CFrontend::GetCurrentRecordOptionValue();
-                pInfo = RallyData_GetAvailableCategorySaveRecord((StageUI_GetRaceEndEventCount() & 0xff) + param_1);
-                g_unk0x00536c3c = *(int *)(pInfo + 0x4c0 +
-                    ((RallyData_GetSelectionBits10To11() & 0xff) * 3 +
-                     (RallyData_GetSelectionBits12To13() & 0xff)) * 8);
+                pInfo = RallyData_GetDriverBestResults((StageUI_GetRaceEndEventCount() & 0xff) + param_1);
+                g_profileBestStageTime = pInfo->arcadeStageTimes[RallyData_GetSelectionBits10To11() & 0xff]
+                                                                [RallyData_GetSelectionBits12To13() & 0xff].time;
             }
         }
     }
@@ -7665,22 +7608,22 @@ void RallyData_UpdateCarSplitBar(int param_1, int param_2)
     splitTime = (unsigned short)StageTiming_GetCheckpointField10(param_1);
     if (CGameInfo::GetConfiguredGameMode() != 7 && CGameInfo::GetConfiguredGameMode() != 0xc &&
         (CGameInfo::GetConfiguredGameMode() != 3 || RallyData_GetFlag25() == 0)) {
-        *(int *)(g_unk0x00536e00 + param_1 * 0x48 + 0xc) = StageTiming_GetClockTime();
+        g_stageSplitData[param_1].times[0] = StageTiming_GetClockTime();
         if (StageTiming_GetCheckpointField1A(param_1) != 0 && param_2 == 0)
-            *(int *)(g_unk0x00536e00 + param_1 * 0x48 + 0xc) = StageTiming_GetValidStartTime(param_1);
+            g_stageSplitData[param_1].times[0] = StageTiming_GetValidStartTime(param_1);
         else if (param_2 != 0)
-            *(int *)(g_unk0x00536e00 + param_1 * 0x48 + 0xc) = 0;
+            g_stageSplitData[param_1].times[0] = 0;
     } else {
-        *(int *)(g_unk0x00536e00 + param_1 * 0x48 + 0xc) = StageTiming_GetClampedElapsedCarTime(param_1);
+        g_stageSplitData[param_1].times[0] = StageTiming_GetClampedElapsedCarTime(param_1);
         if (CGameInfo::GetConfiguredGameMode() == 3 && StageTiming_GetCheckpointField1A(param_1) != 0 &&
             param_2 == 0)
-            *(int *)(g_unk0x00536e00 + param_1 * 0x48 + 0xc) = StageTiming_GetValidStartTime(param_1);
+            g_stageSplitData[param_1].times[0] = StageTiming_GetValidStartTime(param_1);
         else if (param_2 != 0)
-            *(int *)(g_unk0x00536e00 + param_1 * 0x48 + 0xc) = 0;
+            g_stageSplitData[param_1].times[0] = 0;
     }
     RallyData_UpdateSplitDisplayAndStageRecord(param_1);
     StageTiming_GetSplitDisplayState();
-    splitIndex = *(int *)(g_unk0x00536e00 + param_1 * 0x48);
+    splitIndex = g_stageSplitData[param_1].split;
     first = g_classificationTable[splitIndex * 2];
     CAR_SPLIT_BAR(param_1, 0) = g_splitBarRects[splitIndex + param_1 * 0x14].x;
     CAR_SPLIT_BAR(param_1, 1) = g_splitBarRects[splitIndex + param_1 * 0x14].y;
@@ -7728,14 +7671,14 @@ void RallyData_ResetStageClockAndRecords(int keepName)
     *(short *)g_unk0x00536cac = 0;
     for (i = 0; i < 2; i++) {
         g_unk0x00536c00[i] = 0;
-        g_unk0x00536e88[i] = 0;
-        g_unk0x00536c28[i] = 0;
+        g_finishStageRecordMessage[i] = 0;
+        g_finishLeaderMessage[i] = 0;
         g_unk0x00536ec4[i] = 0;
         g_unk0x00536c88[i] = 0;
     }
     if (keepName == 0) {
-        g_unk0x0053706c = 0;
-        sprintf(g_unk0x00536ed0, CMain::m_logFileBlankLine);
+        g_stageLeaderTime = 0;
+        sprintf(g_stageLeader.name, CMain::m_logFileBlankLine);
     }
     if (CGameInfo::GetConfiguredGameMode() == 5 || CGameInfo::GetConfiguredGameMode() == 6 || CGameInfo::GetConfiguredGameMode() == 7 ||
         CGameInfo::GetConfiguredGameMode() == 4 || CGameInfo::GetConfiguredGameMode() == 11 || CGameInfo::GetConfiguredGameMode() == 12 ||
@@ -7839,9 +7782,9 @@ void RallyData_PickOpponentLineups(void)
     int *pOut;
     int *pIn;
 
-    if ((CGameInfo::GetConfiguredGameMode() == 2 || CGameInfo::GetConfiguredGameMode() == 9) && g_unk0x0052f290 != 0) {
+    if ((CGameInfo::GetConfiguredGameMode() == 2 || CGameInfo::GetConfiguredGameMode() == 9) && g_driverGroupTable.field_0x6d0 != 0) {
         puts(g_strHere);
-        RallyData_ResetDriverPairingTables(g_unk0x0052f0fc);
+        RallyData_ResetDriverPairingTables(g_driverGroupTable.field_0x53c);
         return;
     }
     srand(Sys_GetTicks());
@@ -7914,7 +7857,7 @@ void RallyData_PickOpponentLineups(void)
                 ratings[row] = rating;
             }
         }
-        pOut = &g_unk0x0052f100[group * 4][1];
+        pOut = &g_rallyPairingTables.pairs[group * 4][1];
         for (i = 0; i < 4; i++) {
             pOut[-1] = classes[i * 2];
             if (split == 0)
@@ -7929,9 +7872,9 @@ void RallyData_PickOpponentLineups(void)
     } while (group < 3);
     for (i = 0; i < 11; i++) {
         if ((unsigned short)RallyData_GetIndexedStageScoreScale(g_selectedRallyData & 0x1f, i, 0) >= 0x834) {
-            g_unk0x0052f100[i][0] = 2;
-            g_unk0x0052f100[i][1] = 2;
-            g_unk0x0052f1a0[i] = 2;
+            g_rallyPairingTables.pairs[i][0] = 2;
+            g_rallyPairingTables.pairs[i][1] = 2;
+            g_rallyPairingTables.skills[i] = 2;
         }
     }
     RallyData_UpdateStageWetShares();
@@ -8140,13 +8083,13 @@ void RallyData_DrawTargetTimeGap(int car, short *pRect)
     if (CGameInfo::GetConfiguredGameMode() == 6 || CGameInfo::GetConfiguredGameMode() == 5 ||
         ((char)RallyData_GetSelectionFlag27() && CGameInfo::GetGameModeOptionBit19() == 0)) {
         reference = 0;
-        split = *(int *)(g_unk0x00536e00 + car * 0x48);
+        split = g_stageSplitData[car].split;
         time = g_splitGapTime[car];
     } else {
         g_splitGapBlank[car] = 0;
-        time = *(int *)(g_unk0x00536e00 + car * 0x48 + 4);
-        split = *(int *)(g_unk0x00536e00 + car * 0x48);
-        reference = *(int *)(g_unk0x00536e00 + car * 0x48 + 8);
+        time = g_stageSplitData[car].lastSplitTime;
+        split = g_stageSplitData[car].split;
+        reference = g_stageSplitData[car].targetTime;
         if ((CGameInfo::GetConfiguredGameMode() == 3 || CGameInfo::GetConfiguredGameMode() == 7) &&
             (InRaceMenu_IsPlayerEditingCarSetup(car) == 0 || CGameInfo::IsInRaceMenuOpen() == 0)) {
             if (g_stageTargetTime == g_stageDefaultTargetTime)
@@ -8292,14 +8235,14 @@ void RallyData_DrawStageTimePanel(int car, short *pRect)
                         (int)FTOI(__int64, X87S_MUL((double)(int)g_pGraphics->resY, CGraphics::m_65536)));
         xFixed = FixDiv((int)FTOI(__int64, X87S_MUL((double)rect[0], CGraphics::m_65536)),
                         (int)FTOI(__int64, X87S_MUL((double)(int)g_pGraphics->resX, CGraphics::m_65536)));
-        FormatGapToLeader(*(int *)(g_unk0x00536e00 + car * 0x48 + 0xc), 4, 4, xFixed, yFixed + 0x2e66,
+        FormatGapToLeader(g_stageSplitData[car].times[0], 4, 4, xFixed, yFixed + 0x2e66,
                           &g_stageHudTextColour, 0x21, NULL, 0);
     } else {
         yFixed = FixDiv((int)FTOI(__int64, X87S_MUL((double)pRect[1], CGraphics::m_65536)),
                         (int)FTOI(__int64, X87S_MUL((double)(int)g_pGraphics->resY, CGraphics::m_65536)));
         xFixed = FixDiv((int)FTOI(__int64, X87S_MUL((double)(pRect[0] + dx), CGraphics::m_65536)),
                         (int)FTOI(__int64, X87S_MUL((double)(int)g_pGraphics->resX, CGraphics::m_65536)));
-        FormatGapToLeader(*(int *)(g_unk0x00536e00 + car * 0x48 + 0xc), 4, 4, xFixed + 0xaf30, yFixed + 0x2e66,
+        FormatGapToLeader(g_stageSplitData[car].times[0], 4, 4, xFixed + 0xaf30, yFixed + 0x2e66,
                           &g_stageHudTextColour, 0x21, NULL, 0);
     }
     Race_IsRouteModeWithoutFlag18();

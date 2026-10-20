@@ -976,7 +976,7 @@ Mesh **g_sceneShadowMeshes;         // shadow mesh of each sector
 // GLOBAL: CMR2 0x006dfdcc
 unsigned short *g_sceneLightData;   // lighting data of the stage
 // GLOBAL: CMR2 0x006dfdbc
-BYTE *g_sceneLightZones;            // 0x14 bytes each
+LightZone *g_sceneLightZones;
 // GLOBAL: CMR2 0x006dfdfc
 int *g_sceneSectorFlags;            // per sector
 // GLOBAL: CMR2 0x006e0204
@@ -1079,7 +1079,7 @@ void Scene_RelightSector(int sector)
         (pShadow = g_sceneShadowMeshes[sector]) != NULL) {
         pLevel = pShadow->pLightLevels;
         if (g_unk0x005210c0 != 0) {
-            pZone = &((LightZone *)g_sceneLightZones)[g_sceneSectorZone[sector]];
+            pZone = &g_sceneLightZones[g_sceneSectorZone[sector]];
             pVertex = (BYTE *)pShadow->pVertexData;
             pZoneVertex = &pZone->pItems->vertexCount;
             for (k = 0; k < pZone->itemCount; k++) {
@@ -1288,6 +1288,9 @@ static BYTE *g_sceneLightNative;
 // FUNCTION: CMR2 0x004b4aa0
 void Scene_LoadLighting(int *pData)
 {
+    LightZoneMesh *pHeader;
+    LightZoneItem *pItem;
+    StageObject *pObj;
     Mesh *pMesh;
     FixVector *pBasis;
     unsigned short *pCursor;
@@ -1296,7 +1299,6 @@ void Scene_LoadLighting(int *pData)
     unsigned int next;
     int zone;
     int item;
-    int zoneOff;
     int d;
     int i;
     unsigned int flags;
@@ -1382,78 +1384,68 @@ void Scene_LoadLighting(int *pData)
             pFile += pMeshes[zone].vertexCount * 4;
         }
         g_sceneLightData = pCursor;
-        g_sceneLightZones = (BYTE *)pZones;
+        g_sceneLightZones = pZones;
     }
 
     // Sector of each zone.
     for (zone = 0; zone < *g_sceneLightData; zone++) {
-        LightZone *pZ = &((LightZone *)g_sceneLightZones)[zone];
-
         found = 0xffffffff;
         s = 0;
         if (g_sectorCount == 0) {
-            pZ->sector = -1;
+            g_sceneLightZones[zone].sector = -1;
             continue;
         }
         do {
             next = s;
-            if (g_sectors[s]->x == pZ->x && g_sectors[s]->z == pZ->z) {
+            if (g_sectors[s]->x == g_sceneLightZones[zone].x &&
+                g_sectors[s]->z == g_sceneLightZones[zone].z) {
                 found = s;
                 next = g_sectorCount;
             }
             s = next + 1;
         } while (s < (unsigned int)g_sectorCount);
         if ((int)found >= 0)
-            pZ->sector = (short)found;
+            g_sceneLightZones[zone].sector = (short)found;
         else
-            pZ->sector = -1;
+            g_sceneLightZones[zone].sector = -1;
     }
 
     // Scene object under each item.
     for (zone = 0; zone < *g_sceneLightData; zone++) {
-        LightZone *pZ = &((LightZone *)g_sceneLightZones)[zone];
-
-        for (item = 0; item < pZ->itemCount; item++) {
-            LightZoneItem *pI = &pZ->pItems[item];
-
+        for (item = 0; item < g_sceneLightZones[zone].itemCount; item++) {
+            pItem = &g_sceneLightZones[zone].pItems[item];
             for (s = 0; s < (unsigned int)g_sectorCount; s++) {
-                StageObject *pO = g_sectors[s]->pObjects;
-
                 done = FALSE;
-                if (pO == NULL)
+                pObj = g_sectors[s]->pObjects;
+                if (pObj == NULL)
                     continue;
                 do {
                     if (done)
                         break;
-                    d = pO->position.x - pI->ownerX;
+                    d = pObj->position.x - pItem->ownerX;
                     if (abs(d) < 0x28f) {
-                        d = pO->position.z - pI->ownerZ;
+                        d = pObj->position.z - pItem->ownerZ;
                         if (FIX_ABS(d) < 0x28f) {
-                            pI->pOwner = pO;
+                            pItem->pOwner = pObj;
                             done = TRUE;
                         }
                     }
-                    pO = pO->pNext;
-                } while (pO != NULL);
+                    pObj = pObj->pNext;
+                } while (pObj != NULL);
                 if (done)
                     s = g_sectorCount;
             }
-            pI->intensity = 0x10000;
+            pItem->intensity = 0x10000;
         }
     }
-    // The original builds the mesh flags below from an uninitialised local
-    // that shares its stack slot with the item loop's zone offset, which ends
-    // at the zone count * 0x14.
-    zoneOff = *g_sceneLightData * 0x14;
-
-    // Each shadow triangle takes the texture of its item's object.
+    // Each shadow triangle takes the texture of its item's object; until then
+    // its texture field holds the index of the item.
     for (zone = 0; zone < *g_sceneLightData; zone++) {
-        LightZone *pZ = &((LightZone *)g_sceneLightZones)[zone];
-
-        for (i = 0; i < pZ->pMesh->triangleCount; i++) {
-            MeshTriangle *pT = &pZ->pMesh->pTriangles[i];
-
-            pT->textureIndex = pZ->pItems[pT->textureIndex].pOwner->pMesh->pTriangles->textureIndex;
+        pHeader = g_sceneLightZones[zone].pMesh;
+        for (i = 0; i < pHeader->triangleCount; i++) {
+            MeshTriangle *pTri = &pHeader->pTriangles[i];
+            LightZoneItem *pOwner = &g_sceneLightZones[zone].pItems[pTri->textures[0]];
+            pTri->textures[0] = pOwner->pOwner->pMesh->pTriangles[0].textures[0];
         }
     }
 
@@ -1468,30 +1460,31 @@ void Scene_LoadLighting(int *pData)
             g_sceneSectorZone[s - 1] = -1;
         } while (s < (unsigned int)g_sectorCount);
     }
-    flags = (zoneOff & 0xffffe02d) | 0x402d;
+    // The original builds the flags from an uninitialised local that shares its
+    // stack slot with the byte offset of the item loop's zone (zone count * 0x14).
+    flags = ((*g_sceneLightData * 0x14) & 0xffffe02d) | 0x402d;
     for (zone = 0; zone < *g_sceneLightData; zone++) {
-        LightZone *pZ = &((LightZone *)g_sceneLightZones)[zone];
-
-        if (pZ->sector == -1)
+        if (g_sceneLightZones[zone].sector == -1)
             continue;
-        g_sceneShadowMeshes[(unsigned short)pZ->sector] = Mesh_Alloc();
-        g_sceneSectorZone[(unsigned short)pZ->sector] = (short)zone;
-        pMesh = g_sceneShadowMeshes[(unsigned short)pZ->sector];
+        g_sceneShadowMeshes[(unsigned short)g_sceneLightZones[zone].sector] = Mesh_Alloc();
+        g_sceneSectorZone[(unsigned short)g_sceneLightZones[zone].sector] = (short)zone;
+        pMesh = g_sceneShadowMeshes[(unsigned short)g_sceneLightZones[zone].sector];
         pMesh->field_0x108[0] = 0xff;
         pMesh->field_0x108[1] = 0xff;
         pMesh->field_0x108[2] = 0xff;
         // Clears the tail of the record, pCollisionRecords to the end.
         for (i = offsetof(Mesh, pCollisionRecords); i < (int)sizeof(Mesh); i++)
             ((BYTE *)pMesh)[i] = 0;
+        pHeader = g_sceneLightZones[zone].pMesh;
         for (i = 0xc; i != 0; i--)
             sprintf((char *)pMesh, g_strShadowMeshName, zone);
-        pMesh->field_0x10 = pZ->pMesh->vertexCount;
-        pMesh->pVertexData = (DWORD *)pZ->pMesh->pVertices;
-        pMesh->triangleCount = pZ->pMesh->triangleCount;
-        pMesh->pTriangles = pZ->pMesh->pTriangles;
+        pMesh->field_0x10 = pHeader->vertexCount;
+        pMesh->pVertexData = (DWORD *)pHeader->pVertices;
+        pMesh->triangleCount = pHeader->triangleCount;
+        pMesh->pTriangles = pHeader->pTriangles;
         pMesh->pField20 = NULL;
         pMesh->field_0x104[0] = 0;
-        pMesh->pLightLevels = pZ->pMesh->pLevels;
+        pMesh->pLightLevels = pHeader->pLevels;
         pMesh->flags = flags;
         pMesh->field_0x2c = 0;
         Mesh_BuildParts(pMesh);
@@ -1733,7 +1726,7 @@ void Scene_EndShadowBatch(void)
 void Scene_ProjectCasterIntoLightZone(LightZoneItem *pItem, ShadowCaster *pCaster, BYTE param3);
 
 // GLOBAL: CMR2 0x00511cf0
-extern const double g_unk0x00511cf0 = 0.009999999776482582;
+extern const double g_double0_01f = 0.009999999776482582;
 extern const float g_netOne;           // 0x00511350, 1.0f   (NetRace.cpp)
 extern const float g_netMinusOne;      // 0x0051134c, -1.0f  (NetRace.cpp)
 int FloatMatrix_InverseRotateVector(float *pOut, float *pV, float *pM);
@@ -1839,7 +1832,7 @@ void Scene_ProjectCasterIntoLightZone(LightZoneItem *pItem, ShadowCaster *pCaste
     projScaleY = invY * spanW;
     origin[0] = X87S_MUL(X87S_FILD(float, pLand->position.x), CGraphics::m_oneOver65536);
     origin[1] = X87S_MUL(X87S_FILD(float, pLand->position.y), CGraphics::m_oneOver65536);
-    tex = pZone->pTriangles->textureIndex;
+    tex = pZone->pTriangles->textures[0];
     origin[2] = X87S_MUL(X87S_FILD(float, pLand->position.z), CGraphics::m_oneOver65536);
     if (g_shadowLastTexture == -1 || g_shadowLastFlags == -1) {
         ((BYTE *)g_shadowBatch)[0xc] = param3;
@@ -1888,7 +1881,7 @@ void Scene_ProjectCasterIntoLightZone(LightZoneItem *pItem, ShadowCaster *pCaste
                 delta[2] = origin[2] - pos[2];
                 FloatMatrix_InverseRotateVector(pos, delta, pPart->pNode->worldF);
                 dot = plane[0] * axis[0] + plane[1] * axis[1] + plane[2] * axis[2];
-                if (fabs(dot) > g_unk0x00511cf0) {
+                if (fabs(dot) > g_double0_01f) {
                     inv = g_netMinusOne / dot;
                     ray[0] = plane[0] * inv;
                     ray[1] = plane[1] * inv;
@@ -1953,7 +1946,7 @@ void Scene_EmitProjectedShadowMesh(ShadowPart *pPart, int param_2);
 // Scale of the normal added to the vertex position when a shadow part is
 // projected (0x00511cec, 0.005f).
 // GLOBAL: CMR2 0x00511cec
-extern const float g_unk0x00511cec = 0.005f;
+extern const float g_float0_005 = 0.005f;
 
 // Projects the shadow parts of a caster that were marked dirty: for every vertex
 // of the part the position and the normal are copied into its two work buffers
@@ -1984,10 +1977,10 @@ void Scene_ProjectDirtyShadowParts(ShadowCaster *pCaster, int param2)
                         pWork[1] = pSrc[4];
                         pWork[2] = pSrc[5];
                         scaled[0] = pWork[0];
-                        scaled[0] *= g_unk0x00511cec;
+                        scaled[0] *= g_float0_005;
                         scaled[1] = pWork[1];
-                        scaled[1] *= g_unk0x00511cec;
-                        scaled[2] = pWork[2] * g_unk0x00511cec;
+                        scaled[1] *= g_float0_005;
+                        scaled[2] = pWork[2] * g_float0_005;
                         pWork2[0] += scaled[0];
                         pWork2[1] += scaled[1];
                         pWork2[2] += scaled[2];
@@ -2102,7 +2095,7 @@ void Scene_CollectNearbyLightZones(SceneNode *pNode, int radius, short *pSector)
                     if ((unsigned int)s < (unsigned int)g_sectorCount && s >= 0) {
                         short zone = g_sceneSectorZone[s];
                         if (zone != -1) {
-                            pZone = &((LightZone *)g_sceneLightZones)[zone];
+                            pZone = &g_sceneLightZones[zone];
                             for (item = 0, itemOff = 0; item < pZone->itemCount;
                                  item++, itemOff += sizeof(LightZoneItem)) {
                                 pItem = (LightZoneItem *)((BYTE *)pZone->pItems + itemOff);
@@ -2590,14 +2583,14 @@ void SceneNode_SetViewMaskTree(SceneNode *pNode, BYTE mask)
 }
 
 // GLOBAL: CMR2 0x00511cf8
-extern const double g_unk0x00511cf8 = 0.0019569471624266144;
+extern const double g_doubleOneOver511 = 0.0019569471624266144;
 // GLOBAL: CMR2 0x00511d00
-extern const double g_unk0x00511d00 = 0.0002442002442002442;
+extern const double g_doubleOneOver4095 = 0.0002442002442002442;
 // GLOBAL: CMR2 0x00511d08
-extern const double g_unk0x00511d08 = 0.0015339807878856412;
+extern const double g_angle12ToRadians = 0.0015339807878856412;
 
 extern short g_acosTable[4096];
-extern const double g_unk0x00511380;
+extern const double g_fixedRadiansToAngle12;
 
 // Fills the 16.16 maths tables the original computes at startup. The original
 // uses the x87 instructions in brackets; this is plain C with the same maths:
@@ -2620,8 +2613,8 @@ void Scene_InitFixedMathTables(void)
     int value;
 
     for (i = 0; i < 4096; i++) {
-        g_sinTable[i] = (int)FTOI(__int64, X87S_MUL(sin(X87S_MUL((double)i, g_unk0x00511d08)), CGraphics::m_65536));
-        g_tanTable[i] = (int)FTOI(__int64, X87S_MUL(tan(X87S_MUL((double)i, g_unk0x00511d08)), CGraphics::m_65536));
+        g_sinTable[i] = (int)FTOI(__int64, X87S_MUL(sin(X87S_MUL((double)i, g_angle12ToRadians)), CGraphics::m_65536));
+        g_tanTable[i] = (int)FTOI(__int64, X87S_MUL(tan(X87S_MUL((double)i, g_angle12ToRadians)), CGraphics::m_65536));
     }
     i = 8;
     // tan(90°) and tan(270°) would overflow: the original clamps them
@@ -2632,22 +2625,22 @@ void Scene_InitFixedMathTables(void)
         g_sqrtTable[n] = (unsigned short)(int)FTOI(__int64, X87S_MUL(X87S_SQRT(X87S_MUL((double)i, CGraphics::m_oneOver65536)), CGraphics::m_65536));
 
     for (i = 0; i < 4096; i++) {
-        value = (int)FTOI(__int64, X87S_MUL(asin(X87S_MUL((double)i, g_unk0x00511d00)), CGraphics::m_65536));
-        g_acosTable[i] = (short)FTOI(__int64, X87S_MUL((double)value, g_unk0x00511380));
+        value = (int)FTOI(__int64, X87S_MUL(asin(X87S_MUL((double)i, g_doubleOneOver4095)), CGraphics::m_65536));
+        g_acosTable[i] = (short)FTOI(__int64, X87S_MUL((double)value, g_fixedRadiansToAngle12));
     }
 
     for (i = 0; i < 512; i++) {
-        value = (int)FTOI(__int64, X87S_MUL(atan(X87S_MUL((double)i, g_unk0x00511cf8)), CGraphics::m_65536));
-        g_atanTable[i] = (unsigned short)FTOI(__int64, X87S_MUL((double)value, g_unk0x00511380));
+        value = (int)FTOI(__int64, X87S_MUL(atan(X87S_MUL((double)i, g_doubleOneOver511)), CGraphics::m_65536));
+        g_atanTable[i] = (unsigned short)FTOI(__int64, X87S_MUL((double)value, g_fixedRadiansToAngle12));
     }
 }
 
 
 int FloatMatrix_RotateVector(float *pOut, float *pV, float *pM);
 int FloatMatrix_InverseRotateVector(float *pOut, float *pV, float *pM);
-extern const float g_unk0x00511360;   // 10.0f, defined in NetRace.cpp
+extern const float g_float10;   // 10.0f, defined in NetRace.cpp
 extern const float g_netZero;          // 0x0051131c, 0.0f
-extern const float g_unk0x00511ce8;    // 0x00511ce8, 0.1f
+extern const float g_float0_1;    // 0x00511ce8, 0.1f
 // Scratch table of emitted vertex indices of the shadow mesh builder (-1 none).
 // GLOBAL: CMR2 0x006e0354
 unsigned short g_shadowVertexRemap[0x3f0];
@@ -2749,8 +2742,8 @@ void Scene_EmitProjectedShadowMesh(ShadowPart *pPart, int param_2)
                             colour[3] = baseColour;
                             if (vy < g_netZero)
                                 colour[3] = 0;
-                            else if (vy < g_unk0x00511ce8)
-                                colour[3] = (BYTE)FTOI(__int64, vy * g_unk0x00511360 * scale);
+                            else if (vy < g_float0_1)
+                                colour[3] = (BYTE)FTOI(__int64, vy * g_float10 * scale);
                         }
                         *(DWORD *)(pVtx + 0x18) =
                             ((((DWORD)colour[3] << 8 | colour[0]) << 8 | colour[1]) << 8) | colour[2];

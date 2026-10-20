@@ -81,6 +81,29 @@ SceneNode *Sector_BuildC3DModelScene(void *data, SceneNode *parent, GenericFile 
     return result;
 }
 
+// Header of a C3D model file ("PP_F"); the records follow it at +0x30 in this
+// order: scene nodes, meshes (plain then stage object meshes), stage objects,
+// sectors and their portals, triangles, vertices, light levels, vertex flags,
+// mesh records, then the texture records.
+struct C3DFileHeader {
+    char magic[4];
+    int textureArchiveFlags;           // 0x04, passed to Graphics_LoadTextureRecordList
+    int field_0x8;
+    int textureNamesOffset;            // 0x0c, from the start of the file
+    int vertexFlagCount;               // 0x10, 0x14-byte records
+    int vertexCount;                   // 0x14, 0x30 bytes and a light level each
+    unsigned short nodeCount;          // 0x18, SceneNode
+    unsigned short meshCount;          // 0x1a, Mesh
+    unsigned short objectMeshCount;    // 0x1c, Mesh and StageObject
+    unsigned short sectorCount;        // 0x1e, Sector
+    unsigned int triangleCount;        // 0x20, 0x4c bytes each
+    unsigned short textureCount;       // 0x24
+    unsigned short recordCount;        // 0x26, 0x5c-byte mesh records
+    unsigned short portalCount;        // 0x28, 0x1c bytes each
+    BYTE reserved[6];
+};
+
+
 // Relocates the stage mesh file: turns the offsets stored in the node, mesh,
 // object and sector records into pointers, registers them in the scene node,
 // mesh, stage object and sector tables, loads the textures and re-uploads the

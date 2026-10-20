@@ -615,7 +615,7 @@ HRESULT Sound_StartLoopingMusicStream(int param1)
 
 // One chunk (0xfe80 bytes) as a 16.16 fraction; the original's constant block.
 // GLOBAL: CMR2 0x00511420
-extern const float g_unk0x00511420 = 1.0f / 0xfe80;
+extern const float g_floatOneOver65152 = 1.0f / 0xfe80;
 
 // Refills the part of the streaming buffer that has already been played.
 
@@ -632,11 +632,11 @@ HRESULT Sound_RefillMusicBufferRegions(int unused)
         if (Audio_LockBuffer(CSound::m_pDirectSoundBuffer, g_unk0x005a2714 * 0xfe80, g_unk0x005a2718 * 0xfe80,
                              &pAudio1, &bytes1, &pAudio2, &bytes2)) {
             if (pAudio1 != NULL) {
-                UINT n1 = FTOI(UINT, X87S_MUL(X87S_LOAD(bytes1), g_unk0x00511420));
+                UINT n1 = FTOI(UINT, X87S_MUL(X87S_LOAD(bytes1), g_floatOneOver65152));
                 CSound::IsSoundCallSuccessful(Sound_DecodeMusicBlocks((BYTE *)pAudio1, n1));
             }
             if (pAudio2 != NULL) {
-                UINT n2 = FTOI(UINT, X87S_MUL(X87S_LOAD(bytes2), g_unk0x00511420));
+                UINT n2 = FTOI(UINT, X87S_MUL(X87S_LOAD(bytes2), g_floatOneOver65152));
                 CSound::IsSoundCallSuccessful(Sound_DecodeMusicBlocks((BYTE *)pAudio2, n2));
             }
             Audio_UnlockBuffer(CSound::m_pDirectSoundBuffer);
@@ -844,11 +844,11 @@ void Sound_BuildSlotLoopBuffer(SoundSlot *pSlot)
 
 // The scale factors of the logarithmic attenuation, from the original's block.
 // GLOBAL: CMR2 0x00511418
-extern const float g_unk0x00511418 = 1.0f / 65536.0f;
+extern const float g_floatOneOver65536 = 1.0f / 65536.0f;
 // GLOBAL: CMR2 0x00511410
-extern const double g_unk0x00511410 = -10.0;
+extern const double g_doubleMinus10 = -10.0;
 // GLOBAL: CMR2 0x005113c0
-extern const double g_unk0x005113c0 = 10.0;
+extern const double g_double10 = 10.0;
 
 // Applies the slot volume (scaled by the master volume) as a logarithmic
 // attenuation in hundredths of a decibel.
@@ -858,9 +858,9 @@ void Sound_ApplySlotVolumeAttenuation(SoundSlot *pSlot)
     int volume;
     int attenuation;
 
-    volume = FTOI(int, X87S_MUL(X87S_MUL(X87S_FILD(float, Sound_GetMasterVolume()), X87S_LOAD(pSlot->field_0xc)), g_unk0x00511418));
+    volume = FTOI(int, X87S_MUL(X87S_MUL(X87S_FILD(float, Sound_GetMasterVolume()), X87S_LOAD(pSlot->field_0xc)), g_floatOneOver65536));
     attenuation = AUDIO_VOLUME_MIN -
-                  FTOI(int, X87S_MUL(log((double)volume), g_unk0x00511410)) * abs(10000) / FTOI(int, X87S_MUL(log(CGraphics::m_65536), g_unk0x005113c0));
+                  FTOI(int, X87S_MUL(log((double)volume), g_doubleMinus10)) * abs(10000) / FTOI(int, X87S_MUL(log(CGraphics::m_65536), g_double10));
     Audio_SetVolume(pSlot->pBuffer, attenuation);
     if (pSlot->pLoopBuffer != NULL)
         Audio_SetVolume(pSlot->pLoopBuffer, attenuation);
@@ -1008,7 +1008,7 @@ int Sound_PlaySampleWithParameters(unsigned short id, int volume, int frequency,
 // GLOBAL: CMR2 0x005210f4
 int g_soundMasterVolume = 0x10000;
 // GLOBAL: CMR2 0x006e0ef0
-int g_unk0x006e0ef0;
+int g_soundSampleCount;
 
 int Sound_IsSlotPlayingOrPending(SoundSlot *pSlot);
 int Sound_FindHandle(unsigned int handle);
@@ -1055,10 +1055,10 @@ BOOL Sound_LoadSample(char *name, BYTE flags, GenericFile *pFile)
 {
     char message[260];
 
-    if (CSound::m_unk0x006e0eec == 0 || (unsigned int)g_unk0x006e0ef0 >= 200)
+    if (CSound::m_unk0x006e0eec == 0 || (unsigned int)g_soundSampleCount >= 200)
         return FALSE;
     if (Sound_LoadWave(name, flags, pFile)) {
-        g_unk0x006e0ef0++;
+        g_soundSampleCount++;
         return TRUE;
     }
     // the original formats an error message nobody reads
@@ -1069,22 +1069,22 @@ BOOL Sound_LoadSample(char *name, BYTE flags, GenericFile *pFile)
 // FUNCTION: CMR2 0x004b7740
 void Sound_FreeSamplesFromIndex(int first)
 {
-    int count = g_unk0x006e0ef0;
+    int count = g_soundSampleCount;
 
     if (CSound::m_unk0x006e0eec) {
         Sound_FreeAll();
-        for (; first < g_unk0x006e0ef0; first++) {
+        for (; first < g_soundSampleCount; first++) {
             Sound_ReleaseSampleBuffers(first);
             count--;
         }
-        g_unk0x006e0ef0 = count;
+        g_soundSampleCount = count;
     }
 }
 
 // FUNCTION: CMR2 0x004b7780
 int Sound_GetLoadedSampleCount(void)
 {
-    return g_unk0x006e0ef0;
+    return g_soundSampleCount;
 }
 
 // FUNCTION: CMR2 0x004b78a0
@@ -1125,7 +1125,7 @@ void Sound_FreeAll(void)
 // FUNCTION: CMR2 0x004b7940
 int Sound_GetSampleCount(void)
 {
-    return g_unk0x006e0ef0;
+    return g_soundSampleCount;
 }
 
 // FUNCTION: CMR2 0x004b7990
@@ -1268,7 +1268,7 @@ int Sound_ShutdownSystem(void)
     Sound_FreeAll();
     Sound_SetMasterVolume(0);
     Sound_ReleaseDirectSoundResources();
-    g_unk0x006e0ef0 = 0;
+    g_soundSampleCount = 0;
     CSound::m_unk0x006e0eec = 0;
     return 1;
 }

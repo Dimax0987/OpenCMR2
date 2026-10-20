@@ -7,14 +7,14 @@
 // Record words as the original's bitfields (it merges adjacent field stores).
 struct RecordTimeBits {
 	unsigned car : 6;
-	unsigned manual : 1;
+	unsigned automatic : 1;  // automatic gearbox ("AT" in the record lists)
 	unsigned time : 16;
 	unsigned rest : 9;
 };
 
 struct RecordFlagBits {
 	unsigned car : 6;
-	unsigned manual : 1;
+	unsigned automatic : 1;  // automatic gearbox ("AT" in the record lists)
 	unsigned level : 4;
 	unsigned extra : 4;
 	unsigned rest : 17;
@@ -72,10 +72,10 @@ struct GameInfo
     unsigned int graphicsOptions; // first byte is fullscreen
     unsigned int field_0x34;
     char graphicsCardName[80];
-    unsigned int field_0x88;
-    unsigned int field_0x8c;
-    unsigned int field_0x90;
-    WORD field_0x94;
+    unsigned int chaseCameraHeight;   // 0x88 default ChaseCameraSettings
+    unsigned int chaseCameraDistance; // 0x8c
+    unsigned int chaseCameraLag;      // 0x90
+    WORD chaseCameraPitch;            // 0x94
     BYTE field_0x96_padding[2];
     short field_0x98;
     short field_0x9a;
@@ -199,7 +199,7 @@ public:
     static void SetSoundOptionBit26(BYTE param1);
     static void SetSoundOptionBit28(BYTE param1);
     static void SetSoundOptionBit29(BYTE param1);
-    static void SetDefaultCameraParameters(DWORD *param1, WORD param2, DWORD param3);
+    static void SetDefaultCameraParameters(FixVector *pOffset, WORD pitch, DWORD lag);
     static void SetGameInfoField98(unsigned int param1);
     static unsigned int *GetGameInfoField9CAddress(void);
     static GameInfo0xa4 *GetGameInfoFieldA4Address(void);

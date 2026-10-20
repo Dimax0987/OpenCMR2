@@ -27,6 +27,7 @@
 #include <float.h>
 #include "Glow.h"
 #include "LayoutChecks.h"
+#include "CameraRecord.h"
 
 BOOL CGame::m_shouldExit = FALSE;
 BOOL CGame::m_isActive = FALSE;
@@ -265,7 +266,7 @@ char g_strFpsFormat0x00516e14[10] = "FPS: %.2f";
 int g_fpsTextColours[5] = { -1, 120, 120, 120, 120 };
 
 void FrontendMenu_DrawActiveMenu(void);
-float Graphics_GetFrameScale(void);
+float Graphics_GetFrameRate(void);
 int Game_PrepareScene(SceneNode *pRoot, SceneNode *pCamera, void *pRect, int param);
 int Game_DrawSceneViewport(struct SceneNode *pRoot, struct SceneNode *pCamera, void *pRect, int bit, BYTE flag);
 void Graphics_PresentFrameAndResetCounters(void);
@@ -299,7 +300,7 @@ void Game_DrawBootCameraAndFPS(CallbackStateMachine *p1, BYTE p2)
     FrontendMenu_DrawActiveMenu();
     Game_PrepareScene(g_splashSceneRoot, g_splashCamera, rect, 0);
     if ((g_pGraphics->field913_0x3bc & 4) != 0) {
-        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameScale());
+        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameRate());
         Font_DrawText(0, CFrontend::m_stringDest, 0, 0, g_fpsTextColours, 9);
     }
     Game_DrawSceneViewport(g_splashSceneRoot, g_splashCamera, rect, 0, 1);
@@ -391,7 +392,7 @@ void Game_DrawLogoAndLoadingSprites(CallbackStateMachine *p1, BYTE p2)
 
     Game_PrepareScene(g_splashSceneRoot, g_splashCamera, &screen, 0);
     if (g_pGraphics->field913_0x3bc & 4) {
-        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameScale());
+        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameRate());
         Font_DrawText(0, CFrontend::m_stringDest, 0, 0, (int *)colour, 9);
     }
     Game_DrawSceneViewport(g_splashSceneRoot, g_splashCamera, &screen, 0, 1);
@@ -497,8 +498,8 @@ void GameInfo_ResetSessionTimestamp(void);
 DWORD GameInfo_GetSessionTimestamp(void);
 void Input_TranslatePedalsToMenuKeys(void);
 void Input_MergeAssignedJoystickButtons(int slot, DeviceInfo *pOut);
-extern int g_unk0x00817fe4;
-extern unsigned int g_unk0x00817ff4;
+extern int g_frontendTimestamp;
+extern unsigned int g_frontendElapsedMs;
 
 void RallyData_ResetSelection(void);
 BOOL Network_GetSessionStateFlag(void);
@@ -539,7 +540,7 @@ char g_strMusicSelect1Adp[16] = "%s\\select1.adp";
 void FrontendMenu_UpdateAndSwitchActive(void);
 
 int Game_PrepareScene(SceneNode *pRoot, SceneNode *pCamera, void *pRect, int param);
-float Graphics_GetFrameScale(void);
+float Graphics_GetFrameRate(void);
 int Game_DrawSceneViewport(struct SceneNode *pRoot, struct SceneNode *pCamera, void *pRect, int bit, BYTE flag);
 void Graphics_PresentFrameAndResetCounters(void);
 
@@ -591,7 +592,7 @@ void Game_DrawBootTextureScreen(CallbackStateMachine *p1, BYTE p2)
     Game_PrepareScene(g_splashSceneRoot, g_splashCamera, &screenRect, 0);
 
     if ((g_pGraphics->field913_0x3bc & 4) != 0) {
-        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameScale());
+        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameRate());
         Font_DrawText(0, CFrontend::m_stringDest, 0, 0, (int *)colour, 9);
     }
 
@@ -608,12 +609,12 @@ void Game_WaitForButtonOrSplashTimeout(CallbackStateMachine *p1, BYTE p2)
     char path[MAX_PATH];
     DeviceInfo *pDevice;
 
-    g_unk0x00817fe4 = Sys_GetTicks();
+    g_frontendTimestamp = Sys_GetTicks();
     CInput::UpdateAllAvailableDevices();
     Input_TranslatePedalsToMenuKeys();
     pDevice = CInput::GetAvailableDeviceRecord(0);
     Input_MergeAssignedJoystickButtons(0, pDevice);
-    if ((pDevice->field_0x8 & 0x10) != 0 || (unsigned int)(g_unk0x00817fe4 - GameInfo_GetSessionTimestamp()) > 0x1388) {
+    if ((pDevice->field_0x8 & 0x10) != 0 || (unsigned int)(g_frontendTimestamp - GameInfo_GetSessionTimestamp()) > 0x1388) {
         GameInfo_ResetSessionTimestamp();
         sprintf(path, g_strMusicSelect1Adp, CInstallInfo::GetMusicDir());
         CSound::OpenStreamingMusicFile(path);
@@ -627,11 +628,11 @@ void Game_WaitForButtonOrSplashTimeout(CallbackStateMachine *p1, BYTE p2)
 // FUNCTION: CMR2 0x004d1b40
 void Game_WaitForSplashTimeout(CallbackStateMachine *p1, BYTE p2)
 {
-    g_unk0x00817fe4 = Sys_GetTicks();
+    g_frontendTimestamp = Sys_GetTicks();
     CInput::UpdateAllAvailableDevices();
     Input_TranslatePedalsToMenuKeys();
     Input_MergeAssignedJoystickButtons(0, CInput::GetAvailableDeviceRecord(0));
-    if ((unsigned int)(g_unk0x00817fe4 - GameInfo_GetSessionTimestamp()) > 0x1388) {
+    if ((unsigned int)(g_frontendTimestamp - GameInfo_GetSessionTimestamp()) > 0x1388) {
         GameInfo_ResetSessionTimestamp();
         CGame::PromoteCallbackEntryByRule(p1, p2, 0, 2);
     }
@@ -641,8 +642,8 @@ void Game_WaitForSplashTimeout(CallbackStateMachine *p1, BYTE p2)
 // FUNCTION: CMR2 0x004d1c90
 void Game_RunFrontendBootFrame(CallbackStateMachine *p1, BYTE p2)
 {
-    g_unk0x00817fe4 = Sys_GetTicks();
-    g_unk0x00817ff4 = g_unk0x00817fe4 - GameInfo_GetSessionTimestamp();
+    g_frontendTimestamp = Sys_GetTicks();
+    g_frontendElapsedMs = g_frontendTimestamp - GameInfo_GetSessionTimestamp();
     FrontendMenu_UpdateAndSwitchActive();
 }
 
@@ -703,7 +704,7 @@ int OptionMovie_StartPlayback(char *path, Texture *pTexture, short *pRect, unsig
 
 // Cleared on entry and set while the intro video of the boot sequence is
 // being shown.
-extern BYTE g_unk0x00817fec;
+extern BYTE g_frontendIntroFlag;
 
 // Uppercase country codes of the intro videos. They are four bytes apart,
 // 0x00519264..0x00519280; the last one is CFrontend::m_strUK (already
@@ -733,19 +734,19 @@ void Game_PlayCountryIntroAfterFrontendDelay(CallbackStateMachine *p1, BYTE p2)
     DeviceInfo *pDevice;
     bool queuedVideo;
 
-    g_unk0x00817fec = 0;
+    g_frontendIntroFlag = 0;
     queuedVideo = false;
     if (CGame::m_unk0x00523d68 != 0 &&
         (CGameInfo::GetConfiguredGameMode() == 0 || CGameInfo::GetConfiguredGameMode() == 1) &&
         RallyDataStageIndex() == 0) {
-        g_unk0x00817fec = 1;
+        g_frontendIntroFlag = 1;
         CSound::CloseMusicStreamAndClearPath(0);
-        g_unk0x00817fe4 = Sys_GetTicks();
+        g_frontendTimestamp = Sys_GetTicks();
         CInput::UpdateAllAvailableDevices();
         Input_TranslatePedalsToMenuKeys();
         pDevice = CInput::GetAvailableDeviceRecord(0);
         Input_MergeAssignedJoystickButtons(0, pDevice);
-        if (g_unk0x00817fe4 - (int)GameInfo_GetSessionTimestamp() > 4000) {
+        if (g_frontendTimestamp - (int)GameInfo_GetSessionTimestamp() > 4000) {
             int language = CGameInfo::GetGameLanguage();
             sprintf(path, g_str0x00523dc0, CInstallInfo::GetCountrySpecificOtherDir(),
                     CGameInfo::GetGameRegionDirectory(), codes[RallyDataCountryIndex() & 0xff]);
@@ -769,7 +770,7 @@ bool Profile_SaveEditedNames(void);
 void RallyData_IncrementSelectedCategoryCounters(void);
 unsigned char RallyDataCountryIndex(void);
 unsigned char RallyDataStageIndex(void);
-extern int g_unk0x00817fe8;
+extern int g_frontendCallbackDepth;
 
 // Byte flag the exit path of the boot states tests to pick the next game
 // state (also read by the function at 0x4d2070).
@@ -813,7 +814,7 @@ void Game_FinishRaceAndAdvanceBootState(CallbackStateMachine *p1, BYTE unused)
         }
     }
 
-    CGame::UnwindCallbacks(g_unk0x00817fe8);
+    CGame::UnwindCallbacks(g_frontendCallbackDepth);
     CGraphics::EvictManagedTextureResources();
     CGraphics::FreeTextureBuffers();
     if (CGameInfo::GetConfiguredGameMode() != 4)
@@ -852,7 +853,7 @@ void Game_FinishRaceAndAdvanceBootState(CallbackStateMachine *p1, BYTE unused)
     CGame::SetShouldExit();
 }
 
-float Graphics_GetFrameScale(void);
+float Graphics_GetFrameRate(void);
 int Game_DrawSceneViewport(struct SceneNode *pRoot, struct SceneNode *pCamera, void *pRect, int bit, BYTE flag);
 void Graphics_PresentFrameAndResetCounters(void);
 int Game_PrepareScene(SceneNode *pRoot, SceneNode *pCamera, void *pRect, int param);
@@ -909,7 +910,7 @@ void Game_DrawMovieFrameAndCredits(CallbackStateMachine *p1, BYTE p2)
     }
     Game_PrepareScene(g_splashSceneRoot, g_splashCamera, &viewport, 0);
     if ((g_pGraphics->field913_0x3bc & 4) != 0) {
-        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameScale());
+        sprintf(CFrontend::m_stringDest, g_strFpsFormat0x00516e14, Graphics_GetFrameRate());
         Font_DrawText(0, CFrontend::m_stringDest, 0, 0, (int *)white, 9);
     }
     if (CGameInfo::GetGameRegion() == 3)
@@ -1331,10 +1332,10 @@ BOOL CGame::UpdateSecondaryCallbackMachine()
 // In-race callback group of the game state machine (0x0041b060), filled by
 // InitializeCallbackStateMachine; its slots live at 0x537de0.
 extern RaceCallbackStorage g_raceCallbackStorage;
-extern BYTE g_unk0x00537ef4;
+extern BYTE g_raceEndLatch;
 extern BYTE g_unk0x00537ef5;
-extern int g_unk0x00537ef8;
-extern int g_unk0x00537efc;
+extern int g_raceEndPending;
+extern int g_raceEndState;
 extern int g_unk0x00537df0;
 
 void InRaceMenu_UpdateStateMachineFrame(CallbackStateMachine *param1);
@@ -1418,7 +1419,7 @@ unsigned int g_raceStateRules[26] = {
 //  2. stack slots are swapped: original has `state` at [esp+0x10] and `level` at
 //     [esp+0x14]; ours is the reverse (9 operand mismatches). Declaration order
 //     does not move them.
-//  3. the loop's else branch has a dead `mov al,[g_unk0x00537ef4]; test al,al`
+//  3. the loop's else branch has a dead `mov al,[g_raceEndLatch]; test al,al`
 //     before `push 0` that no source form probed reproduces (2 instructions).
 //  4. the loop counter is a dword in the original (`mov ebx,ebp; and ebx,0xff;
 //     dec ebx`); the byte `i` here compiles to `dec bl`.
@@ -1435,7 +1436,7 @@ BOOL CGame::UpdateInRaceCallbackMachine(void)
     BYTE i;
     char c;
 
-    if (g_unk0x00537ef4 != 0 && g_unk0x00537ef5 == 0 && g_unk0x00537ef8 == 0) {
+    if (g_raceEndLatch != 0 && g_unk0x00537ef5 == 0 && g_raceEndPending == 0) {
         if (CGameInfo::IsInRaceMenuOpen() != 0) {
             InRaceMenu_UpdateStateMachineFrame(&g_raceCallbackStorage.machine);
             InRaceMenu_AdvanceScreenEntries(&g_raceCallbackStorage.machine);
@@ -1448,7 +1449,7 @@ BOOL CGame::UpdateInRaceCallbackMachine(void)
         return FALSE;
     }
     pState = RallyData_GetChampionshipState();
-    if (g_unk0x00537ef4 == 0)
+    if (g_raceEndLatch == 0)
         StageUI_ResetRaceEndEventCount();
     state = CGameInfo::GetConfiguredPlayerCount();
     c = (char)CGameInfo::GetConfiguredGameMode();
@@ -1505,8 +1506,8 @@ done:
         pSlot = g_raceCallbackStorage.records;
         i = state;
         do {
-            if (g_unk0x00537ef8 != 0) {
-                g_unk0x00537efc = 1;
+            if (g_raceEndPending != 0) {
+                g_raceEndState = 1;
                 InitializeCallbackStateRecord(pSlot, 5, level);
             } else {
                 InitializeCallbackStateRecord(pSlot, 0, level);
@@ -1517,13 +1518,13 @@ done:
     }
     InitializeCallbackStateMachine(&g_raceCallbackStorage.machine, state, g_raceCallbackStorage.records,
                  g_raceStateCallbacks, g_raceStateRules);
-    if (g_unk0x00537ef8 != 0) {
+    if (g_raceEndPending != 0) {
         Car_BuildRaceOrder(2);
         Dash_Reset();
     }
-    g_unk0x00537ef4 = 1;
+    g_raceEndLatch = 1;
     g_unk0x00537ef5 = 0;
-    g_unk0x00537ef8 = 0;
+    g_raceEndPending = 0;
     return FALSE;
 }
 
@@ -2099,7 +2100,7 @@ void Game_DrawMeshTextureRuns(Mesh *pMesh)
     MeshTriangle *pTri = pMesh->pTriangles;
 
     for (i = total; i > 0; i--) {
-        texture = *(int *)((BYTE *)pTri + 4 + pTri->field_0x2c * 4);
+        texture = pTri->textures[pTri->field_0x2c];
         if (prev != texture) {
             if (count > 0) {
                 Gfx_DrawIndexedPrimitiveVB(GFX_TRIANGLELIST, CGraphics::m_pTextureManager->pVertexBuffers[pMesh->vertexBufferIndex], pMesh->vertexOffset, pMesh->field_0x10, g_unk0x0059be74, count);
@@ -2122,8 +2123,7 @@ void Game_DrawMeshTextureRuns(Mesh *pMesh)
     }
     if (count != 0) {
         CGraphics::ApplyTextureStageChange(0, CGraphics::m_pTextureManager->textureBuffer[
-            *(int *)((BYTE *)&pMesh->pTriangles[total - 1] + 4 +
-                     pMesh->pTriangles[total - 1].field_0x2c * 4)]);
+            pMesh->pTriangles[total - 1].textures[pMesh->pTriangles[total - 1].field_0x2c]]);
         Gfx_DrawIndexedPrimitiveVB(GFX_TRIANGLELIST, CGraphics::m_pTextureManager->pVertexBuffers[pMesh->vertexBufferIndex], pMesh->vertexOffset, pMesh->field_0x10, g_unk0x0059be74, count);
     }
 }
@@ -2239,7 +2239,7 @@ void Game_DrawDeferredObjects(void)
             qsort(CGame::m_deferredDrawObjects, CGame::m_deferredDrawCount, sizeof(CGame::m_deferredDrawObjects[0]), Game_CompareDeferredDrawDepth);
         for (i = 0; i < (unsigned int)CGame::m_deferredDrawCount; i++) {
             Frontend_SetObjectField118(CGraphics::m_pTextureManager->textureBuffer[
-                ((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->pMesh->pTriangles->textureIndex], 0);
+                ((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->pMesh->pTriangles->textures[0]], 0);
             Gfx_SetTransform(GFX_TRANSFORM_WORLD, (GfxMatrix *)((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->matrix);
             if (((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->pMesh->field_0x114 < 0xc80000)
                 ((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->pMesh->flags |= 8;
@@ -2724,7 +2724,7 @@ int CGame::GetSectorDrawState(void)
 // GLOBAL: CMR2 0x00537f5c
 int g_unk0x00537f5c;
 // GLOBAL: CMR2 0x00665324
-int g_unk0x00665324;
+int g_networkResourceRegistered;
 
 // FUNCTION: CMR2 0x0041f260
 void CGame::SaveRaceCallbackDepth(void)
@@ -2735,7 +2735,7 @@ void CGame::SaveRaceCallbackDepth(void)
 // FUNCTION: CMR2 0x004aae10
 int Network_ClearResourceRegistrationFlag(void)
 {
-    g_unk0x00665324 = 0;
+    g_networkResourceRegistered = 0;
     return 1;
 }
 
@@ -2743,107 +2743,102 @@ int Network_ClearResourceRegistrationFlag(void)
 void CGame::RegisterNetworkResourceRelease(void)
 {
     RegisterCallback(Network_ClearResourceRegistrationFlag, NULL);
-    g_unk0x00665324 = 1;
+    g_networkResourceRegistered = 1;
 }
 
 
 // FUNCTION: CMR2 0x004764c0
-void Game_SetObjectRenderModeZero(void *param1)
+void InteriorCamera_EndLeave(CameraRecord *pRecord)
 {
-    if (g_carInteriorRoots[*((BYTE *)param1 + 2)] != NULL)
+    if (g_carInteriorRoots[pRecord->car] != NULL)
         CGame::SetObjectRenderMode(0);
 }
 
 // FUNCTION: CMR2 0x00476500
-void Game_SetObjectRenderModeOne(void *param1)
+void InteriorCamera_EndEnter(CameraRecord *pRecord)
 {
-    if (g_carInteriorRoots[*((BYTE *)param1 + 2)] != NULL)
+    if (g_carInteriorRoots[pRecord->car] != NULL)
         CGame::SetObjectRenderMode(1);
 }
 
-void StageObject_DispatchContactAndSetLevel(BYTE *pCar, BYTE *pInfo);
-void StageObject_DispatchNearRightAngleContact(BYTE *pCar, BYTE *pInfo);
+void CarCamera_BeginLeave(CameraRecord *pRecord, CameraRecord *pOther);
+void TracksideCamera_BeginLeave(CameraRecord *pRecord, CameraRecord *pOther);
 
-// Dispatches by the object type stored at +4.
+// Dispatches by the camera type.
 // FUNCTION: CMR2 0x00423810
-void Game_DispatchObjectTypeEvent(BYTE *pObject, BYTE *pInfo)
+void Camera_BeginLeave(CameraRecord *pRecord, CameraRecord *pOther)
 {
-    switch (*(int *)(pObject + 4)) {
+    switch (pRecord->type) {
     case 1:
     case 2:
     case 10:
-        StageObject_DispatchContactAndSetLevel(pObject, pInfo);
+        CarCamera_BeginLeave(pRecord, pOther);
         return;
     case 7:
-        StageObject_DispatchNearRightAngleContact(pObject, pInfo);
+        TracksideCamera_BeginLeave(pRecord, pOther);
     }
 }
 
-struct Unk004238e0 {
-    int field_0x0;
-    int field_0x4;
-};
+void CarCamera_EndEnter(CameraRecord *pRecord, CameraRecord *pOther);
+void CarCamera_SetFullCarLift(CameraRecord *pRecord, CameraRecord *pOther);
+void InteriorCamera_EndEnter(CameraRecord *pRecord);
+void TracksideCamera_EndEnter(CameraRecord *pRecord, CameraRecord *pOther);
 
-void StageObject_ResetContactEffectAndSetLevel(BYTE *p, BYTE *q);
-void StageObject_SetContactLevelToUnity(BYTE *p, void *unused);
-void Game_SetObjectRenderModeOne(void *param1);
-void StageObject_ResetRightAngleContactEffect(BYTE *pCar, BYTE *pInfo);
-
-// Dispatches by the object type stored at +4.
+// Dispatches by the camera type.
 // match 64%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)
 // FUNCTION: CMR2 0x00423900
-void Game_DispatchObjectContactReset(BYTE *pObject, BYTE *pInfo)
+void Camera_EndEnter(CameraRecord *pRecord, CameraRecord *pOther)
 {
-    switch (*(int *)(pObject + 4)) {
+    switch (pRecord->type) {
     case 3:
-        Game_SetObjectRenderModeOne(pObject);
+        InteriorCamera_EndEnter(pRecord);
         return;
     case 2:
-        StageObject_SetContactLevelToUnity(pObject, pInfo);
+        CarCamera_SetFullCarLift(pRecord, pOther);
         return;
     case 1:
     case 10:
-        StageObject_ResetContactEffectAndSetLevel(pObject, pInfo);
+        CarCamera_EndEnter(pRecord, pOther);
         return;
     case 7:
-        StageObject_ResetRightAngleContactEffect(pObject, pInfo);
+        TracksideCamera_EndEnter(pRecord, pOther);
     }
 }
 
-void StageObject_SetLevelFromContactType(BYTE *pCar, BYTE *pInfo);
-void CarInterior_ResetDriverPoseOnNextUpdate(BYTE *p);
+void CarCamera_BeginEnter(CameraRecord *pRecord, CameraRecord *pOther);
+void CarInterior_ResetDriverPoseOnNextUpdate(CameraRecord *pRecord);
 FixMatrix *Car_GetCameraReferenceMatrix(BYTE index);
-void HudDash_UpdateCameraBasis(BYTE *pDst, BYTE *pSrc, FixMatrix *pM);
-void StageObject_UpdateNearRightAngleContactLevel(BYTE *pInfo, BYTE *pCar);
+void ChaseCamera_BeginEnter(CameraRecord *pRecord, CameraRecord *pOther, FixMatrix *pRef);
+void TracksideCamera_BeginEnter(CameraRecord *pRecord, CameraRecord *pOther);
 
-// Dispatches by the object type stored at +4.
+// Dispatches by the camera type.
 // match 60%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)
 // FUNCTION: CMR2 0x00423860
-void Game_DispatchObjectTypeUpdate(BYTE *pObject, BYTE *pInfo)
+void Camera_BeginEnter(CameraRecord *pRecord, CameraRecord *pOther)
 {
-    switch (*(int *)(pObject + 4)) {
+    switch (pRecord->type) {
     case 4:
     case 5:
-        HudDash_UpdateCameraBasis(pObject, pInfo, Car_GetCameraReferenceMatrix(pObject[2]));
+        ChaseCamera_BeginEnter(pRecord, pOther, Car_GetCameraReferenceMatrix(pRecord->car));
         return;
     case 3:
-        CarInterior_ResetDriverPoseOnNextUpdate(pObject);
+        CarInterior_ResetDriverPoseOnNextUpdate(pRecord);
         return;
     case 1:
     case 2:
     case 10:
-        StageObject_SetLevelFromContactType(pObject, pInfo);
+        CarCamera_BeginEnter(pRecord, pOther);
         return;
     case 7:
-        StageObject_UpdateNearRightAngleContactLevel(pObject, pInfo);
+        TracksideCamera_BeginEnter(pRecord, pOther);
     }
 }
 
 // FUNCTION: CMR2 0x004238e0
-void Game_UpdateType3ObjectState(Unk004238e0 *param1, void *param2)
+void Camera_EndLeave(CameraRecord *pRecord, CameraRecord *pOther)
 {
-    if (param1->field_0x4 == 3)
-        Game_SetObjectRenderModeZero(param1);
+    if (pRecord->type == 3)
+        InteriorCamera_EndLeave(pRecord);
 }
 
 

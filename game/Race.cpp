@@ -64,7 +64,7 @@ void Race_AssignUnusedSlot(int owner)
 int Car_IsStateC10Set(int index);
 int Sound_IsPlaying(unsigned int handle);
 int Sound_PlaySampleWithParameters(unsigned short id, int volume, int frequency, int loopStart, int loops, int is3D);
-extern int g_unk0x00537194;
+extern int g_coDriverCallState;
 
 // Plays the queued co-driver calls one after another: starts the first slot's
 // sample, and when it has finished moves the queue up.
@@ -84,7 +84,7 @@ void RaceCalls_UpdatePlaybackQueue(void)
             }
         } else {
             g_raceSlotState[0].pending =
-                Sound_PlaySampleWithParameters((unsigned short)g_raceSlotState[0].owner, g_unk0x00537194, 0x2b11, 0, 0, 0);
+                Sound_PlaySampleWithParameters((unsigned short)g_raceSlotState[0].owner, g_coDriverCallState, 0x2b11, 0, 0, 0);
             g_raceSlotState[0].flags |= 1;
         }
     }
@@ -94,7 +94,7 @@ BYTE g_unk0x00537f08;
 // GLOBAL: CMR2 0x00537190
 int g_unk0x00537190;
 // GLOBAL: CMR2 0x00537194
-int g_unk0x00537194;
+int g_coDriverCallState;
 // GLOBAL: CMR2 0x00537394
 int g_unk0x00537394;
 typedef char RaceTransitionAddressWidthCheck[sizeof(ptrdiff_t) >= sizeof(void *) ? 1 : -1];
@@ -106,15 +106,14 @@ ptrdiff_t g_unk0x00537f0c[6];
 // GLOBAL: CMR2 0x00537f24
 int g_unk0x00537f24;
 // GLOBAL: CMR2 0x00537f3c
-BYTE *g_unk0x00537f3c[8];
+BYTE *g_playerReplayStreams[8];
 // GLOBAL: CMR2 0x00537f60
 int g_unk0x00537f60;
 // GLOBAL: CMR2 0x00537f68
-int g_unk0x00537f68[4];
+int g_playerEventAwardFlags[4];
 // GLOBAL: CMR2 0x00537f78
 int g_unk0x00537f78[7];
 // The frame callback flag is the sixth dword of the same race state block.
-#define g_unk0x00537f8c (g_unk0x00537f78[5])
 // GLOBAL: CMR2 0x00537f94
 int g_unk0x00537f94;
 // GLOBAL: CMR2 0x00537ffa
@@ -162,7 +161,7 @@ GenericFile g_raceFile;
 // GLOBAL: CMR2 0x00538864
 BYTE g_raceFileCallbackSet;
 // GLOBAL: CMR2 0x00538970
-int g_unk0x00538970;
+int g_raceResourceState;
 
 // GLOBAL: CMR2 0x00538110
 int g_unk0x00538110;
@@ -239,8 +238,8 @@ int Replay_LoadCpuOpponentRun(int player)
             (BYTE)RallyDataStageIndex() + 1, g_unk0x00537f78[6],
             g_cpuRunLevels[CGameInfo::GetConfiguredGameMode() != 4 ? CGameInfo::GetConfiguredDifficulty()
                                                            : CGameInfo::GetGameModeOptionBits20To22() - 1]);
-    g_unk0x00537f3c[player] = Replay_LoadValidatedBuffer(CFrontend::m_stringDest);
-    return g_unk0x00537f3c[player] != NULL;
+    g_playerReplayStreams[player] = Replay_LoadValidatedBuffer(CFrontend::m_stringDest);
+    return g_playerReplayStreams[player] != NULL;
 }
 
 // Sets up the replay buffers of a race: recording buffers for network games,
@@ -263,26 +262,26 @@ void Replay_InitRaceSlots(void)
     else
         headToHead = 0;
     for (i = 0; i < 8; i++)
-        g_unk0x00537f3c[i] = NULL;
+        g_playerReplayStreams[i] = NULL;
     if (CGameInfo::GetGameModeOptionBit19()) {
-        g_unk0x00537f3c[0] = Replay_AllocateStreamBuffer(1, 0x1d4c, 2);
+        g_playerReplayStreams[0] = Replay_AllocateStreamBuffer(1, 0x1d4c, 2);
         for (i = 0; i < 7; i++) {
-            g_unk0x00537f3c[i + 1] = NULL;
+            g_playerReplayStreams[i + 1] = NULL;
             if ((char)NetPlayers_IsPlayerPresent(i) && CGameInfo::GetConfiguredGameMode() != 10)
-                g_unk0x00537f3c[i + 1] = Replay_AllocateStreamBuffer(1, 0x1d4c, 2);
+                g_playerReplayStreams[i + 1] = Replay_AllocateStreamBuffer(1, 0x1d4c, 2);
         }
         return;
     }
     if ((char)RallyData_IsChampionshipFinalStage()) {
         sprintf(CFrontend::m_stringDest, g_strChampEndRun, Race_GetStagePathBuffer3823C());
-        g_unk0x00537f3c[0] = Replay_LoadValidatedBuffer(CFrontend::m_stringDest);
+        g_playerReplayStreams[0] = Replay_LoadValidatedBuffer(CFrontend::m_stringDest);
         return;
     }
     if ((char)RallyData_GetSelectionFlag28() == 0) {
         for (i = 0; i < 2; i++) {
             if ((char)RallyData_GetFlag25() && CGameInfo::GetGameModeOptionBit19() == 0 && CGameInfo::IsConfiguredMultiplayer()) {
                 if (i == 0) {
-                    g_unk0x00537f3c[0] = Replay_AllocateStreamBuffer(1, 0x186a, 0);
+                    g_playerReplayStreams[0] = Replay_AllocateStreamBuffer(1, 0x186a, 0);
                 } else {
                     flag = Stage_GetPrimaryStartDriver() == 0;
                     sprintf(CFrontend::m_stringDest, g_strCpuRun, Race_GetStagePathBuffer3823C(),
@@ -290,7 +289,7 @@ void Replay_InitRaceSlots(void)
                             flag,
                             g_cpuRunLevels2[CGameInfo::GetConfiguredGameMode() != 4 ? CGameInfo::GetConfiguredDifficulty()
                                                                            : CGameInfo::GetGameModeOptionBits20To22() - 1]);
-                    g_unk0x00537f3c[1] = Replay_LoadValidatedBuffer(CFrontend::m_stringDest);
+                    g_playerReplayStreams[1] = Replay_LoadValidatedBuffer(CFrontend::m_stringDest);
                     if (i == 1)
                         return;
                 }
@@ -309,13 +308,13 @@ void Replay_InitRaceSlots(void)
             continue;
         if ((char)RallyData_GetSelectionFlag28()) {
             if (count == 1)
-                g_unk0x00537f3c[i] = Replay_AllocateStreamBuffer(1, 0x1d4c, 0);
+                g_playerReplayStreams[i] = Replay_AllocateStreamBuffer(1, 0x1d4c, 0);
             else
-                g_unk0x00537f3c[i] = Replay_AllocateStreamBuffer(1, 0x186a, 0);
+                g_playerReplayStreams[i] = Replay_AllocateStreamBuffer(1, 0x186a, 0);
         } else if (count == 1 && headToHead == 0) {
-            g_unk0x00537f3c[i] = Replay_AllocateStreamBuffer(1, 0x1d4c, 0);
+            g_playerReplayStreams[i] = Replay_AllocateStreamBuffer(1, 0x1d4c, 0);
         } else {
-            g_unk0x00537f3c[i] = Replay_AllocateStreamBuffer(1, 0x186a, 0);
+            g_playerReplayStreams[i] = Replay_AllocateStreamBuffer(1, 0x186a, 0);
         }
     }
     if ((char)RallyData_GetSelectionFlag28() && (char)CGameInfo::GetSoundOptionBit30()) {
@@ -332,7 +331,7 @@ void Replay_LoadSelectedRun(void)
     int i;
 
     for (i = 0; i < 8; i++)
-        g_unk0x00537f3c[i] = 0;
+        g_playerReplayStreams[i] = 0;
     if (CGameInfo::GetGraphicsOptionBits27To28() == 0) {
         sprintf(CFrontend::m_stringDest, g_str0x005192dc, Race_GetStagePathBuffer3874C());
     } else {
@@ -341,7 +340,7 @@ void Replay_LoadSelectedRun(void)
     if (CGameInfo::GetConfiguredGameMode() != 5 && CGameInfo::GetConfiguredGameMode() != 6 &&
         CGameInfo::GetConfiguredGameMode() != 7 && CGameInfo::GetConfiguredGameMode() != 0xb &&
         CGameInfo::GetConfiguredGameMode() != 0xc) {
-        g_unk0x00537f3c[0] = (BYTE *)Replay_LoadValidatedBuffer(CFrontend::m_stringDest);
+        g_playerReplayStreams[0] = (BYTE *)Replay_LoadValidatedBuffer(CFrontend::m_stringDest);
         g_unk0x00538110 = 1;
     }
 }
@@ -400,7 +399,7 @@ void Race_SetFlag3810D(void)
 // FUNCTION: CMR2 0x0041f350
 ReplayStream *Race_GetPlayerRecordPointer(int index)
 {
-    return (ReplayStream *)g_unk0x00537f3c[index];
+    return (ReplayStream *)g_playerReplayStreams[index];
 }
 
 // FUNCTION: CMR2 0x0041f360
@@ -438,16 +437,16 @@ int Race_IsMultiplayerRecordMode10(void)
 // FUNCTION: CMR2 0x0041f3d0
 int Race_GetPlayerRecordField4(BYTE index)
 {
-    if (g_unk0x00537f3c[index] != NULL)
-        return ((ReplayStream *)g_unk0x00537f3c[index])->playing;
+    if (g_playerReplayStreams[index] != NULL)
+        return ((ReplayStream *)g_playerReplayStreams[index])->playing;
     return 0;
 }
 
 // FUNCTION: CMR2 0x0041f3f0
 int Race_GetPlayerRecordFieldC(BYTE index)
 {
-    if (g_unk0x00537f3c[index] != NULL)
-        return ((ReplayStream *)g_unk0x00537f3c[index])->recording;
+    if (g_playerReplayStreams[index] != NULL)
+        return ((ReplayStream *)g_playerReplayStreams[index])->recording;
     return 0;
 }
 
@@ -654,7 +653,7 @@ BYTE *GameMenu_GetChampionshipTransitionState(void);
 int Graphics_ReserveCubeMapsAndLoadEnvironment(char *name, int count, GenericFile *pFile, DWORD size);
 void StageTiming_InitRaceDriverRecords(char);
 void Scene_InitLighting(int *pData, int *pHeights);
-struct StageLightPreset;
+#include "StageWeather.h"
 void StageObject_SetLighting(const StageLightPreset *pPrimary, const StageLightPreset *pSecondary);
 void RallyData_DrawLoadingProgress(int progress, char drawScene, BYTE alpha);
 void Race_ResolveStageTexturesAndPalettes(void);
@@ -683,8 +682,8 @@ void StageObject_ForwardSessionUpdate(void);
 void RallyData_RebuildSectorStaticObjectTables(void);
 void NetRace_ResetPlayerFadeStates(void);
 extern char g_tgaSuffix[];
-extern BYTE *g_stageLightPresetSecondary;
-extern BYTE *g_stageLightPresetPrimary;
+extern StageLightPreset *g_stageLightPresetSecondary;
+extern StageLightPreset *g_stageLightPresetPrimary;
 
 // GLOBAL: CMR2 0x0051946c
 char g_str0x0051946c[] = "%s.xhi";
@@ -766,7 +765,7 @@ BYTE Race_LoadSelectedStage(void)
     StageTiming_InitRaceDriverRecords(1);
     StageObject_ForwardSessionUpdate();
     RallyData_DrawLoadingProgress(0x3c, 1, 0xff);
-    StageObject_SetLighting((const StageLightPreset *)g_stageLightPresetPrimary, (const StageLightPreset *)g_stageLightPresetSecondary);
+    StageObject_SetLighting(g_stageLightPresetPrimary, g_stageLightPresetSecondary);
     RallyData_RebuildSectorStaticObjectTables();
     NetRace_ResetPlayerFadeStates();
     return 1;
@@ -775,7 +774,7 @@ BYTE Race_LoadSelectedStage(void)
 // FUNCTION: CMR2 0x00420120
 int Race_GetResourceState(void)
 {
-    return g_unk0x00538970;
+    return g_raceResourceState;
 }
 
 void Race_SetResourceStateAndCallbackMark(int value);
@@ -982,9 +981,9 @@ void Race_ResetPlayerCallState(void)
 }
 
 int InRaceMenu_IsPlayerEditingCarSetup(unsigned int param1);
-BYTE *RallyData_GetDriverKnockoutOrTeamRecord(BYTE index);
+BYTE *RallyData_GetDriverHudFlags(BYTE index);
 extern int g_unk0x00537350;
-extern int g_unk0x0053735c;
+extern int g_coDriverFirstSample;
 void StageUI_DrawStageGrid(int unused, int set);
 void Race_AssignSlotsFromCallRecord(unsigned int id);
 int Race_DecodeCallSlotIcon(unsigned int id, Texture **pOut, SpriteRect *pRect, unsigned int *pFlag, BYTE *pColour);
@@ -1078,7 +1077,7 @@ void Race_DrawPlayerCallSlots(unsigned int player, int *pViewRect)
     }
 
     if (iVar == 0) {
-        pState = RallyData_GetDriverKnockoutOrTeamRecord(StageUI_GetRaceEndEventCount() + player);
+        pState = RallyData_GetDriverHudFlags(StageUI_GetRaceEndEventCount() + player);
         if ((*pState & 3) == 1)
             extra = 0x10;
     }
@@ -1137,7 +1136,7 @@ void Race_DrawPlayerCallSlots(unsigned int player, int *pViewRect)
         if (iVar != 0)
             goto next;
 
-        pState = RallyData_GetDriverKnockoutOrTeamRecord(StageUI_GetRaceEndEventCount() + player);
+        pState = RallyData_GetDriverHudFlags(StageUI_GetRaceEndEventCount() + player);
         if ((*pState & 3) == 2)
             goto next;
 
@@ -1273,7 +1272,7 @@ void Race_DrawPlayerMessage(char *pText, int *pColour, int player, int shadow, i
     }
     textY = pos + ((int)g_pGraphics->resY << 14 >> 16);
     if (race == 0) {
-        pState = RallyData_GetDriverKnockoutOrTeamRecord(StageUI_GetRaceEndEventCount() + player);
+        pState = RallyData_GetDriverHudFlags(StageUI_GetRaceEndEventCount() + player);
         if ((*pState & 3) == 1)
             textY = ((int)g_pGraphics->resY << 14 >> 16) + pos + 0x10;
     }
@@ -1330,101 +1329,101 @@ void Race_AssignSlotsFromCallRecord(unsigned int id)
             f7 == 0 && f8 == 0 && f1 == 0)
             return;
     } else if (f10 == 9) {
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x37);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x37);
     }
 
     switch (f11) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0xe);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0xe);
         break;
     case 2:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0xf);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0xf);
         break;
     case 3:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x10);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x10);
         break;
     case 4:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x11);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x11);
         break;
     case 5:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x12);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x12);
         break;
     case 6:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x13);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x13);
         break;
     case 7:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x14);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x14);
         break;
     case 8:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x15);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x15);
         break;
     case 9:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x16);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x16);
         break;
     case 10:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x16);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x16);
         break;
     case 11:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x16);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x16);
         break;
     case 12:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x16);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x16);
         break;
     case 13:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x16);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x16);
         break;
     case 14:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x16);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x16);
         break;
     }
 
 
     switch (f12) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x1a);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x1a);
         break;
     case 2:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x1b);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x1b);
         break;
     }
     switch (f9) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 10);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 10);
         break;
     case 2:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x1c);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x1c);
         break;
     }
     switch (f17) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x1d);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x1d);
         break;
     }
 
     switch (f10) {
     case 6:
-        Race_AssignUnusedSlot(g_unk0x0053735c);
+        Race_AssignUnusedSlot(g_coDriverFirstSample);
         break;
     case 5:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x1);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x1);
         break;
     case 4:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x2);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x2);
         break;
     case 3:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x3);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x3);
         break;
     case 2:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x4);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x4);
         break;
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x5);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x5);
         break;
     case 8:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x7);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x7);
         break;
     case 7:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x6);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x6);
         break;
     }
 
@@ -1432,122 +1431,122 @@ void Race_AssignSlotsFromCallRecord(unsigned int id)
     switch (f3) {
     case 1:
         if (CGameInfo::IsActiveCheatEnabled(2) != 0)
-            Race_AssignUnusedSlot(g_unk0x0053735c + 9);
+            Race_AssignUnusedSlot(g_coDriverFirstSample + 9);
         else
-            Race_AssignUnusedSlot(g_unk0x0053735c + 8);
+            Race_AssignUnusedSlot(g_coDriverFirstSample + 8);
         break;
     case 2:
         if (CGameInfo::IsActiveCheatEnabled(2) != 0)
-            Race_AssignUnusedSlot(g_unk0x0053735c + 8);
+            Race_AssignUnusedSlot(g_coDriverFirstSample + 8);
         else
-            Race_AssignUnusedSlot(g_unk0x0053735c + 9);
+            Race_AssignUnusedSlot(g_coDriverFirstSample + 9);
         break;
     }
 
     switch (f4) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0xc);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0xc);
         break;
     case 2:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0xb);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0xb);
         break;
     case 3:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x1e);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x1e);
         break;
     }
     switch (f5) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x17);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x17);
         break;
     case 2:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x1f);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x1f);
         break;
     }
 
     switch (f6) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x19);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x19);
         break;
     case 14:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x36);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x36);
         break;
     case 2:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x18);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x18);
         break;
     case 15:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x20);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x20);
         break;
     case 6:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x21);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x21);
         break;
     case 3:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x22);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x22);
         break;
     case 4:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x23);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x23);
         break;
     case 5:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x24);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x24);
         break;
     case 7:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x25);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x25);
         break;
     case 8:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x26);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x26);
         break;
     case 9:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x27);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x27);
         break;
     case 10:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x28);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x28);
         break;
     case 11:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x29);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x29);
         break;
     case 12:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x2a);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x2a);
         break;
     case 13:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x2b);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x2b);
         break;
     }
 
 
     switch (f7) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x2c);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x2c);
         break;
     case 2:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x2d);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x2d);
         break;
     }
     switch (f8) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x2e);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x2e);
         break;
     }
 
     switch (f1) {
     case 1:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x2f);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x2f);
         return;
     case 2:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x30);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x30);
         return;
     case 3:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x31);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x31);
         return;
     case 4:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x32);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x32);
         return;
     case 5:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x33);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x33);
         return;
     case 6:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x34);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x34);
         return;
     case 7:
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0x35);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0x35);
     }
 }
 
@@ -1580,13 +1579,13 @@ int Race_ReleaseCoDriverCallData(void)
 // FUNCTION: CMR2 0x00418560
 void Race_SetCoDriverCallState(int value)
 {
-    g_unk0x00537194 = value;
+    g_coDriverCallState = value;
 }
 
 // FUNCTION: CMR2 0x00418570
 int Race_GetCoDriverCallState(void)
 {
-    return g_unk0x00537194;
+    return g_coDriverCallState;
 }
 
 extern SpriteRect *g_pArrowRects;
@@ -1707,7 +1706,7 @@ unsigned int g_stageSoundCount;
 // GLOBAL: CMR2 0x005375d4
 BYTE g_stageSoundUsed[0x1f];
 // GLOBAL: CMR2 0x005375f4
-BYTE g_unk0x005375f4[8];
+BYTE g_carSoundViewSet[8];
 // GLOBAL: CMR2 0x005375fc
 int g_surfacePrevA[8];
 // GLOBAL: CMR2 0x0053761c
@@ -1719,7 +1718,7 @@ int g_surfaceVolC[8];
 // GLOBAL: CMR2 0x00537660
 int g_unk0x00537660;
 // GLOBAL: CMR2 0x00537664
-int g_unk0x00537664;
+int g_carSoundVolumeScale;
 // GLOBAL: CMR2 0x00537668
 int g_surfaceVolD[8];
 // GLOBAL: CMR2 0x00537788
@@ -1745,7 +1744,7 @@ void CarSound_PlaySlot(int param1, int param2, int param3, int param4, int param
     else
         g_carSoundSets[param1].handle[index] = Sound_PlaySampleWithParameters(param2, param4, 0x5622, 0, 1, 0);
     g_carSoundSets[param1].pitch[index] = rand() % 0x19 + 0x32 + StageObject_GetCarSoundElapsedTime(param1);
-    g_carSoundSets[param1].surface[param3] = g_unk0x005375f4[param1];
+    g_carSoundSets[param1].surface[param3] = g_carSoundViewSet[param1];
     g_carSoundSets[param1].id[index] = param2;
 }
 
@@ -1785,9 +1784,9 @@ BYTE NetRace_GetRaceSoundMode(void);
 // sound state change, stopping the ones that don't carry over.
 // match 50%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)
 // FUNCTION: CMR2 0x00419b90
-void Race_MoveCarSoundBank(int car, BYTE *pInfo)
+void Race_MoveCarSoundBank(int car, RaceCarSoundState *pInfo)
 {
-    switch (*(int *)(pInfo + 0xa8)) {
+    switch (pInfo->pattern) {
     case 6:
     case 0x15:
         if (!NetRace_GetRaceSoundMode())
@@ -1867,39 +1866,39 @@ void Race_RerollCarSoundSlotsByPitch(int car, int unused)
             continue;
         switch (i) {
         case 4:
-            if (pPattern->choices[g_unk0x005375f4[car]] > 1 && pState->pattern == 0x19) {
+            if (pPattern->choices[g_carSoundViewSet[car]] > 1 && pState->pattern == 0x19) {
                 old = Sound_GetVolume(pState->handle[i]);
                 CarSound_StopSlot(car, i, 0);
                 CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(g_carSoundIds[car * 45 + i],
-                                               pPattern->choices[g_unk0x005375f4[car]]) +
-                                  pPattern->base[g_unk0x005375f4[car]], i, old, 0);
+                                               pPattern->choices[g_carSoundViewSet[car]]) +
+                                  pPattern->base[g_carSoundViewSet[car]], i, old, 0);
             }
             break;
         case 5:
-            if (pPattern->choices[g_unk0x005375f4[car]] > 1) {
+            if (pPattern->choices[g_carSoundViewSet[car]] > 1) {
                 old = Sound_GetVolume(pState->handle[i]);
                 CarSound_StopSlot(car, i, 0);
                 CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(g_carSoundIds[car * 45 + i],
-                                               pPattern->choices[g_unk0x005375f4[car]]) +
-                                  pPattern->base[g_unk0x005375f4[car]], i, old, 0);
+                                               pPattern->choices[g_carSoundViewSet[car]]) +
+                                  pPattern->base[g_carSoundViewSet[car]], i, old, 0);
             }
             break;
         case 7:
-            if (pPattern->choices[g_unk0x005375f4[car] + 2] > 1) {
+            if (pPattern->choices[g_carSoundViewSet[car] + 2] > 1) {
                 old = Sound_GetVolume(pState->handle[i]);
                 CarSound_StopSlot(car, i, 0);
                 CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(g_carSoundIds[car * 45 + i],
-                                               pPattern->choices[g_unk0x005375f4[car] + 2]) +
-                                  pPattern->base[g_unk0x005375f4[car] + 2], i, old, 0);
+                                               pPattern->choices[g_carSoundViewSet[car] + 2]) +
+                                  pPattern->base[g_carSoundViewSet[car] + 2], i, old, 0);
             }
             break;
         case 6:
-            if (pPattern->choices[g_unk0x005375f4[car] + 2] > 1 && pState->pattern == 0x19) {
+            if (pPattern->choices[g_carSoundViewSet[car] + 2] > 1 && pState->pattern == 0x19) {
                 old = Sound_GetVolume(pState->handle[i]);
                 CarSound_StopSlot(car, i, 0);
                 CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(g_carSoundIds[car * 45 + i],
-                                               pPattern->choices[g_unk0x005375f4[car] + 2]) +
-                                  pPattern->base[g_unk0x005375f4[car] + 2], i, old, 0);
+                                               pPattern->choices[g_carSoundViewSet[car] + 2]) +
+                                  pPattern->base[g_carSoundViewSet[car] + 2], i, old, 0);
             }
             break;
         }
@@ -1925,36 +1924,36 @@ void Race_RestartChangedSurfaceSounds(int car, int unused)
             continue;
         if (Sound_IsPlaying(pState->handle[i]) == 0)
             continue;
-        if (pState->surface[i] == g_unk0x005375f4[car])
+        if (pState->surface[i] == g_carSoundViewSet[car])
             continue;
         switch (i) {
         case 4:
             if (pState->pattern == 0x19 && pState->state != 0x19) {
                 old = Sound_GetVolume(pState->handle[i]);
                 CarSound_StopSlot(car, i, 1);
-                CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(-1, pPattern->choices[g_unk0x005375f4[car]]) +
-                                  pPattern->base[g_unk0x005375f4[car]], i, old, 0);
+                CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(-1, pPattern->choices[g_carSoundViewSet[car]]) +
+                                  pPattern->base[g_carSoundViewSet[car]], i, old, 0);
             }
             break;
         case 5:
             old = Sound_GetVolume(pState->handle[i]);
             CarSound_StopSlot(car, i, 1);
-            CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(-1, pPattern->choices[g_unk0x005375f4[car]]) +
-                              pPattern->base[g_unk0x005375f4[car]], i, old, 0);
+            CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(-1, pPattern->choices[g_carSoundViewSet[car]]) +
+                              pPattern->base[g_carSoundViewSet[car]], i, old, 0);
             break;
         case 6:
             if (pState->pattern == 0x19) {
                 old = Sound_GetVolume(pState->handle[i]);
                 CarSound_StopSlot(car, i, 1);
-                CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(-1, pPattern->choices[g_unk0x005375f4[car] + 2]) +
-                                  pPattern->base[g_unk0x005375f4[car] + 2], i, old, 0);
+                CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(-1, pPattern->choices[g_carSoundViewSet[car] + 2]) +
+                                  pPattern->base[g_carSoundViewSet[car] + 2], i, old, 0);
             }
             break;
         case 7:
             old = Sound_GetVolume(pState->handle[i]);
             CarSound_StopSlot(car, i, 1);
-            CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(-1, pPattern->choices[g_unk0x005375f4[car] + 2]) +
-                              pPattern->base[g_unk0x005375f4[car] + 2], i, old, 0);
+            CarSound_PlaySlot(car, CarSound_PickDifferentSampleIndex(-1, pPattern->choices[g_carSoundViewSet[car] + 2]) +
+                              pPattern->base[g_carSoundViewSet[car] + 2], i, old, 0);
             break;
         }
     }
@@ -1966,7 +1965,7 @@ void Race_RestartChangedSurfaceSounds(int car, int unused)
 // FUNCTION: CMR2 0x0041a0a0
 void Race_UpdateIndependentEngineSound(int car, int param2)
 {
-    BYTE *pRow = (BYTE *)g_carSoundStates + car * 0xb4;
+    RaceCarSoundState *pRow = &g_carSoundStates[car];
     int volume;
     int engSpeed;
     int speedVol;
@@ -1977,10 +1976,10 @@ void Race_UpdateIndependentEngineSound(int car, int param2)
         volume = FixMul(StageObject_GetViewWeatherField54(car), 0x13333);
     else
         volume = 0;
-    if (g_unk0x005375f4[car] == 0) {
+    if (g_carSoundViewSet[car] == 0) {
         if (volume > 0x10000)
             volume = 0x10000;
-        if (Sound_IsPlaying(*(int *)(pRow + 0x40)))
+        if (Sound_IsPlaying(pRow->handle[9]))
             CarSound_StopSlot(car, 9, 1);
         if (engSpeed < 0)
             speedVol = 0;
@@ -1997,23 +1996,23 @@ void Race_UpdateIndependentEngineSound(int car, int param2)
         else
             engSpeed = engSpeed * 11000 / 100;
         engSpeed += 0x5622;
-        if (!Sound_IsPlaying(*(int *)(pRow + 0x3c)))
+        if (!Sound_IsPlaying(pRow->handle[8]))
             CarSound_PlaySlot(car, g_unk0x00537564, 8,
-                         FixMul(NetRace_GetListenerDistanceAttenuation(car, param2), FixMul(g_unk0x00537664, volume)), 0);
-        Sound_SetPlayingSlotVolume(*(int *)(pRow + 0x3c),
-                     FixMul(NetRace_GetListenerDistanceAttenuation(car, param2), FixMul(g_unk0x00537664, volume)));
-        Sound_SetPan(*(int *)(pRow + 0x3c), engSpeed);
+                         FixMul(NetRace_GetListenerDistanceAttenuation(car, param2), FixMul(g_carSoundVolumeScale, volume)), 0);
+        Sound_SetPlayingSlotVolume(pRow->handle[8],
+                     FixMul(NetRace_GetListenerDistanceAttenuation(car, param2), FixMul(g_carSoundVolumeScale, volume)));
+        Sound_SetPan(pRow->handle[8], engSpeed);
     } else {
         if (volume > 0x10000)
             volume = 0x10000;
-        if (Sound_IsPlaying(*(int *)(pRow + 0x3c)))
+        if (Sound_IsPlaying(pRow->handle[8]))
             CarSound_StopSlot(car, 8, 1);
-        if (!Sound_IsPlaying(*(int *)(pRow + 0x40)))
+        if (!Sound_IsPlaying(pRow->handle[9]))
             CarSound_PlaySlot(car, g_unk0x00537dc8, 9,
-                         FixMul(NetRace_GetListenerDistanceAttenuation(car, param2), FixMul(g_unk0x00537664, volume)), 0);
+                         FixMul(NetRace_GetListenerDistanceAttenuation(car, param2), FixMul(g_carSoundVolumeScale, volume)), 0);
         volume = FixMul(volume, speedVol);
-        Sound_SetPlayingSlotVolume(*(int *)(pRow + 0x40),
-                     FixMul(NetRace_GetListenerDistanceAttenuation(car, param2), FixMul(g_unk0x00537664, volume)));
+        Sound_SetPlayingSlotVolume(pRow->handle[9],
+                     FixMul(NetRace_GetListenerDistanceAttenuation(car, param2), FixMul(g_carSoundVolumeScale, volume)));
     }
 }
 
@@ -2023,8 +2022,7 @@ void Race_UpdateIndependentEngineSound(int car, int param2)
 // FUNCTION: CMR2 0x0041a340
 void Race_UpdateCarSurfaceSoundState(int car, int unused)
 {
-    int offset = car * 0xb4;
-    RaceCarSoundState *pState = (RaceCarSoundState *)((BYTE *)g_carSoundStates + offset);
+    RaceCarSoundState *pState = &g_carSoundStates[car];
     Car *pCar;
     short value;
     short v;
@@ -2103,47 +2101,47 @@ void Race_UpdateCarSurfaceSoundState(int car, int unused)
         newCount = g_stageSoundPatterns[g_stageSoundPatterns[chosen].redirect].count;
     if (pState->countOld != newCount || pState->stateOld != chosen) {
         if (pState->pattern != 0x19)
-            Race_MoveCarSoundBank(car, (BYTE *)pState);
+            Race_MoveCarSoundBank(car, pState);
         pState->state = (short)chosen;
         pState->count = newCount;
         pState->time = StageObject_GetCarSoundElapsedTime(car);
-        pState->pattern = *(int *)((BYTE *)g_carSoundStates + 0xa0 + offset) + pState->countOld * 5;
-        StageUI_ApplySoundState(car, (BYTE *)pState);
+        pState->pattern = g_carSoundStates[car].count + pState->countOld * 5;
+        StageUI_ApplySoundState(car, pState);
         pState->countOld = pState->count;
         pState->stateOld = pState->state;
     }
     if (pState->pattern != 0x19 && (unsigned int)(StageObject_GetCarSoundElapsedTime(car) - pState->time) > 0x32) {
-        Race_MoveCarSoundBank(car, (BYTE *)pState);
+        Race_MoveCarSoundBank(car, pState);
         pState->pattern = 0x19;
     }
 }
 
-// Switches car's engine sound between its two samples of stage sound group 25
-// as the rolling direction speed (0x79c) changes sign.
-// match 54%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)
+// While the car's stage sound state is group 25, switches its slot-4 sound
+// between the group's throttle sample and the coasting one as the throttle
+// torque turns positive or not (RaceCarSoundState::throttleSample).
 // FUNCTION: CMR2 0x0041ae80
-void Race_SwitchEngineSampleByRollingDirection(int car, int unused)
+void Race_SwitchEngineSampleByThrottle(int car, int unused)
 {
-    BYTE *pSet = (BYTE *)g_carSoundStates + car * 0xb4;
-    int *pHandle = (int *)(pSet + 0x2c);
+    RaceCarSoundState *pSet = &g_carSoundStates[car];
+    int *pHandle = &pSet->handle[4];
 
-    if (*(short *)(pSet + 0x18) == 0x19) {
+    if (pSet->state == 0x19) {
         if (Car_Get(car)->throttleTorque > 0) {
-            if (pSet[0xb0] == 0) {
+            if (pSet->throttleSample == 0) {
                 if (Sound_IsPlaying(*pHandle)) {
                     Sound_Free(*pHandle);
                     *pHandle = -1;
                 }
-                CarSound_PlaySlot(car, g_stageSoundPatterns[25].base[g_unk0x005375f4[car]], 4, 0, 0);
-                pSet[0xb0] = 1;
+                CarSound_PlaySlot(car, g_stageSoundPatterns[25].base[g_carSoundViewSet[car]], 4, 0, 0);
+                pSet->throttleSample = 1;
             }
-        } else if (pSet[0xb0] != 0) {
+        } else if (pSet->throttleSample != 0) {
             if (Sound_IsPlaying(*pHandle)) {
                 Sound_Free(*pHandle);
                 *pHandle = -1;
             }
-            CarSound_PlaySlot(car, g_stageSoundPatterns[25].base[g_unk0x005375f4[car]] + 1, 4, 0, 0x3542);
-            pSet[0xb0] = 0;
+            CarSound_PlaySlot(car, g_stageSoundPatterns[25].base[g_carSoundViewSet[car]] + 1, 4, 0, 0x3542);
+            pSet->throttleSample = 0;
         }
     }
 }
@@ -2163,13 +2161,13 @@ void Race_MarkUsedSurfaceSoundGroups(BYTE *pSurfaces, unsigned int count)
 // FUNCTION: CMR2 0x0041b040
 void Race_SetSurfaceSoundScale(int value)
 {
-    g_unk0x00537664 = FixMul(value, 0x10000);
+    g_carSoundVolumeScale = FixMul(value, 0x10000);
 }
 
 // FUNCTION: CMR2 0x0041bf50
 int Race_ReadPlayerState37F68(int index)
 {
-    return g_unk0x00537f68[index];
+    return g_playerEventAwardFlags[index];
 }
 
 // FUNCTION: CMR2 0x0041bf60
@@ -2412,7 +2410,7 @@ void Race_LeaveAndFadeOut(CallbackStateMachine *param1, char param2)
     if (g_unk0x00538110 != 0) {
         g_unk0x00538110 = 0;
         g_unk0x00538114 = 1;
-        Replay_SelectAndInitializeLane((ReplayStream *)g_unk0x00537f3c[0], 0, 0, 0);
+        Replay_SelectAndInitializeLane((ReplayStream *)g_playerReplayStreams[0], 0, 0, 0);
     }
     if (CGameInfo::GetConfiguredGameMode() == 6)
         Car_SetDrawnFlag(0, -1);
@@ -2489,7 +2487,7 @@ extern BYTE g_unk0x0053811d;
 extern BYTE g_unk0x0053811e;
 extern BYTE g_unk0x00538120;
 
-void NetRace_SendType7Notification(void);
+void NetRace_SendReady(void);
 void StageObject_StartCarSoundTimer(int index);
 void StageObject_ResetCarSoundElapsedTime(int index);
 int StageObject_GetCarSoundElapsedTime(int index);
@@ -2527,7 +2525,7 @@ void Race_UpdateDriverPreRaceScene(CallbackStateMachine *param1, unsigned int pa
     g_unk0x0053811e = 0;
     g_unk0x0053811d = 0;
     if (g_unk0x00537fd4 == 0) {
-        NetRace_SendType7Notification();
+        NetRace_SendReady();
         g_unk0x00537fd4 = 1;
     }
     index = param2 & 0xff;
@@ -2624,19 +2622,19 @@ big:
             StageTiming_SetStartSelectionIndex(*RallyData_GetChampionshipState() >> 12 & 0xf);
     }
     if (CGameInfo::GetGameModeOptionBit19() != 0) {
-        Replay_InitCarStreamState((ReplayStream *)g_unk0x00537f3c[0], 0, 0);
+        Replay_InitCarStreamState((ReplayStream *)g_playerReplayStreams[0], 0, 0);
         i = 0;
-        p = g_unk0x00537f3c + 1;
+        p = g_playerReplayStreams + 1;
         do {
             if ((char)NetPlayers_IsPlayerPresent(i) != 0)
                 Replay_InitCarStreamState((ReplayStream *)*p, 0, NetPlayers_GetPlayerField8(i));
             p++;
             i++;
-        } while ((INT_PTR)p < (INT_PTR)(g_unk0x00537f3c + 8)); // 0x537f5c in the original
+        } while ((INT_PTR)p < (INT_PTR)(g_playerReplayStreams + 8)); // 0x537f5c in the original
     } else if ((BYTE)RallyDataState() == 1 && (char)RallyData_GetFlag25() != 0) {
         if (CGameInfo::GetConfiguredGameMode() == 4) {
             i = 0;
-            p = g_unk0x00537f3c;
+            p = g_playerReplayStreams;
             do {
                 if ((char)Car_GetDrawnFlag(i) == -1) {
                     Replay_ResetBufferIfActive((ReplayStream *)*p);
@@ -2646,26 +2644,26 @@ big:
                 }
                 p++;
                 i++;
-            } while ((INT_PTR)p < (INT_PTR)&g_unk0x00537f3c[2]);
+            } while ((INT_PTR)p < (INT_PTR)&g_playerReplayStreams[2]);
         } else if ((char)RallyData_GetFlag25() != 0) {
             for (i = 0; i < ((char)RallyData_GetSelectionFlag28() != 0 ? 1 : 2); i++) {
                 if (CGameInfo::IsConfiguredMultiplayer() != 0) {
                     if (i == 0) {
-                        Replay_InitCarStreamState((ReplayStream *)g_unk0x00537f3c[i], 0, param2);
+                        Replay_InitCarStreamState((ReplayStream *)g_playerReplayStreams[i], 0, param2);
                     } else {
-                        Replay_ResetBufferIfActive((ReplayStream *)g_unk0x00537f3c[1]);
-                        Replay_SelectAndInitializeLane((ReplayStream *)g_unk0x00537f3c[1], 0, 0, i);
+                        Replay_ResetBufferIfActive((ReplayStream *)g_playerReplayStreams[1]);
+                        Replay_SelectAndInitializeLane((ReplayStream *)g_playerReplayStreams[1], 0, 0, i);
                     }
                 } else if ((char)RallyData_GetUsableRecordCategory(i) != -1) {
-                    Replay_ResetBufferIfActive((ReplayStream *)g_unk0x00537f3c[i]);
-                    Replay_SelectAndInitializeLane((ReplayStream *)g_unk0x00537f3c[i], 0, 0, i);
+                    Replay_ResetBufferIfActive((ReplayStream *)g_playerReplayStreams[i]);
+                    Replay_SelectAndInitializeLane((ReplayStream *)g_playerReplayStreams[i], 0, 0, i);
                 } else {
-                    Replay_InitCarStreamState((ReplayStream *)g_unk0x00537f3c[i], 0, param2);
+                    Replay_InitCarStreamState((ReplayStream *)g_playerReplayStreams[i], 0, param2);
                 }
             }
         }
     } else {
-        Replay_InitCarStreamState((ReplayStream *)g_unk0x00537f3c[index], 0, param2);
+        Replay_InitCarStreamState((ReplayStream *)g_playerReplayStreams[index], 0, param2);
     }
     if ((char)RallyData_GetSelectionFlag28() != 0 && (char)CGameInfo::GetSoundOptionBit30() != 0) {
         Replay_ResetActiveBufferState();
@@ -2868,14 +2866,14 @@ void Race_UpdateDriverReadyAndRecordState(CallbackStateMachine *param1, unsigned
         g_unk0x00537fd8[index] = 1;
         g_unk0x00537fcc = g_unk0x00537fcc + 1;
         if (CGameInfo::GetGameModeOptionBit19() != 0) {
-            Replay_StopRecording(g_unk0x00537f3c[0]);
-            pp = g_unk0x00537f3c + 1;
+            Replay_StopRecording(g_playerReplayStreams[0]);
+            pp = g_playerReplayStreams + 1;
             do {
                 Replay_StopRecording(*pp);
                 pp++;
-            } while ((INT_PTR)pp < (INT_PTR)(g_unk0x00537f3c + 8)); // 0x537f5c in the original
+            } while ((INT_PTR)pp < (INT_PTR)(g_playerReplayStreams + 8)); // 0x537f5c in the original
         } else {
-            Replay_StopRecording(g_unk0x00537f3c[index]);
+            Replay_StopRecording(g_playerReplayStreams[index]);
         }
         flag = (CGameInfo::GetGraphicsOptionBits27To28() == 0);
         if (CGameInfo::GetConfiguredGameMode() == 3 && g_unk0x00537ff8[index] == 0) {
@@ -2894,8 +2892,8 @@ void Race_UpdateDriverReadyAndRecordState(CallbackStateMachine *param1, unsigned
                 g_unk0x00519228 = RallyDataStageIndex() & 0xff;
                 g_unk0x0051922c = RallyDataCountryIndex() & 0xff;
                 sprintf(CFrontend::m_stringDest, g_strGrp0x005192b0, Race_GetStagePathBuffer38444());
-                if (g_unk0x00537f3c[index] != 0)
-                    Replay_Save(g_unk0x00537f3c[index], CFrontend::m_stringDest);
+                if (g_playerReplayStreams[index] != 0)
+                    Replay_Save(g_playerReplayStreams[index], CFrontend::m_stringDest);
             }
             g_unk0x00537ff8[index] = 1;
         }
@@ -2965,7 +2963,7 @@ label2:
         goto label4;
     if ((BYTE)CGameInfo::GetActiveCheatMask() != 0) {
         for (i = 0; i < (BYTE)CGameInfo::GetConfiguredPlayerCount(); i++) {
-            g_unk0x00537f68[i] = 0;
+            g_playerEventAwardFlags[i] = 0;
             g_unk0x00537f78[i] = 0;
         }
     } else {
@@ -3019,25 +3017,25 @@ void Race_StartPlayerAndOpponentReplays(int player)
 {
     int i;
 
-    Replay_SelectAndInitializeLane((ReplayStream *)g_unk0x00537f3c[(BYTE)player], 0, 0, player);
+    Replay_SelectAndInitializeLane((ReplayStream *)g_playerReplayStreams[(BYTE)player], 0, 0, player);
     if (CGameInfo::GetGameModeOptionBit19()) {
         for (i = 0; i < 7; i++) {
-            Replay_ResetBufferIfActive((ReplayStream *)g_unk0x00537f3c[i + 1]);
-            Replay_SelectAndInitializeLane((ReplayStream *)g_unk0x00537f3c[i + 1], 0, 0, NetPlayers_GetPlayerField8(i));
+            Replay_ResetBufferIfActive((ReplayStream *)g_playerReplayStreams[i + 1]);
+            Replay_SelectAndInitializeLane((ReplayStream *)g_playerReplayStreams[i + 1], 0, 0, NetPlayers_GetPlayerField8(i));
         }
     }
     if (CGameInfo::GetConfiguredGameMode() == 4) {
         for (i = 0; i < 2; i++) {
             if ((char)Car_GetDrawnFlag(i) == -1) {
-                Replay_ResetBufferIfActive((ReplayStream *)g_unk0x00537f3c[i]);
-                Replay_SelectAndInitializeLane((ReplayStream *)g_unk0x00537f3c[i], 0, 0, i);
+                Replay_ResetBufferIfActive((ReplayStream *)g_playerReplayStreams[i]);
+                Replay_SelectAndInitializeLane((ReplayStream *)g_playerReplayStreams[i], 0, 0, i);
             }
         }
     } else if ((char)RallyData_GetFlag25() && CGameInfo::GetGameModeOptionBit19() == 0) {
         for (i = 0; i < ((char)RallyData_GetSelectionFlag28() ? 1 : 2); i++) {
             if (RallyData_GetUsableRecordCategory((BYTE)i) != -1 || (CGameInfo::IsConfiguredMultiplayer() && i == 1)) {
-                Replay_ResetBufferIfActive((ReplayStream *)g_unk0x00537f3c[i]);
-                Replay_SelectAndInitializeLane((ReplayStream *)g_unk0x00537f3c[i], 0, 0, i);
+                Replay_ResetBufferIfActive((ReplayStream *)g_playerReplayStreams[i]);
+                Replay_SelectAndInitializeLane((ReplayStream *)g_playerReplayStreams[i], 0, 0, i);
             }
         }
     }
@@ -3086,16 +3084,16 @@ void Race_UpdateInterStageFadeJobs(CallbackStateMachine *param1, unsigned int pa
     if ((char)param2 != 0)
         return;
     anyAlive = 1;
-    if ((BYTE)RallyData_IsChampionshipFinalStage() != 0 && g_unk0x00537f3c[0] != 0) {
+    if ((BYTE)RallyData_IsChampionshipFinalStage() != 0 && g_playerReplayStreams[0] != 0) {
         if (g_unk0x00538118 == 0) {
-            if (((ReplayStream *)g_unk0x00537f3c[0])->playing != 0)
+            if (((ReplayStream *)g_playerReplayStreams[0])->playing != 0)
                 goto done;
             View_SwitchCamera(0, 7, 0xffff, View_GetActiveCameraFlags(0), 0);
             g_unk0x00538118 = 1;
-            Replay_ResetBufferIfActive((ReplayStream *)g_unk0x00537f3c[0]);
-            Replay_SelectAndInitializeLane((ReplayStream *)g_unk0x00537f3c[0], 0, 0, 0);
+            Replay_ResetBufferIfActive((ReplayStream *)g_playerReplayStreams[0]);
+            Replay_SelectAndInitializeLane((ReplayStream *)g_playerReplayStreams[0], 0, 0, 0);
         }
-        if (((ReplayStream *)g_unk0x00537f3c[0])->playing == 0) {
+        if (((ReplayStream *)g_playerReplayStreams[0])->playing == 0) {
             StageObject_SpawnRandomDebrisBurst();
             GameMenu_StartPauseOverlayFade();
         }
@@ -3159,7 +3157,7 @@ void StageLights_SetTransform(FixVector *pAxes);
 void StageTiming_IndexSerializedStageTables(BYTE *pData);
 
 void NetPlayers_UpdateLocalSplitRecords(int splitCount);
-int NetRace_GetType8PlayerIndex(void);
+int NetRace_GetLastSentSplit(void);
 void Frontend_MergeMenuKeysIntoPlayerState(void);
 void StageUI_ClearRaceEndLatch(void);
 void StageUI_ResetRaceEndEventCount(void);
@@ -3274,19 +3272,19 @@ void Race_TeardownStage(CallbackStateMachine *param1, int param2, char flag)
     StageTiming_ResetRaceDriverTimes();
     if (CGameInfo::GetGameModeOptionBit19()) {
         n = 1;
-        pp = g_unk0x00537f3c + 1;
+        pp = g_playerReplayStreams + 1;
         do {
             Replay_ResetBufferIfActive((ReplayStream *)*pp);
             Replay_StopRecording(*pp);
             pp++;
-        } while ((INT_PTR)pp < (INT_PTR)(g_unk0x00537f3c + 8)); // 0x537f5c in the original
+        } while ((INT_PTR)pp < (INT_PTR)(g_playerReplayStreams + 8)); // 0x537f5c in the original
     } else if (CGameInfo::GetConfiguredGameMode() == 4 || (char)RallyData_GetFlag25()) {
         n = 2;
     } else {
         n = (BYTE)RallyDataState();
     }
     if (n > zero) {
-        pp = g_unk0x00537f3c;
+        pp = g_playerReplayStreams;
         do {
             Replay_ResetBufferIfActive((ReplayStream *)*pp);
             Replay_StopRecording(*pp);
@@ -3297,7 +3295,7 @@ void Race_TeardownStage(CallbackStateMachine *param1, int param2, char flag)
         Replay_ResetActiveBufferState();
     if ((char)RallyData_GetSelectionFlag28() && (char)CGameInfo::GetSoundOptionBit30()) {
         for (i = 0; i < (BYTE)RallyDataState(); i++)
-            Replay_SwapPendingSlotValue((int **)g_unk0x00537f3c + i, i, (BYTE)param2 + i);
+            Replay_SwapPendingSlotValue((int **)g_playerReplayStreams + i, i, (BYTE)param2 + i);
     }
     ForceFeedback_ActivateIdleSlots();
     CGameInfo::SetInputAndGamePaused(0);
@@ -3340,7 +3338,7 @@ void Race_HandleStageReplayViewTransitions(CallbackStateMachine *param1, unsigne
     if ((char)RallyData_GetSelectionFlag26() != 0)
         CSound::StopDirectSoundBuffer();
     if (CGameInfo::GetConfiguredGameMode() == 10)
-        NetPlayers_UpdateLocalSplitRecords(NetRace_GetType8PlayerIndex());
+        NetPlayers_UpdateLocalSplitRecords(NetRace_GetLastSentSplit());
     Frontend_MergeMenuKeysIntoPlayerState();
     InRaceMenu_ResetAndBuildPages();
     g_unk0x00537f08 = 1;
@@ -3606,7 +3604,7 @@ L_teardown:
     if (CGameInfo::GetConfiguredGameMode() == 4 || (char)RallyData_GetFlag25() != 0)
         n = 2;
     if (n > 0) {
-        pp = g_unk0x00537f3c;
+        pp = g_playerReplayStreams;
         i = n;
         do {
             Replay_ResetBufferIfActive((ReplayStream *)*pp);
@@ -3615,19 +3613,19 @@ L_teardown:
         } while (--i);
     }
     if (CGameInfo::GetGameModeOptionBit19() != 0 && n < 8) {
-        pp = g_unk0x00537f3c + n;
+        pp = g_playerReplayStreams + n;
         do {
             Replay_ResetBufferIfActive((ReplayStream *)*pp);
             Replay_StopRecording(*pp);
             pp++;
-        } while ((INT_PTR)pp < (INT_PTR)(g_unk0x00537f3c + 8)); // 0x537f5c in the original
+        } while ((INT_PTR)pp < (INT_PTR)(g_playerReplayStreams + 8)); // 0x537f5c in the original
     }
     if ((char)RallyData_GetSelectionFlag28() != 0 && (char)CGameInfo::GetSoundOptionBit30() != 0)
         Replay_ResetActiveBufferState();
     if ((char)RallyData_GetSelectionFlag28() == 0 || (char)CGameInfo::GetSoundOptionBit30() == 0)
         return;
     for (i = 0; i < (BYTE)RallyDataState(); i++)
-        Replay_SwapPendingSlotValue((int **)g_unk0x00537f3c + i, i, (BYTE)param2 + i);
+        Replay_SwapPendingSlotValue((int **)g_playerReplayStreams + i, i, (BYTE)param2 + i);
     return;
 L_stage_restore:
     if (RallyDataStageIndex() == 2 || RallyDataStageIndex() == 4 ||
@@ -3694,7 +3692,7 @@ void Race_LoadHPCData(void)
 
 int Sound_IsPlaying(unsigned int handle);
 int Sound_PlaySampleWithParameters(unsigned short id, int volume, int frequency, int loopStart, int loops, int is3D);
-extern int g_unk0x00537194;
+extern int g_coDriverCallState;
 void Sound_SetPlayingSlotVolume(unsigned int handle, int volume);
 void Sound_Free(unsigned int handle);
 
@@ -3803,7 +3801,7 @@ void Race_FreePerCarSounds(void)
 // FUNCTION: CMR2 0x00420130
 void Race_SetResourceStateAndCallbackMark(int value)
 {
-    g_unk0x00538970 = value;
+    g_raceResourceState = value;
     g_raceCallbackMark = CGame::GetCallbackCount();
 }
 
@@ -3894,9 +3892,9 @@ char *g_glassSounds[4] = {
 char g_strCollisionDir[] = "\\collision\\";
 
 int Sound_GetSampleCount(void);
-extern int g_unk0x00537360;
-extern int g_unk0x005373a8;
-extern int g_unk0x005373ac;
+extern int g_collisionFirstSample;
+extern int g_glassFirstSample;
+extern int g_rollFirstSample;
 BOOL Sound_LoadSample(char *name, BYTE flags, GenericFile *pFile);
 
 // Loads the collision sound banks of the stage (swipes and impacts, rolls and
@@ -3911,21 +3909,21 @@ void Race_LoadCollisionSoundBanks(void)
 
     pDir = CInstallInfo::GetSoundsDir();
     pFile = (GenericFile *)StageTiming_GetStageFile0();
-    g_unk0x00537360 = Sound_GetSampleCount();
+    g_collisionFirstSample = Sound_GetSampleCount();
     for (i = 0; i < 10; i++) {
         strcpy(path, pDir);
         strcat(path, g_strCollisionDir);
         strcat(path, g_collisionSounds[i]);
         Sound_LoadSample(path, 0, pFile);
     }
-    g_unk0x005373ac = Sound_GetSampleCount();
+    g_rollFirstSample = Sound_GetSampleCount();
     for (i = 0; i < 7; i++) {
         strcpy(path, pDir);
         strcat(path, g_strCollisionDir);
         strcat(path, g_rollSounds[i]);
         Sound_LoadSample(path, 0, pFile);
     }
-    g_unk0x005373a8 = Sound_GetSampleCount();
+    g_glassFirstSample = Sound_GetSampleCount();
     for (i = 0; i < 4; i++) {
         strcpy(path, pDir);
         strcat(path, g_strCollisionDir);
@@ -4020,13 +4018,14 @@ void Race_PlayDistanceScaledCarSound(unsigned int view, unsigned short id, int v
     g_unk0x00537398[slot] = view;
 }
 
+// First sample of the collision, glass and roll sound groups
+// (Race_LoadCollisionSoundBanks).
 // GLOBAL: CMR2 0x00537360
-int g_unk0x00537360;
-// First sample of the impact, scrape and horn sound groups.
+int g_collisionFirstSample;
 // GLOBAL: CMR2 0x005373a8
-int g_unk0x005373a8;
+int g_glassFirstSample;
 // GLOBAL: CMR2 0x005373ac
-int g_unk0x005373ac;
+int g_rollFirstSample;
 
 void Race_PlayDistanceScaledCarSound(unsigned int view, unsigned short id, int volume, int listener);
 
@@ -4045,9 +4044,9 @@ void Race_PlayDistanceScaledCarSound(unsigned int view, unsigned short id, int v
 void Race_PlayImpactAndShakeCar(unsigned int view, int volume, char heavy, int listener)
 {
     if (heavy != 0)
-        Race_PlayDistanceScaledCarSound(view, (unsigned short)(rand() % 3 + 4 + g_unk0x005373ac), volume, listener);
+        Race_PlayDistanceScaledCarSound(view, (unsigned short)(rand() % 3 + 4 + g_rollFirstSample), volume, listener);
     else
-        Race_PlayDistanceScaledCarSound(view, (unsigned short)(rand() % 4 + g_unk0x005373ac), volume, listener);
+        Race_PlayDistanceScaledCarSound(view, (unsigned short)(rand() % 4 + g_rollFirstSample), volume, listener);
     CAR_SHAKE(view, volume);
 }
 
@@ -4062,7 +4061,7 @@ void Race_PlayScrapeAndShakeCar(int view, int strength, int listener)
         level = FixMul(strength, 0xa0000) >> 16;
         if (level >= 10)
             level = 9;
-        Race_PlayDistanceScaledCarSound(view, (unsigned short)(g_unk0x00537360 + level), 0x10000, listener);
+        Race_PlayDistanceScaledCarSound(view, (unsigned short)(g_collisionFirstSample + level), 0x10000, listener);
         {
             // The do/while(0) form of CAR_SHAKE shifts MSVC6's register
             // allocation of the prologue; the original expands it inline.
@@ -4077,7 +4076,7 @@ void Race_PlayScrapeAndShakeCar(int view, int strength, int listener)
 
 // Plays one of the three horn sounds (random for kind 0).
 // FUNCTION: CMR2 0x00418cd0
-void Race_PlayHornSound(unsigned int view, int kind, int listener)
+void Race_PlayBreakingGlassSound(unsigned int view, int kind, int listener)
 {
     int sound = 0;
 
@@ -4085,7 +4084,7 @@ void Race_PlayHornSound(unsigned int view, int kind, int listener)
     case 0: sound = rand() % 2; break;
     case 2: sound = 2; break;
     }
-    Race_PlayDistanceScaledCarSound(view, (unsigned short)(g_unk0x005373a8 + sound), 0x10000, listener);
+    Race_PlayDistanceScaledCarSound(view, (unsigned short)(g_glassFirstSample + sound), 0x10000, listener);
 }
 
 void StageObject_SetBoundedWeatherKind(int value);
@@ -4093,7 +4092,7 @@ void StageObject_SetBoundedWeatherKind(int value);
 // GLOBAL: CMR2 0x00537350
 int g_unk0x00537350;
 // GLOBAL: CMR2 0x0053735c
-int g_unk0x0053735c;
+int g_coDriverFirstSample;
 
 // Updates the current route block and queues its first callout.
 // match 59%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)
@@ -4123,11 +4122,11 @@ void Race_AdvanceRouteCalloutBlock(int player)
         g_unk0x005371a4[block] = 1;
         StageObject_SetBoundedWeatherKind(block + 1);
         if (block == 2)
-            Race_AssignUnusedSlot(g_unk0x0053735c + 0x38);
+            Race_AssignUnusedSlot(g_coDriverFirstSample + 0x38);
         else if (block == 1)
-            Race_AssignUnusedSlot(g_unk0x0053735c + 0x39);
+            Race_AssignUnusedSlot(g_coDriverFirstSample + 0x39);
         else if (block == 0)
-            Race_AssignUnusedSlot(g_unk0x0053735c + 0x3a);
+            Race_AssignUnusedSlot(g_coDriverFirstSample + 0x3a);
     }
     g_unk0x0053708c[player] = RallyData_GetActiveCarRaceRecordField0(Car_Get(player)) - 1;
 }
@@ -4203,9 +4202,9 @@ unsigned short RallyData_GetPrimaryStageScoreScale(void);
 unsigned short RallyData_GetSecondaryStageScoreScale(void);
 void RallyData_SetSelectionFlag20(unsigned int param1);
 void StageTiming_CreateWhiteStageLight(void);
-void StageObject_BlendSettingPairRecords(unsigned short timePrimary, unsigned short timeSecondary, BYTE **records, BYTE **pPrimary,
-                  BYTE **pSecondary);
-void StageObject_SetPairSpeedLimits(BYTE *pA, BYTE *pB);
+void StageLights_BlendPresetPair(unsigned short timePrimary, unsigned short timeSecondary, BYTE **records, StageLightPreset **pPrimary,
+                  StageLightPreset **pSecondary);
+void StageLights_SetPairFogDistances(StageLightPreset *pA, StageLightPreset *pB);
 
 
 // GLOBAL: CMR2 0x005196dc
@@ -4356,9 +4355,9 @@ char g_str0x005194a8[12] = "2400BLI.hor";
 // The two time-of-day lighting presets (.hor files) the stage lighting
 // blends, picked from the 48 resolved preset files.
 // GLOBAL: CMR2 0x00538234
-BYTE *g_stageLightPresetSecondary;
+StageLightPreset *g_stageLightPresetSecondary;
 // GLOBAL: CMR2 0x00538238
-BYTE *g_stageLightPresetPrimary;
+StageLightPreset *g_stageLightPresetPrimary;
 
 // Resolves the 48 stage texture names through the generic file loader, builds
 // the six palette entries of the stage geometry from the primary/secondary
@@ -4369,8 +4368,8 @@ void Race_ResolveStageTexturesAndPalettes(void)
     char *pNames[48];
     BYTE *handles[48];
     BYTE colour[6];
-    BYTE *pPrimary;
-    BYTE *pSecondary;
+    StageLightPreset *pPrimary;
+    StageLightPreset *pSecondary;
     int i;
     int avg;
 
@@ -4425,14 +4424,14 @@ void Race_ResolveStageTexturesAndPalettes(void)
     for (i = 0; i < 48; i++)
         handles[i] = (BYTE *)CGenericFileLoader::FindFile((GenericFile *)StageTiming_GetStageFile3(),
                                                        pNames[i], NULL, NULL, 0);
-    StageObject_BlendSettingPairRecords(RallyData_GetPrimaryStageScoreScale(), RallyData_GetSecondaryStageScoreScale(), handles, &g_stageLightPresetPrimary,
+    StageLights_BlendPresetPair(RallyData_GetPrimaryStageScoreScale(), RallyData_GetSecondaryStageScoreScale(), handles, &g_stageLightPresetPrimary,
                  &g_stageLightPresetSecondary);
-    StageObject_SetPairSpeedLimits(g_stageLightPresetPrimary, g_stageLightPresetSecondary);
+    StageLights_SetPairFogDistances(g_stageLightPresetPrimary, g_stageLightPresetSecondary);
     if (g_stageLightPresetPrimary != NULL && g_stageLightPresetSecondary != NULL) {
         pPrimary = g_stageLightPresetSecondary;
         pSecondary = g_stageLightPresetPrimary;
         for (i = 0; i < 6; i++) {
-            avg = ((int)pSecondary[0x48 + i] + (int)pPrimary[0x48 + i]) / 2;
+            avg = ((int)pSecondary->colourCorrection[i] + (int)pPrimary->colourCorrection[i]) / 2;
             if (avg > 0xff)
                 avg = 0xff;
             colour[i] = (BYTE)avg;
@@ -4506,7 +4505,7 @@ void Race_UpdateCarRouteAndWrongWayState(int param_1)
 
     if (g_unk0x005371a0 == 0 && param_1 == 0) {
         StageObject_SetBoundedWeatherKind(0);
-        Race_AssignUnusedSlot(g_unk0x0053735c + 0xd);
+        Race_AssignUnusedSlot(g_coDriverFirstSample + 0xd);
         g_unk0x005371a0 = 1;
     }
 
@@ -4757,7 +4756,7 @@ void Race_ComputeWheelSurfaceSoundVolumes(int param_1, int param_2)
             g_wheelSlipVolume[param_1][1] = FixMul(g_wheelSlipVolume[param_1][1], 0x10000 - g_surfaceSlotMax);
             g_wheelSlipVolume[param_1][2] = FixMul(g_wheelSlipVolume[param_1][2], 0x10000 - g_surfaceSlotMax);
             g_wheelSlipVolume[param_1][3] = FixMul(g_wheelSlipVolume[param_1][3], 0x10000 - g_surfaceSlotMax);
-        } else if (pState->field_0xb0[0] != 0) {
+        } else if (pState->throttleSample != 0) {
             g_surfaceVolA[param_1] = 0;
             g_surfaceVolB[param_1] = 0;
             g_surfaceVolD[param_1] = 0;
@@ -4795,16 +4794,16 @@ void Race_ComputeWheelSurfaceSoundVolumes(int param_1, int param_2)
         g_surfaceVolB[param_1] = 0x10000;
     if (Sound_IsPlaying(pSet->handle[4]))
         Sound_SetPlayingSlotVolume(pSet->handle[4],
-                     FixMul(FixMul(g_unk0x00537664, g_surfaceVolA[param_1]), NetRace_GetListenerDistanceAttenuation(param_1, param_2)));
+                     FixMul(FixMul(g_carSoundVolumeScale, g_surfaceVolA[param_1]), NetRace_GetListenerDistanceAttenuation(param_1, param_2)));
     if (Sound_IsPlaying(pSet->handle[5]))
         Sound_SetPlayingSlotVolume(pSet->handle[5],
-                     FixMul(FixMul(g_unk0x00537664, g_surfaceVolB[param_1]), NetRace_GetListenerDistanceAttenuation(param_1, param_2)));
+                     FixMul(FixMul(g_carSoundVolumeScale, g_surfaceVolB[param_1]), NetRace_GetListenerDistanceAttenuation(param_1, param_2)));
     if (Sound_IsPlaying(pSet->handle[6]))
         Sound_SetPlayingSlotVolume(pSet->handle[6],
-                     FixMul(FixMul(g_unk0x00537664, g_surfaceVolD[param_1]), NetRace_GetListenerDistanceAttenuation(param_1, param_2)));
+                     FixMul(FixMul(g_carSoundVolumeScale, g_surfaceVolD[param_1]), NetRace_GetListenerDistanceAttenuation(param_1, param_2)));
     if (Sound_IsPlaying(pSet->handle[7]))
         Sound_SetPlayingSlotVolume(pSet->handle[7],
-                     FixMul(FixMul(g_unk0x00537664, g_surfaceVolC[param_1]), NetRace_GetListenerDistanceAttenuation(param_1, param_2)));
+                     FixMul(FixMul(g_carSoundVolumeScale, g_surfaceVolC[param_1]), NetRace_GetListenerDistanceAttenuation(param_1, param_2)));
     if (NetRace_GetRaceSoundMode()) {
         total = 0;
         for (i = 0; i < 4; i++)
@@ -4813,20 +4812,20 @@ void Race_ComputeWheelSurfaceSoundVolumes(int param_1, int param_2)
             total = 0x10000;
         if (Sound_IsPlaying(pSet->handle[0]))
             Sound_SetPlayingSlotVolume(pSet->handle[0],
-                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_unk0x00537664, total)));
+                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_carSoundVolumeScale, total)));
     } else {
         if (Sound_IsPlaying(pSet->handle[0]))
             Sound_SetPlayingSlotVolume(pSet->handle[0],
-                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_unk0x00537664, g_wheelSlipVolume[param_1][0])));
+                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_carSoundVolumeScale, g_wheelSlipVolume[param_1][0])));
         if (Sound_IsPlaying(pSet->handle[1]))
             Sound_SetPlayingSlotVolume(pSet->handle[1],
-                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_unk0x00537664, g_wheelSlipVolume[param_1][1])));
+                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_carSoundVolumeScale, g_wheelSlipVolume[param_1][1])));
         if (Sound_IsPlaying(pSet->handle[2]))
             Sound_SetPlayingSlotVolume(pSet->handle[2],
-                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_unk0x00537664, g_wheelSlipVolume[param_1][2])));
+                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_carSoundVolumeScale, g_wheelSlipVolume[param_1][2])));
         if (Sound_IsPlaying(pSet->handle[3]))
             Sound_SetPlayingSlotVolume(pSet->handle[3],
-                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_unk0x00537664, g_wheelSlipVolume[param_1][3])));
+                         FixMul(NetRace_GetListenerDistanceAttenuation(param_1, param_2), FixMul(g_carSoundVolumeScale, g_wheelSlipVolume[param_1][3])));
     }
     g_surfacePrevD[param_1] = g_surfaceVolD[param_1];
     g_surfacePrevC[param_1] = g_surfaceVolC[param_1];
@@ -4846,15 +4845,15 @@ void Race_SetPartSurfaceAndRefreshVisuals(int param_1, int param_2)
     if (View_GetActiveCameraMode(param_2) != 1) {
         if (View_GetActiveCameraMode(param_2) != 2) {
             if (View_GetActiveCameraMode(param_2) != 3) {
-                g_unk0x005375f4[param_1] = 1;
+                g_carSoundViewSet[param_1] = 1;
                 goto done;
             }
         }
     }
-    g_unk0x005375f4[param_1] = 0;
+    g_carSoundViewSet[param_1] = 0;
 done:
     Race_UpdateCarSurfaceSoundState(param_1, param_2);
-    Race_SwitchEngineSampleByRollingDirection(param_1, param_2);
+    Race_SwitchEngineSampleByThrottle(param_1, param_2);
     Race_ComputeWheelSurfaceSoundVolumes(param_1, param_2);
     if (NetRace_GetRaceSoundMode() == 0)
         Race_UpdateIndependentEngineSound(param_1, param_2);
@@ -5001,7 +5000,7 @@ void Race_LoadCoDriverSoundBanks(void)
     char *pDir;
 
     pDir = CInstallInfo::GetSoundsDir();
-    g_unk0x0053735c = Sound_GetSampleCount();
+    g_coDriverFirstSample = Sound_GetSampleCount();
     sprintf(buf, g_strPathConcat, pDir, g_str0x00518674);
     Race_LoadNamedStageSample(buf);
     sprintf(buf, g_strPathConcat, pDir, g_str0x00518654);
@@ -5128,9 +5127,9 @@ void Race_LoadCoDriverSoundBanks(void)
 // GLOBAL: CMR2 0x00538124
 int g_unk0x00538124;
 // GLOBAL: CMR2 0x00538104
-int g_unk0x00538104;
+int g_raceUpdateCar;
 // GLOBAL: CMR2 0x00537f04
-int g_unk0x00537f04;
+int g_raceUpdatePlayer;
 // GLOBAL: CMR2 0x00537fc8
 int g_unk0x00537fc8;
 // GLOBAL: CMR2 0x00537f28
@@ -5297,12 +5296,12 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
             if (param2 != 0 && param1 == 10)
                 GameMenu_RefreshResultsHeader();
         }
-        for (g_unk0x00538104 = 0; g_unk0x00538104 < Car_GetOrderCount(); g_unk0x00538104++) {
-            if (Car_Get(g_unk0x00538104)->simulationStepsRemaining > 0) {
-                if (g_unk0x00538104 < (BYTE)RallyDataState()) {
-                    g_unk0x00537fb8 = (char)((CallbackStateMachine *)StageUI_GetRaceResultTable())->records[g_unk0x00538104].packedState;
-                    if (Race_GetPlayerRecordField4(g_unk0x00538104) != 0)
-                        g_unk0x00537fb8 = (char)((ReplayStream *)g_unk0x00537f3c[g_unk0x00538104])->field_0x10c;
+        for (g_raceUpdateCar = 0; g_raceUpdateCar < Car_GetOrderCount(); g_raceUpdateCar++) {
+            if (Car_Get(g_raceUpdateCar)->simulationStepsRemaining > 0) {
+                if (g_raceUpdateCar < (BYTE)RallyDataState()) {
+                    g_unk0x00537fb8 = (char)((CallbackStateMachine *)StageUI_GetRaceResultTable())->records[g_raceUpdateCar].packedState;
+                    if (Race_GetPlayerRecordField4(g_raceUpdateCar) != 0)
+                        g_unk0x00537fb8 = (char)((ReplayStream *)g_playerReplayStreams[g_raceUpdateCar])->field_0x10c;
                 } else {
                     if ((BYTE)((CallbackStateMachine *)StageUI_GetRaceResultTable())->records[0].packedState <= 7) {
                         g_unk0x00537fb8 = 7;
@@ -5313,73 +5312,73 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
                                 g_unk0x00537fb8 = 9;
                         } else if ((char)RallyData_GetSelectionFlag27() != 0 &&
                                    (char)CGameInfo::GetGameModeOptionBit19() == 0 &&
-                                   StageTiming_GetCheckpointField1A(g_unk0x00538104) != 0) {
+                                   StageTiming_GetCheckpointField1A(g_raceUpdateCar) != 0) {
                             g_unk0x00537fb8 = 9;
                         }
                     }
                 }
                 switch (g_unk0x00537fb8) {
                 case 13:
-                    CarInput_UpdateRaceOrderSlot(g_unk0x00538104);
+                    CarInput_UpdateRaceOrderSlot(g_raceUpdateCar);
                     break;
                 case 5:
                 case 7:
                     g_unk0x0053811c = 0;
-                    CarInput_UpdateWaitingStartSlot(g_unk0x00538104);
+                    CarInput_UpdateWaitingStartSlot(g_raceUpdateCar);
                     break;
                 case 10:
-                    if ((char)RallyData_GetSelectionFlag26() != 0 && g_unk0x00538104 < count) {
-                        if (Race_GetPlayerRecordField4(g_unk0x00538104) == 0) {
-                            AI_UpdateAttractDrivingControls(g_unk0x00538104, 0);
+                    if ((char)RallyData_GetSelectionFlag26() != 0 && g_raceUpdateCar < count) {
+                        if (Race_GetPlayerRecordField4(g_raceUpdateCar) == 0) {
+                            AI_UpdateAttractDrivingControls(g_raceUpdateCar, 0);
                             break;
                         }
                     }
-                    if (Race_GetPlayerRecordField4(g_unk0x00538104) == 0)
-                        StageObject_ResetCarStartControls(g_unk0x00538104);
+                    if (Race_GetPlayerRecordField4(g_raceUpdateCar) == 0)
+                        StageObject_ResetCarStartControls(g_raceUpdateCar);
                     else if (first == 0)
-                        CarInput_UpdateRaceOrderSlot(g_unk0x00538104);
+                        CarInput_UpdateRaceOrderSlot(g_raceUpdateCar);
                     break;
                 case 8:
                     if (first == 0)
-                        CarInput_UpdateRaceOrderSlot(g_unk0x00538104);
+                        CarInput_UpdateRaceOrderSlot(g_raceUpdateCar);
                     break;
                 case 9:
                     if ((char)RallyData_GetSelectionFlag26() != 0) {
-                        if (g_unk0x00538104 < count)
-                            AI_UpdateAttractDrivingControls(g_unk0x00538104, 0);
+                        if (g_raceUpdateCar < count)
+                            AI_UpdateAttractDrivingControls(g_raceUpdateCar, 0);
                         else
-                            CarInput_UpdateRaceOrderSlot(g_unk0x00538104);
+                            CarInput_UpdateRaceOrderSlot(g_raceUpdateCar);
                     } else {
-                        if (g_unk0x00537f98[g_unk0x00538104] == 0) {
-                            StageObject_ResetCarStartControls(g_unk0x00538104);
+                        if (g_unk0x00537f98[g_raceUpdateCar] == 0) {
+                            StageObject_ResetCarStartControls(g_raceUpdateCar);
                         } else {
-                            if (Race_GetPlayerRecordFieldC(g_unk0x00538104) != 0 ||
-                                Race_GetPlayerRecordField4(g_unk0x00538104) != 0)
-                                StageObject_BrakeFinishedCarSlot(g_unk0x00538104);
+                            if (Race_GetPlayerRecordFieldC(g_raceUpdateCar) != 0 ||
+                                Race_GetPlayerRecordField4(g_raceUpdateCar) != 0)
+                                StageObject_BrakeFinishedCarSlot(g_raceUpdateCar);
                             else
-                                StageObject_ResetCarStartControls(g_unk0x00538104);
+                                StageObject_ResetCarStartControls(g_raceUpdateCar);
                         }
                     }
                     break;
                 }
-                if (g_unk0x00538104 < count) {
-                    Dash_Update(g_unk0x00538104);
+                if (g_raceUpdateCar < count) {
+                    Dash_Update(g_raceUpdateCar);
                     if (g_unk0x00537fb8 == 5 || g_unk0x00537fb8 == 7)
-                        RallyData_UpdateCarSplitBar(g_unk0x00538104, 1);
+                        RallyData_UpdateCarSplitBar(g_raceUpdateCar, 1);
                     else if (g_unk0x00537fb8 == 8 || g_unk0x00537fb8 == 9)
-                        RallyData_UpdateCarSplitBar(g_unk0x00538104, 0);
+                        RallyData_UpdateCarSplitBar(g_raceUpdateCar, 0);
                     if (param1 == 8 || param1 == 9)
-                        Race_UpdateCarRouteAndWrongWayState(g_unk0x00538104);
+                        Race_UpdateCarRouteAndWrongWayState(g_raceUpdateCar);
                     else if (param1 == 7)
-                        Race_AdvanceRouteCalloutBlock(g_unk0x00538104);
+                        Race_AdvanceRouteCalloutBlock(g_raceUpdateCar);
                     if (g_unk0x00537fb8 == 8 || g_unk0x00537fb8 == 5 ||
                         (g_unk0x00537fb8 == 7 && (char)CGameInfo::GetGameModeOptionBit19() == 0)) {
-                        b1 = InRaceMenu_IsBackPressed(g_unk0x00538104);
-                        b2 = Race_GetPlayerRecordField4(g_unk0x00538104);
-                        b3 = NetRace_IsPlayerFadeActive(g_unk0x00538104);
+                        b1 = InRaceMenu_IsBackPressed(g_raceUpdateCar);
+                        b2 = Race_GetPlayerRecordField4(g_raceUpdateCar);
+                        b3 = NetRace_IsPlayerFadeActive(g_raceUpdateCar);
                         if (b1 != 0 && b2 == 0 && b3 == 0 &&
                             (char)CGameInfo::GetGameInfoSessionFlag() == 0) {
-                            InRaceMenu_Open(g_unk0x00538104);
+                            InRaceMenu_Open(g_raceUpdateCar);
                             if ((char)RallyData_GetSelectionFlag26() != 0)
                                 CSound::PauseMusicStreaming();
                             Surface_StopAndFreeSounds();
@@ -5392,24 +5391,24 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
         }
         if ((char)CGameInfo::GetGameInfoSessionFlag() != 0 && player != 0 &&
             (char)((CallbackStateMachine *)StageUI_GetRaceResultTable())->records[0].packedState == 13) {
-            if (g_unk0x00537f8c != 0) {
+            if (g_unk0x00537f78[5] != 0) {
                 Input_ClearCharacterQueue();
-                g_unk0x00537f8c = 0;
+                g_unk0x00537f78[5] = 0;
             }
             if (StageObject_GetAnyDeviceHeldButtons() != 0 || Input_PopQueuedCharacter(&key) != 0) {
-                Replay_ResetBufferIfActive((ReplayStream *)g_unk0x00537f3c[0]);
+                Replay_ResetBufferIfActive((ReplayStream *)g_playerReplayStreams[0]);
                 g_unk0x00537fc8 = 0;
                 for (; g_unk0x00537fc8 < *StageUI_GetRaceResultTable(); g_unk0x00537fc8++)
                     CGame::PromoteCallbackEntryByRule((CallbackStateMachine *)StageUI_GetRaceResultTable(), g_unk0x00537fc8, 1, 3);
                 Race_SetFlag3810D();
             }
         }
-        for (g_unk0x00537f04 = 0; g_unk0x00537f04 < count; g_unk0x00537f04++) {
-            if (Car_Get(g_unk0x00537f04)->simulationStepsRemaining > 0) {
+        for (g_raceUpdatePlayer = 0; g_raceUpdatePlayer < count; g_raceUpdatePlayer++) {
+            if (Car_Get(g_raceUpdatePlayer)->simulationStepsRemaining > 0) {
                 if (param2 != 0)
-                    Race_UpdatePlayerSelectionCursor(g_unk0x00537f04);
-                if (View_GetActiveCameraMode((BYTE)g_unk0x00537f04) == 7)
-                    View_UpdateModeSurface((BYTE)g_unk0x00537f04);
+                    Race_UpdatePlayerSelectionCursor(g_raceUpdatePlayer);
+                if (View_GetActiveCameraMode((BYTE)g_raceUpdatePlayer) == 7)
+                    View_UpdateModeSurface((BYTE)g_raceUpdatePlayer);
             }
         }
         if (first == 0 || second != 0) {
@@ -5419,9 +5418,9 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
         }
         if (player != 0)
             StageObjects_Update();
-        for (g_unk0x00537f04 = 0; g_unk0x00537f04 < Car_GetOrderCount(); g_unk0x00537f04++) {
-            if (Car_Get(g_unk0x00537f04)->simulationStepsRemaining > 0)
-                NetRace_UpdatePlayerFlashTimer((BYTE)g_unk0x00537f04, 0);
+        for (g_raceUpdatePlayer = 0; g_raceUpdatePlayer < Car_GetOrderCount(); g_raceUpdatePlayer++) {
+            if (Car_Get(g_raceUpdatePlayer)->simulationStepsRemaining > 0)
+                NetRace_UpdatePlayerFlashTimer((BYTE)g_raceUpdatePlayer, 0);
         }
         if (player != 0) {
             RallyData_UpdateOrderedCarRoutes();
@@ -5435,21 +5434,21 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
             }
             StageTiming_UpdateThirdObjectRampValues();
         }
-        for (g_unk0x00537f04 = 0; g_unk0x00537f04 < count; g_unk0x00537f04++) {
-            if (Car_Get((BYTE)View_GetActiveCameraFlags((BYTE)g_unk0x00537f04))->simulationStepsRemaining > 0)
-                View_UpdateCamera((BYTE)g_unk0x00537f04);
+        for (g_raceUpdatePlayer = 0; g_raceUpdatePlayer < count; g_raceUpdatePlayer++) {
+            if (Car_Get((BYTE)View_GetActiveCameraFlags((BYTE)g_raceUpdatePlayer))->simulationStepsRemaining > 0)
+                View_UpdateCamera((BYTE)g_raceUpdatePlayer);
         }
         if (player != 0) {
             if (first == 0 || second != 0)
-                Particle_UpdateAll(g_viewNodes[g_unk0x00537f04]);
+                Particle_UpdateAll(g_viewNodes[g_raceUpdatePlayer]);
             if (CGameInfo::GetConfiguredGameMode() == 0xc && StageTiming_GetCheckpointField19(0) != 0) {
                 NetRace_SendStageAndOverallTimes(StageTiming_GetCarSplitTime(0, StageTiming_GetCheckpointGroupIndex(0)));
                 NetPlayers_UpdateBestRaceTime(StageTiming_GetCarSplitTime(0, StageTiming_GetCheckpointGroupIndex(0)));
             }
             if ((char)RallyData_GetFlag24() != 0 && (char)RallyData_GetSelectionFlag28() != 0 &&
                 StageTiming_GetCheckpointField19(0) != 0) {
-                Replay_ResetBufferIfActive((ReplayStream *)g_unk0x00537f3c[0]);
-                Replay_StopRecording(g_unk0x00537f3c[0]);
+                Replay_ResetBufferIfActive((ReplayStream *)g_playerReplayStreams[0]);
+                Replay_StopRecording(g_playerReplayStreams[0]);
                 if (CGameInfo::GetSoundOptionBit30() != 0)
                     Replay_ResetActiveBufferState();
                 flag = CGameInfo::GetGraphicsOptionBits27To28() == 0;
@@ -5467,14 +5466,14 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
                         k & 0x3f |
                         CGameInfo::GetPlayerRecordTable(flag)->rallyStageRecordTimes[index].value & 0xffffffc0;
                     sprintf(CFrontend::m_stringDest, g_strGrp0x005192b0, Race_GetStagePathBuffer38444());
-                    if (g_unk0x00537f3c[0] != NULL)
-                        Replay_Save(g_unk0x00537f3c[0], CFrontend::m_stringDest);
+                    if (g_playerReplayStreams[0] != NULL)
+                        Replay_Save(g_playerReplayStreams[0], CFrontend::m_stringDest);
                     if (CGameInfo::GetSoundOptionBit30() != 0) {
                         Replay_SetControlStateByte(0);
-                        Replay_SwapPendingSlotValue((int **)g_unk0x00537f3c, 0, 0);
+                        Replay_SwapPendingSlotValue((int **)g_playerReplayStreams, 0, 0);
                     }
                 }
-                Replay_InitCarStreamState((ReplayStream *)g_unk0x00537f3c[0], 0, 0);
+                Replay_InitCarStreamState((ReplayStream *)g_playerReplayStreams[0], 0, 0);
                 if (CGameInfo::GetSoundOptionBit30() != 0)
                     Replay_RestartGhostCar(0, 0);
             }
@@ -5488,17 +5487,17 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
             } else {
                 k = ((BYTE)RallyDataState() == 1 && (char)RallyData_GetFlag25() != 0 &&
                      (char)CGameInfo::GetGameModeOptionBit19() == 0 && CGameInfo::GetConfiguredGameMode() != 3);
-                for (g_unk0x00537f04 = 0;
-                     g_unk0x00537f04 < (BYTE)RallyDataState() + k;
-                     g_unk0x00537f04++) {
+                for (g_raceUpdatePlayer = 0;
+                     g_raceUpdatePlayer < (BYTE)RallyDataState() + k;
+                     g_raceUpdatePlayer++) {
                     if (!(k != 1)) {
-                        SurfaceSound_UpdatePlayerLoops(g_unk0x00537f04, 0);
-                        Race_SetPartSurfaceAndRefreshVisuals(g_unk0x00537f04, 0);
-                        Race_UpdateCarSoundDistanceVolumes((CallbackStateMachine *)g_unk0x00537f04, 0);
+                        SurfaceSound_UpdatePlayerLoops(g_raceUpdatePlayer, 0);
+                        Race_SetPartSurfaceAndRefreshVisuals(g_raceUpdatePlayer, 0);
+                        Race_UpdateCarSoundDistanceVolumes((CallbackStateMachine *)g_raceUpdatePlayer, 0);
                     } else {
-                        SurfaceSound_UpdatePlayerLoops(g_unk0x00537f04, g_unk0x00537f04);
-                        Race_SetPartSurfaceAndRefreshVisuals(g_unk0x00537f04, g_unk0x00537f04);
-                        Race_UpdateCarSoundDistanceVolumes((CallbackStateMachine *)g_unk0x00537f04, g_unk0x00537f04);
+                        SurfaceSound_UpdatePlayerLoops(g_raceUpdatePlayer, g_raceUpdatePlayer);
+                        Race_SetPartSurfaceAndRefreshVisuals(g_raceUpdatePlayer, g_raceUpdatePlayer);
+                        Race_UpdateCarSoundDistanceVolumes((CallbackStateMachine *)g_raceUpdatePlayer, g_raceUpdatePlayer);
                     }
                 }
             }
@@ -5511,7 +5510,7 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
             }
         }
         if (param2 == 0) {
-            for (g_unk0x00537f04 = 0; g_unk0x00537f04 < (BYTE)RallyDataState(); g_unk0x00537f04++) {
+            for (g_raceUpdatePlayer = 0; g_raceUpdatePlayer < (BYTE)RallyDataState(); g_raceUpdatePlayer++) {
             }
         }
         Car_DecrementContactTimers(Car_GetOrder(), Car_GetOrderCount());
@@ -5525,15 +5524,15 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
     if (first != 0)
         g_unk0x00537f28 = 0x10000;
     Race_UpdateFrameEffects(g_unk0x00537f28);
-    for (g_unk0x00537f04 = 0; g_unk0x00537f04 < (BYTE)RallyDataState(); g_unk0x00537f04++) {
-        View_BlendCameraStates((BYTE)g_unk0x00537f04,
-                     Car_Get((BYTE)View_GetActiveCameraFlags((BYTE)g_unk0x00537f04))->simulationInterpolation);
+    for (g_raceUpdatePlayer = 0; g_raceUpdatePlayer < (BYTE)RallyDataState(); g_raceUpdatePlayer++) {
+        View_BlendCameraStates((BYTE)g_raceUpdatePlayer,
+                     Car_Get((BYTE)View_GetActiveCameraFlags((BYTE)g_raceUpdatePlayer))->simulationInterpolation);
     }
     g_unk0x00537fd0 = Car_GetOrder();
     g_unk0x00537fc4 = Car_GetOrderCount();
     StageObject_UpdateListedCarPhysicsAndWeather(g_unk0x00537fd0, g_unk0x00537fc4);
-    for (g_unk0x00537f04 = 0; g_unk0x00537f04 < Car_GetOrderCount(); g_unk0x00537f04++)
-        NetRace_SetPlayerFlashIntensity(g_unk0x00537f04, g_unk0x00537f28, 0);
+    for (g_raceUpdatePlayer = 0; g_raceUpdatePlayer < Car_GetOrderCount(); g_raceUpdatePlayer++)
+        NetRace_SetPlayerFlashIntensity(g_raceUpdatePlayer, g_unk0x00537f28, 0);
     if (first == 0 || second != 0) {
         if (CGameInfo::IsInRaceMenuOpen() == 0) {
             g_unk0x00537fc4 = Car_GetOrderCount();

@@ -95,7 +95,7 @@ int main()
             DriverProfile &profile = *(DriverProfile *)RallyData_GetDriverCategoryProfile(i);
             profile.identifier.name[0] = 'A' + i;
             profile.identifier.flags = 0x123400 + i;
-            profile.identifier.extra = 0;
+            memset(profile.identifier.counters, 0, sizeof(profile.identifier.counters));
             profile.setup = {1, 2, 3, 2, 5, 123};
             memset(RallyData_GetDriverGroupRecord(i), 0x21 + i, sizeof(SavedGameCarRecord));
             memset(RallyData_GetDriverSkillRecord(i), 0x41 + i, sizeof(SavedGameController));

@@ -59,7 +59,7 @@ unsigned int g_netLapBest;
 // GLOBAL: CMR2 0x005320b0
 NetClassification g_netClassification[8];
 
-extern int g_unk0x005320a4;
+extern int g_inputFrameDelta;
 
 void NetworkLeaderboard_ClearPublishedBoard(void);
 void NetworkLeaderboard_PublishBoard(BYTE *p);
@@ -225,7 +225,7 @@ void NetPlayers_ReceiveStatistics(NetPlayerID *pId, NetStats *pStats)
         if (g_netPlayers[i].id == *pId)
             g_netPlayers[i].field_0xc++;
         if ((g_netPlayers[i].flags & 0x80) && g_netPlayers[i].id == *pId && !(g_netPlayers[i].flags & 0x400000)) {
-            if (g_unk0x00539cc8 != 0 && g_netPlayers[i].stats.seq < pStats->seq) {
+            if (g_netTriangleState.enabled != 0 && g_netPlayers[i].stats.seq < pStats->seq) {
                 g_netPlayers[i].stats = *pStats;
                 g_netPlayers[i].statsNew = 1;
             }
@@ -927,7 +927,7 @@ void NetPlayers_UpdateBestRaceTime(unsigned int time)
 // FUNCTION: CMR2 0x0040af30
 int NetPlayers_GetInputFrameDelta(void)
 {
-    return g_unk0x005320a4;
+    return g_inputFrameDelta;
 }
 
 // FUNCTION: CMR2 0x0040af40

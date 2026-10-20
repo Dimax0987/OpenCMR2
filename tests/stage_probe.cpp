@@ -54,10 +54,10 @@ extern CarContact *g_carContacts;
 // Match the production types: the MSVC ABI includes them in symbol names.
 struct Unk0x00542e78;
 struct CarStageTiming;
-extern Unk0x00542e78 g_unk0x00542e78[8];
+extern Unk0x00542e78 g_playerCheckpointRecords[8];
 extern CarStageTiming g_carStageTiming[8];
-extern int g_unk0x0053d1b0;
-extern char g_unk0x00818ebc[20];
+extern int g_stageClock;
+extern char g_sessionName[20];
 extern ReplayStream *Race_GetPlayerRecordPointer(int);
 extern int Replay_StopRecording(BYTE *);
 extern void Race_StartPlayerAndOpponentReplays(int);
@@ -198,13 +198,13 @@ struct Probe : Diagnostics::TimingObserver {
             view.parts = pParts; view.damage = reinterpret_cast<const unsigned char *>(g_carDamageRecords);
             view.contacts = reinterpret_cast<const unsigned char *>(g_carContacts);
             view.timing = reinterpret_cast<const unsigned char *>(g_carStageTiming);
-            view.checkpoints = reinterpret_cast<const unsigned char *>(g_unk0x00542e78);
+            view.checkpoints = reinterpret_cast<const unsigned char *>(g_playerCheckpointRecords);
             view.transforms = reinterpret_cast<const unsigned char *>(g_carTransforms);
             view.shadow = reinterpret_cast<const unsigned char *>(g_carTransformsShadow);
             view.wheels = reinterpret_cast<const unsigned char *>(g_carWheelTransforms);
             view.order = g_carOrder; view.count = g_carOrderCount;
             view.physicsStep = g_physicsTimeStep; view.physicsScale = g_physicsScale;
-            view.stageClock = g_unk0x0053d1b0;
+            view.stageClock = g_stageClock;
             StateCaptureInput controls{};
             controls.tick = input.tick; controls.state = input.state;
             memcpy(controls.digital, input.digital, sizeof(controls.digital));
@@ -353,7 +353,7 @@ static void ConfigureMenu(Menu *menu) {
         CGameInfo::ToggleRecordFlag(0xc);
     if (menu == FrontendMenu_GetNetworkSessionDetails())
         if (const char *name = getenv("OPENCMR2_PROBE_SESSION_NAME"))
-            snprintf(g_unk0x00818ebc, sizeof(g_unk0x00818ebc), "%s", name);
+            snprintf(g_sessionName, sizeof(g_sessionName), "%s", name);
     if (menu == FrontendMenu_GetNetworkSessionSetup())
         if (const char *role = getenv("OPENCMR2_PROBE_LAN_ROLE"))
             if (strcmp(role, "guest") == 0) menu->items[3].max = 0; // Ready menu option.
@@ -378,7 +378,7 @@ static void ConfigureMenu(Menu *menu) {
 }
 
 extern unsigned short *g_sceneLightData;
-extern BYTE *g_sceneLightZones;
+extern LightZone *g_sceneLightZones;
 extern short *g_sceneSectorZone;
 extern Mesh **g_sceneShadowMeshes;
 
@@ -395,7 +395,7 @@ static void LightingDigest(unsigned *zonesOut, unsigned long long out[5])
     unsigned zones = g_sceneLightData ? *g_sceneLightData : 0;
     *zonesOut = zones;
     for (unsigned z = 0; z < zones; z++) {
-        const LightZone &zone = ((const LightZone *)g_sceneLightZones)[z];
+        const LightZone &zone = g_sceneLightZones[z];
         mixInt(0, zone.sector); mixInt(0, zone.itemCount); mixInt(0, zone.x); mixInt(0, zone.z);
         for (unsigned i = 0; i < zone.itemCount; i++) {
             const LightZoneItem &item = zone.pItems[i];

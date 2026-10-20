@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <windows.h>
 
+#include "CategoryBestResults.h"
+
 // Pointer-free records from the original .rcs format. Unknown bytes stay
 // opaque; no native addresses or compiler-dependent global ordering is saved.
 struct SavedGameOptions {
@@ -22,10 +24,13 @@ struct SavedGameDriver {
     int time;
 };
 
+// flags: the date of birth entered for the profile (bits 0..7 year, 8..11
+// month, 16..20 day), random tags in bits 12..15 and 22..27, and bit 21 set on
+// profiles that are never saved. The .pps file name is built from it.
 struct DriverProfileIdentifier {
     char name[4];
     unsigned int flags;
-    unsigned int extra;
+    BYTE counters[4]; // awards won, times used, third counter (cleared on load)
 };
 
 // The five option values occupy bits 0..12 of profile word +0x5c.
@@ -38,15 +43,30 @@ struct DriverProfileSetup {
     unsigned reserved : 19;
 };
 
+// One saved driver profile (CMR2 0x0052fa08, four of them). The HUD flags
+// The tail is one anonymous member: a sixteenth member of this struct changes
+// the operand order of an addition in OptionMenu_DrawResultsRallyInfo.
 struct DriverProfile {
     BYTE header[0x10];
-    DriverProfileIdentifier identifier;
-    BYTE reserved1[0x38];
-    unsigned int options;
-    int car;
-    DriverProfileSetup setup;
-    BYTE reserved2[0x5f0];
+    DriverProfileIdentifier identifier;  // 0x010
+    char name[0x30];                     // 0x01c, compared in lower case
+    unsigned int awards;                 // 0x04c, bit mask (RallyData_SetCategoryAwardBit)
+    BYTE reserved1[4];                   // 0x050
+    unsigned int options;                // 0x054, bits 0..4 car, 5 automatic gearbox, 6, 7..14 age
+    int car;                             // 0x058
+    DriverProfileSetup setup;            // 0x05c
+    BYTE eventResults[0x24];             // 0x060, ProfileEventResults
+    CategoryBestResults bestResults;     // 0x084
+    BYTE hudFlags;                       // 0x588, 4/8/0x10/0x20: HUD panels shown
+    BYTE reserved2[3];
+    BYTE wear[0xa0];                     // 0x58c, TyreWear (ChampionshipDriver.h)
+    unsigned int medals[2];              // 0x62c, CategoryMedals
+    struct {
+        int chaseCamera[5];              // 0x634, ChaseCameraSettings (ChaseCamera.h)
+        BYTE reserved3[8];               // 0x648
+    };
 };
+
 
 struct SaveSlot {
     unsigned car : 6;
@@ -67,17 +87,21 @@ struct SaveSlot {
 // driver records past the eight, from the profiles after them. As
 // separate globals, alignment padding moved those reads eight bytes, and a
 // sanitizer build's guards elsewhere.
+// The driver records are ChampionshipDriver (ChampionshipDriver.h, which
+// includes this header), so they are kept as bytes here and given their type
+// where they are read.
+struct ChampionshipDriver;
 struct SaveBlock {
     BYTE carRecords[8 * 0xc4];  // 0x52f3e0
     BYTE dirty[8];              // 0x52fa00
-    BYTE profiles[4 * 0x650];   // 0x52fa08
+    DriverProfile profiles[4];  // 0x52fa08
     BYTE unk0x00531348[8];      // 0x531348
     SaveSlot slots[16];         // 0x531350
 };
 static_assert(offsetof(SaveBlock, profiles) == 0x52fa08 - 0x52f3e0, "SaveBlock layout");
 static_assert(offsetof(SaveBlock, slots) == 0x531350 - 0x52f3e0, "SaveBlock layout");
 extern SaveBlock g_saveBlock;
-#define g_saveCarRecords (g_saveBlock.carRecords)
+#define g_saveCarRecords (*(ChampionshipDriver (*)[8])g_saveBlock.carRecords)
 #define g_saveDirty (g_saveBlock.dirty)
 #define g_saveProfiles (g_saveBlock.profiles)
 #define g_unk0x00531348 (g_saveBlock.unk0x00531348)

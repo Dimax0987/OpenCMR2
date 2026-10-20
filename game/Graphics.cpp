@@ -706,7 +706,7 @@ void CGraphics::BltTexture(Texture *pTexture, int surfaceIndex)
 
 extern const float g_netOne;
 extern const float g_netZero;
-extern const float g_unk0x00511364;
+extern const float g_floatOneOver255;
 
 // Blends pColour (r, g, b, a) into pixel (x, y) of a locked texture.
 // match 24%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)
@@ -741,7 +741,7 @@ void CGraphics::BlendPixel(Texture *pTexture, unsigned int x, unsigned int y, BY
             dst[0] = (BYTE)((BYTE)m_lockedTextures[i].masks[0] & px) >> (BYTE)m_lockedTextures[i].depths[0];
             dst[1] = (BYTE)((BYTE)m_lockedTextures[i].masks[1] & px) << (BYTE)m_lockedTextures[i].depths[1];
             dst[2] = (BYTE)((BYTE)m_lockedTextures[i].masks[2] & px) << (BYTE)-m_lockedTextures[i].depths[2];
-            f = X87S_MUL((float)pColour[3], g_unk0x00511364);
+            f = X87S_MUL((float)pColour[3], g_floatOneOver255);
             inv = g_netOne - f;
             r = (int)FTOI(__int64, X87S_ADD(X87S_MUL(X87S_FILD(float, r), f), X87S_MUL((float)dst[0], inv)));
             g = (int)FTOI(__int64, X87S_ADD(X87S_MUL(X87S_FILD(float, g), f), X87S_MUL((float)dst[1], inv)));
@@ -757,7 +757,7 @@ void CGraphics::BlendPixel(Texture *pTexture, unsigned int x, unsigned int y, BY
             dst[0] = 0;
             dst[1] = 0;
             dst[2] = *(BYTE *)p32;
-            f = X87S_MUL((float)pColour[3], g_unk0x00511364);
+            f = X87S_MUL((float)pColour[3], g_floatOneOver255);
             inv = g_netOne - f;
             r = (int)FTOI(__int64, X87S_ADD(X87S_MUL(X87S_FILD(float, r), f), g_netZero * inv));
             g = (int)FTOI(__int64, X87S_ADD(X87S_MUL(X87S_FILD(float, g), f), g_netZero * inv));
@@ -968,25 +968,43 @@ void CGraphics::SetSecondaryColourScale(BYTE param1)
         m_unk0x00520b38 = X87S_MUL((float)param1, m_oneOver128);
 }
 
+// Header of a .tga file (18 bytes).
+struct TGAHeader {
+    BYTE idLength;          // 0x00 bytes of image id after the header
+    BYTE colourMapType;     // 0x01
+    BYTE imageType;         // 0x02 2 = uncompressed true colour
+    BYTE colourMapSpec[5];  // 0x03
+    short xOrigin;          // 0x08
+    short yOrigin;          // 0x0a
+    unsigned short width;   // 0x0c
+    unsigned short height;  // 0x0e
+    BYTE bitsPerPixel;      // 0x10
+    BYTE descriptor;        // 0x11 bits 0..3 alpha bits, 4..5 origin
+};
+
+// Accepts an uncompressed 24-bit or 32-bit (8-bit alpha) TGA without colour
+// map, origin or right-to-left / top-down order, and describes its pixels.
 // FUNCTION: CMR2 0x004a6670
-TGAImageInfo *CGraphics::ParseTGAHeader(BYTE *pHeader)
+TGAImageInfo *CGraphics::ParseTGAHeader(BYTE *pData)
 {
-    if (pHeader == NULL || pHeader[1] != 0 || *(short *)(pHeader + 8) != 0 || *(short *)(pHeader + 10) != 0 ||
-        (pHeader[17] & 0x70) != 0 || pHeader[2] == 3 || pHeader[2] != 2)
+    TGAHeader *pHeader = (TGAHeader *)pData;
+
+    if (pHeader == NULL || pHeader->colourMapType != 0 || pHeader->xOrigin != 0 || pHeader->yOrigin != 0 ||
+        (pHeader->descriptor & 0x70) != 0 || pHeader->imageType == 3 || pHeader->imageType != 2)
         return NULL;
 
-    if (pHeader[16] == 24) {
+    if (pHeader->bitsPerPixel == 24) {
         m_tgaImageInfo.bytesPerPixel = 3;
     } else {
-        if (pHeader[16] != 32)
+        if (pHeader->bitsPerPixel != 32)
             return NULL;
-        if ((pHeader[17] & 0xf) != 8)
+        if ((pHeader->descriptor & 0xf) != 8)
             return NULL;
         m_tgaImageInfo.bytesPerPixel = 4;
     }
-    m_tgaImageInfo.width = *(unsigned short *)(pHeader + 12);
-    m_tgaImageInfo.height = *(unsigned short *)(pHeader + 14);
-    m_tgaImageInfo.pixels = pHeader + pHeader[0] + 18;
+    m_tgaImageInfo.width = pHeader->width;
+    m_tgaImageInfo.height = pHeader->height;
+    m_tgaImageInfo.pixels = pData + pHeader->idLength + sizeof(TGAHeader);
     return &m_tgaImageInfo;
 }
 
@@ -2700,7 +2718,6 @@ TimerPulseState g_timerPulseState = { {
     { 5 },
     { 5 }
 }, 1, 0.3f };
-#define g_unk0x00521138 (g_timerPulseState.timers)
 #define g_pulseRising (g_timerPulseState.rising)
 #define g_pulseMax (g_timerPulseState.maximum)
 
@@ -2773,12 +2790,12 @@ void Mesh_DrawEnvMapped(Mesh *pMesh)
             triangleCount > 0) {
             for (i = 0; i < triangleCount; i++) {
                 textureIndex = pMesh->pTriangles[i].field_0x30;
-                if (currentTexture != *(int *)((BYTE *)&pMesh->pTriangles[i] + 4 + textureIndex * 4)) {
+                if (currentTexture != pMesh->pTriangles[i].textures[textureIndex]) {
                     if (count > 0) {
                         Gfx_DrawIndexedPrimitiveVB(GFX_TRIANGLELIST, CGraphics::m_pTextureManager->pVertexBuffers[pMesh->vertexBufferIndex], pMesh->vertexOffset, pMesh->field_0x10, g_unk0x006dd9bc, count);
                     }
                     count = 0;
-                    currentTexture = *(int *)((BYTE *)&pMesh->pTriangles[i] + 4 + textureIndex * 4);
+                    currentTexture = pMesh->pTriangles[i].textures[textureIndex];
                     if (currentTexture > -1) {
                         Frontend_SetObjectField118(
                             CGraphics::m_pTextureManager->textureBuffer[currentTexture], 5);
@@ -2795,7 +2812,7 @@ void Mesh_DrawEnvMapped(Mesh *pMesh)
                 }
             }
             if (count != 0) {
-                texture = *(int *)((BYTE *)&pMesh->pTriangles[triangleCount - 1] + 4 + textureIndex * 4);
+                texture = pMesh->pTriangles[triangleCount - 1].textures[textureIndex];
                 if (texture > -1) {
                     Frontend_SetObjectField118(
                         CGraphics::m_pTextureManager->textureBuffer[texture], 5);
@@ -2970,7 +2987,7 @@ Mesh *Mesh_GetShadowCylinder(Mesh *pMesh)
 
 extern void *g_sceneType1Objects[60];
 extern int *g_sceneSectorFlags;
-extern BYTE *g_sceneLightZones;
+extern LightZone *g_sceneLightZones;
 extern short *g_sceneSectorZone;
 
 // Attenuates the light-zone vertices of a sector by D3D light `light` (by
@@ -3017,7 +3034,7 @@ int Scene_AttenuateSectorLight(int sector, int light)
     if (FIX_ABS(d.x) <= limit && FIX_ABS(d.z) <= limit)
         g_sceneSectorFlags[sector] = 1;
     if (g_sceneSectorFlags[sector] != 0) {
-        pZone = &((LightZone *)g_sceneLightZones)[g_sceneSectorZone[sector]];
+        pZone = &g_sceneLightZones[g_sceneSectorZone[sector]];
         pIntensity = &pZone->pItems->intensity;
         for (i = 0; i < pZone->itemCount; i++) {
             old = *pIntensity;
@@ -3039,7 +3056,7 @@ int Scene_AttenuateSectorLight(int sector, int light)
             pIntensity += sizeof(LightZoneItem) / sizeof(int);
         }
     } else if (wasLit != 0) {
-        pZone = &((LightZone *)g_sceneLightZones)[g_sceneSectorZone[sector]];
+        pZone = &g_sceneLightZones[g_sceneSectorZone[sector]];
         if (pZone->itemCount != 0) {
             pIntensity = &pZone->pItems->intensity;
             for (i = 0; i < pZone->itemCount; i++) {
@@ -3162,7 +3179,7 @@ int Timer_GetValue(BYTE index)
     int now;
 
     index &= 0xff;
-    t = &g_unk0x00521138[index];
+    t = &g_timerPulseState.timers[index];
     pos = t->step;
     dur = t->length;
     step = (BYTE)pos;
@@ -3220,7 +3237,7 @@ int Timer_GetValue(BYTE index)
 // FUNCTION: CMR2 0x004bc0c0
 BYTE Graphics_IsRegisteredTimerRunning(BYTE *p)
 {
-    InterpolationTimer *timer = &g_unk0x00521138[*p];
+    InterpolationTimer *timer = &g_timerPulseState.timers[*p];
 
     if (timer->pOwner != p)
         return 0;
@@ -3254,10 +3271,10 @@ void Graphics_StartShapedInterpolationTimer(BYTE *pSlot, int shape, int length, 
         param7 = 0;
     }
     tri = (length + 1) * length / 2;
-    if (*pSlot < 0x20 && g_unk0x00521138[*pSlot].pOwner == pSlot)
-        g_unk0x00521138[*pSlot].shape = 5;
+    if (*pSlot < 0x20 && g_timerPulseState.timers[*pSlot].pOwner == pSlot)
+        g_timerPulseState.timers[*pSlot].shape = 5;
     *pSlot = Timer_FindFree();
-    rec = &g_unk0x00521138[*pSlot];
+    rec = &g_timerPulseState.timers[*pSlot];
     switch (shape) {
     case 0:
         rec->base = start;
@@ -3300,7 +3317,7 @@ void Graphics_StartShapedInterpolationTimer(BYTE *pSlot, int shape, int length, 
 // FUNCTION: CMR2 0x004bc3e0
 BYTE Graphics_GetTimerRecordBitUnion(BYTE index)
 {
-    BYTE *p = (BYTE *)&g_unk0x00521138[index & 0xff];
+    BYTE *p = (BYTE *)&g_timerPulseState.timers[index & 0xff];
     BYTE r = (BYTE)index;
     int i = 24;
 
@@ -3315,18 +3332,18 @@ void Graphics_ResetInterpolationTimers(void)
 {
     InterpolationTimer *p;
 
-    memset(g_unk0x00521138, 0, sizeof(g_unk0x00521138));
-    p = g_unk0x00521138;
+    memset(g_timerPulseState.timers, 0, sizeof(g_timerPulseState.timers));
+    p = g_timerPulseState.timers;
     do {
         p->shape = 5;
         p++;
-    } while ((INT_PTR)p < (INT_PTR)&g_unk0x00521138[32]);
+    } while ((INT_PTR)p < (INT_PTR)&g_timerPulseState.timers[32]);
 }
 
 // FUNCTION: CMR2 0x004bc470
 void Graphics_StopRegisteredTimer(BYTE *p)
 {
-    g_unk0x00521138[*p].shape = 5;
+    g_timerPulseState.timers[*p].shape = 5;
 }
 
 // GLOBAL: CMR2 0x008164c8
@@ -3356,47 +3373,47 @@ float g_pulseSpeed;
 
 // Level thresholds and the phase step, taken from the original's constant block.
 // GLOBAL: CMR2 0x00511ce8
-extern const float g_unk0x00511ce8 = 0.1f;
+extern const float g_float0_1 = 0.1f;
 // GLOBAL: CMR2 0x00511d10
-extern const float g_unk0x00511d10 = 0.25f;
+extern const float g_float0_25 = 0.25f;
 // GLOBAL: CMR2 0x00511d14
-extern const float g_unk0x00511d14 = 0.15f;
+extern const float g_float0_15 = 0.15f;
 // GLOBAL: CMR2 0x00511d18
-extern const float g_unk0x00511d18 = 0.05f;
+extern const float g_float0_05 = 0.05f;
 // GLOBAL: CMR2 0x00511d1c
-extern const float g_unk0x00511d1c = 0.004f;
+extern const float g_float0_004 = 0.004f;
 // GLOBAL: CMR2 0x0051136c
-extern const float g_unk0x0051136c = 0.2f;
+extern const float g_float0_2 = 0.2f;
 
 // FUNCTION: CMR2 0x004bcc60
 void Pulse_Update(unsigned int dt)
 {
     if (g_pulseFrozen != 0)
         return;
-    g_pulsePhase = X87S_ADD(X87S_MUL(X87S_FILD(float, dt), g_unk0x00511d1c), g_pulsePhase);
+    g_pulsePhase = X87S_ADD(X87S_MUL(X87S_FILD(float, dt), g_float0_004), g_pulsePhase);
     if (g_pulseRising != 0) {
-        if (g_pulseLevel <= g_unk0x00511d18)
+        if (g_pulseLevel <= g_float0_05)
             g_pulseSpeed = 0.0007f;
-        else if (g_pulseLevel <= g_unk0x00511ce8)
+        else if (g_pulseLevel <= g_float0_1)
             g_pulseSpeed = 0.0011f;
-        else if (g_pulseLevel <= g_unk0x00511d14)
+        else if (g_pulseLevel <= g_float0_15)
             g_pulseSpeed = 0.0014f;
-        else if (g_pulseLevel <= g_unk0x0051136c)
+        else if (g_pulseLevel <= g_float0_2)
             g_pulseSpeed = 0.0011f;
-        else if (g_pulseLevel <= g_unk0x00511d10)
+        else if (g_pulseLevel <= g_float0_25)
             g_pulseSpeed = 0.0007f;
         else
             g_pulseSpeed = 0.0004f;
     } else {
-        if (g_pulseLevel <= g_unk0x00511d18)
+        if (g_pulseLevel <= g_float0_05)
             g_pulseSpeed = 0.0007f;
-        else if (g_pulseLevel <= g_unk0x00511ce8)
+        else if (g_pulseLevel <= g_float0_1)
             g_pulseSpeed = 0.0011f;
-        else if (g_pulseLevel <= g_unk0x00511d14)
+        else if (g_pulseLevel <= g_float0_15)
             g_pulseSpeed = 0.0014f;
-        else if (g_pulseLevel <= g_unk0x0051136c)
+        else if (g_pulseLevel <= g_float0_2)
             g_pulseSpeed = 0.0011f;
-        else if (g_pulseLevel <= g_unk0x00511d10)
+        else if (g_pulseLevel <= g_float0_25)
             g_pulseSpeed = 0.0007f;
         else
             g_pulseSpeed = 0.0004f;
@@ -4861,9 +4878,9 @@ void Graphics_RaiseSupportedDetailLevels(void)
 
 
 // GLOBAL: CMR2 0x0052109c
-float g_unk0x0052109c = 1.0f;
+float g_playbackRate = 1.0f;
 // GLOBAL: CMR2 0x005210a0
-float g_frameScale = 25.0f;
+float g_frameRate = 25.0f;
 // GLOBAL: CMR2 0x005210a4
 float g_averageFps = 25.0f;
 // GLOBAL: CMR2 0x005210a8
@@ -4871,7 +4888,7 @@ float g_fps = 25.0f;
 extern int g_unk0x005210ac;
 #define g_fpsWarmup g_unk0x005210ac
 // GLOBAL: CMR2 0x005210b0
-float g_frameScale2 = 25.0f;
+float g_frameRate2 = 25.0f;
 // GLOBAL: CMR2 0x006dd9a8
 int g_averageFpsDone;
 // GLOBAL: CMR2 0x006dd9b0
@@ -4898,7 +4915,8 @@ static unsigned int g_unk0x006dd898;
 static unsigned int g_unk0x006dd89c;
 
 // Frame timing: average fps after a 3 s warm-up, fps of the last second and
-// the time scale of the current frame (1000 / frame time in ms).
+// the rate of the current frame (1000 / frame time in whole ms, infinite when
+// the frame took under one).
 // FUNCTION: CMR2 0x004b21e0
 void Graphics_UpdateFrameStatistics(void)
 {
@@ -4960,22 +4978,22 @@ void Graphics_UpdateFrameStatistics(void)
 
         previous = now;
         if (dt > 0.0) {
-            g_frameScale2 = X87S_DIV(g_netFontInverseScale, dt);
-            g_frameScale = X87S_DIV(g_netFontInverseScale, dt);
+            g_frameRate2 = X87S_DIV(g_netFontInverseScale, dt);
+            g_frameRate = X87S_DIV(g_netFontInverseScale, dt);
         }
     }
 }
 
 // FUNCTION: CMR2 0x004b23a0
-float Graphics_GetFrameScale(void)
+float Graphics_GetFrameRate(void)
 {
-    return g_frameScale;
+    return g_frameRate;
 }
 
 // FUNCTION: CMR2 0x004b23b0
 void Graphics_SetPlaybackRate(float value)
 {
-    g_unk0x0052109c = value;
+    g_playbackRate = value;
 }
 
 #include "Particle.h"
@@ -6107,9 +6125,9 @@ Texture *CGraphics::LoadTGATexture(BYTE *pTGA, Texture *pTexture)
 
 // 1/255 and the double 1.0 the original keeps in its constant block.
 // GLOBAL: CMR2 0x00511364
-extern const float g_unk0x00511364 = 1.0f / 255.0f;
+extern const float g_floatOneOver255 = 1.0f / 255.0f;
 // GLOBAL: CMR2 0x00511428
-extern const double g_unk0x00511428 = 1.0;
+extern const double g_doubleOne = 1.0;
 extern const float g_netZero;
 extern const float g_netByteScale;
 extern const float g_netOne;
@@ -6177,10 +6195,10 @@ BYTE *CGraphics::SampleTGAPixel(unsigned int x, unsigned int y, TGAImageInfo *pI
         m_tgaPixel[1] = g;
         m_tgaPixel[2] = b;
     }
-    if (contrast != g_unk0x00511428) {
-        in.r = X87S_MUL(X87S_LOAD(m_tgaPixel[0]), g_unk0x00511364);
-        in.g = X87S_MUL(X87S_LOAD(m_tgaPixel[1]), g_unk0x00511364);
-        in.b = X87S_MUL(X87S_LOAD(m_tgaPixel[2]), g_unk0x00511364);
+    if (contrast != g_doubleOne) {
+        in.r = X87S_MUL(X87S_LOAD(m_tgaPixel[0]), g_floatOneOver255);
+        in.g = X87S_MUL(X87S_LOAD(m_tgaPixel[1]), g_floatOneOver255);
+        in.b = X87S_MUL(X87S_LOAD(m_tgaPixel[2]), g_floatOneOver255);
         // PORT: D3DXColorAdjustContrast: each channel scaled about 0.5.
         out.r = 0.5f + contrast * (in.r - 0.5f);
         out.g = 0.5f + contrast * (in.g - 0.5f);
@@ -6542,7 +6560,7 @@ BYTE Timer_FindFree(void)
 
     slot = 0;
     for (i = 0; i < 32; i++) {
-        if (g_unk0x00521138[slot].shape == 5)
+        if (g_timerPulseState.timers[slot].shape == 5)
             return (BYTE)slot;
         slot = (slot + 1) % 32;
     }
@@ -6651,12 +6669,12 @@ void Graphics_DrawCubeMappedShadowTriangles(Mesh *pMesh)
         goto done;
     for (i = 0; i < triangleCount; i++) {
         textureIndex = pMesh->pTriangles[i].field_0x30;
-        if (currentTexture != *(int *)((BYTE *)&pMesh->pTriangles[i] + 4 + textureIndex * 4)) {
+        if (currentTexture != pMesh->pTriangles[i].textures[textureIndex]) {
             if (count > 0) {
                 Gfx_DrawIndexedPrimitiveVB(GFX_TRIANGLELIST, CGraphics::m_pTextureManager->pVertexBuffers[pMesh->vertexBufferIndex], pMesh->vertexOffset, pMesh->field_0x10, g_unk0x006dd9bc, count);
             }
             count = 0;
-            currentTexture = *(int *)((BYTE *)&pMesh->pTriangles[i] + 4 + textureIndex * 4);
+            currentTexture = pMesh->pTriangles[i].textures[textureIndex];
             if (currentTexture > -1) {
                 if ((g_pGraphics->field913_0x3bc & 0x10) != 0) {
                     Frontend_SetObjectField118(CGraphics::m_pTextureManager->textureBuffer[currentTexture], 8);
@@ -6682,7 +6700,7 @@ void Graphics_DrawCubeMappedShadowTriangles(Mesh *pMesh)
     }
     if (count == 0)
         goto done;
-    texture = *(int *)((BYTE *)&pMesh->pTriangles[triangleCount - 1] + 4 + textureIndex * 4);
+    texture = pMesh->pTriangles[triangleCount - 1].textures[textureIndex];
     if (texture > -1) {
         if ((g_pGraphics->field913_0x3bc & 0x10) != 0) {
             Frontend_SetObjectField118(CGraphics::m_pTextureManager->textureBuffer[texture], 8);
@@ -6850,7 +6868,7 @@ void Graphics_DrawMeshTextureBatches(Mesh *pMesh)
     int n;
 
     for (n = total; n > 0; n--) {
-        int texture = *(int *)((BYTE *)pTri + 4 + pTri->field_0x2c * 4);
+        int texture = pTri->textures[pTri->field_0x2c];
         if (texture != currentTexture) {
             if (count > 0) {
                 Gfx_DrawIndexedPrimitiveVB(GFX_TRIANGLELIST, CGraphics::m_pTextureManager->pVertexBuffers[pMesh->vertexBufferIndex], pMesh->vertexOffset, pMesh->field_0x10, g_unk0x0059be74, count);
@@ -6867,7 +6885,7 @@ void Graphics_DrawMeshTextureBatches(Mesh *pMesh)
     }
     if (count != 0) {
         MeshTriangle *pLast = &pMesh->pTriangles[total - 1];
-        int texture = *(int *)((BYTE *)pLast + 4 + pLast->field_0x2c * 4);
+        int texture = pLast->textures[pLast->field_0x2c];
         CGraphics::ApplyTextureStageChange(0, CGraphics::m_pTextureManager->textureBuffer[texture]);
         Gfx_DrawIndexedPrimitiveVB(GFX_TRIANGLELIST, CGraphics::m_pTextureManager->pVertexBuffers[pMesh->vertexBufferIndex], pMesh->vertexOffset, pMesh->field_0x10, g_unk0x0059be74, count);
     }

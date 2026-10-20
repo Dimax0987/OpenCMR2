@@ -110,7 +110,7 @@ void CheckMenuNavigation(SDL_Joystick *virt, DeviceInfo *pad)
     SDL_SetJoystickVirtualAxis(virt, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_JOYSTICK_AXIS_MAX);
     SDL_SetJoystickVirtualAxis(virt, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, SDL_JOYSTICK_AXIS_MAX);
     Check((MenuInput(pad) & 0xf) == 0, "both triggers do not navigate menus");
-    Check(pad->joystick.bindings[2].field_0xc < -39321 && pad->joystick.bindings[5].field_0xc < -39321,
+    Check(pad->joystick.bindings[2].position < -39321 && pad->joystick.bindings[5].position < -39321,
           "menu polling preserves both driving pedals");
     SDL_SetJoystickVirtualAxis(virt, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_JOYSTICK_AXIS_MIN);
     SDL_SetJoystickVirtualAxis(virt, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, SDL_JOYSTICK_AXIS_MIN);
@@ -131,18 +131,18 @@ void CheckWheelMenuPedals(InputDevice *wheel, DeviceInfo *info)
     ControllerData &slot = CInput::m_controllerInfo[2];
     slot.field_0x2d8[2] = 2;
     slot.field_0x2d8[3] = 1;
-    info->joystick.bindings[2].field_0xc = -0x10000;
-    info->joystick.bindings[1].field_0xc = 0x10000;
+    info->joystick.bindings[2].position = -0x10000;
+    info->joystick.bindings[1].position = 0x10000;
     info->field_0x8 = 0x10;
     Input_TranslatePedalsToMenuKeys();
     Check(info->field_0x8 == 0x14, "wheel throttle navigates and preserves confirm");
     Input_TranslatePedalsToMenuKeys();
     Check(info->field_0x8 == 0x10, "held wheel pedal is latched once");
-    info->joystick.bindings[2].field_0xc = 0x10000;
-    info->joystick.bindings[1].field_0xc = -0x10000;
+    info->joystick.bindings[2].position = 0x10000;
+    info->joystick.bindings[1].position = -0x10000;
     Input_TranslatePedalsToMenuKeys();
     Check(info->field_0x8 == 0x18, "wheel brake navigates in the opposite direction");
-    info->joystick.bindings[1].field_0xc = 0x10000;
+    info->joystick.bindings[1].position = 0x10000;
     Input_TranslatePedalsToMenuKeys();
     Check(info->field_0x8 == 0x10, "released wheel pedals do not navigate");
     CInput::m_unk0x0059f6b0[info->field_0x18] = nullptr;
@@ -258,9 +258,9 @@ int main()
     if (pad != NULL) {
         CInput::InitDetectedControllerSlot(pad, 2);
         const ControllerData &slot = CInput::m_controllerInfo[2];
-        Check(slot.field_0x210[0].field_0x0 != 0 && slot.field_0x2d8[0] == 0, "default steering on the left stick");
-        Check(slot.field_0x210[2].field_0x0 != 0 && slot.field_0x2d8[2] == 5, "default throttle on the right trigger");
-        Check(slot.field_0x210[3].field_0x0 != 0 && slot.field_0x2d8[3] == 2, "default brake on the left trigger");
+        Check(slot.field_0x210[0].present != 0 && slot.field_0x2d8[0] == 0, "default steering on the left stick");
+        Check(slot.field_0x210[2].present != 0 && slot.field_0x2d8[2] == 5, "default throttle on the right trigger");
+        Check(slot.field_0x210[3].present != 0 && slot.field_0x2d8[3] == 2, "default brake on the left trigger");
         CheckMenuNavigation(virt, pad);
         Input_CloseDevice(CInput::m_unk0x0059f6b0[pad->field_0x18]);
         CInput::m_unk0x0059f6b0[pad->field_0x18] = NULL;
