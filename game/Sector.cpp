@@ -640,6 +640,52 @@ void Sector_InsertNodeByPosition(SceneNode *pNode)
 unsigned short g_visibleSectorIndices[4096];
 int Tri2D_Contains(int *pPoint, int *pTri);
 
+// PORT: whether a sector's ground rectangle (four x/z corners), widened by
+// 16 m for the trees and signs standing near its edge, and the view triangle
+// overlap, by separating axes: neither convex shape lies wholly on one side
+// of an edge of the other. The original only asked whether a corner of the
+// rectangle was inside the triangle (Sector_CullGridAroundViewNode).
+static bool Sector_TouchesTriangle(const int bounds[4][2], const int *tri)
+{
+    const int64_t margin = 0x100000;
+    int64_t minX = bounds[0][0], maxX = bounds[0][0], minZ = bounds[0][1], maxZ = bounds[0][1];
+    for (int i = 1; i < 4; i++) {
+        minX = bounds[i][0] < minX ? bounds[i][0] : minX;
+        maxX = bounds[i][0] > maxX ? bounds[i][0] : maxX;
+        minZ = bounds[i][1] < minZ ? bounds[i][1] : minZ;
+        maxZ = bounds[i][1] > maxZ ? bounds[i][1] : maxZ;
+    }
+    minX -= margin;
+    maxX += margin;
+    minZ -= margin;
+    maxZ += margin;
+    const int64_t shapes[2][4][2] = {
+        { { minX, minZ }, { maxX, minZ }, { maxX, maxZ }, { minX, maxZ } },
+        { { tri[0], tri[1] }, { tri[2], tri[3] }, { tri[4], tri[5] }, { tri[4], tri[5] } },
+    };
+    const int counts[2] = { 4, 3 };
+
+    for (int shape = 0; shape < 2; shape++) {
+        for (int e = 0; e < counts[shape]; e++) {
+            const int64_t *a = shapes[shape][e], *b = shapes[shape][(e + 1) % counts[shape]];
+            int64_t axisX = a[1] - b[1], axisZ = b[0] - a[0];
+            int64_t lo[2], hi[2];
+            for (int s = 0; s < 2; s++) {
+                for (int i = 0; i < counts[s]; i++) {
+                    int64_t d = shapes[s][i][0] * axisX + shapes[s][i][1] * axisZ;
+                    if (i == 0 || d < lo[s])
+                        lo[s] = d;
+                    if (i == 0 || d > hi[s])
+                        hi[s] = d;
+                }
+            }
+            if (hi[0] < lo[1] || hi[1] < lo[0])
+                return false;
+        }
+    }
+    return true;
+}
+
 // Sector culling pass of a scene node: walks the sector grid around its world
 // position and marks every sector whose bounding rectangle overlaps the screen
 // triangle built from the node position and the "radius" (the fixed far plane
@@ -728,6 +774,27 @@ void Sector_CullGridAroundViewNode(SceneNode *pNode, void *pRect)
     tri[5] = tri[1] + fx + ez;
     tri[2] = tri[0] - fz + ex;
     tri[3] = tri[1] - fx + ez;
+    // PORT: the walk covers the sectors around the node out to the triangle's
+    // far corners, which reach past the half-width when the view is diagonal
+    // to the grid; the original left those sectors out, and the scenery at the
+    // far corners of the view appeared at once as it turned or moved.
+    spread = abs(tri[2] - tri[0]);
+    spread = abs(tri[3] - tri[1]) > spread ? abs(tri[3] - tri[1]) : spread;
+    spread = abs(tri[4] - tri[0]) > spread ? abs(tri[4] - tri[0]) : spread;
+    spread = abs(tri[5] - tri[1]) > spread ? abs(tri[5] - tri[1]) : spread;
+    spread = FixMulShift32(spread + 0x100000, g_sectorScale);
+    colStart = rem - spread - 1;
+    if (colStart < 0)
+        colStart = 0;
+    colEnd = rem + spread + 2;
+    if (colEnd > g_sectorsPerRow)
+        colEnd = g_sectorsPerRow;
+    rowStart = quo - spread - 1;
+    if (rowStart < 0)
+        rowStart = 0;
+    rowEnd = quo + spread + 2;
+    if (rowEnd > g_sectorRows)
+        rowEnd = g_sectorRows;
     FixMatrix_GetPosition(&origin, &pNode->world);
     FixMatrix_GetForward(&forward, &pNode->world);
     FixVecScale(&scaled, &forward, 0xa0000);
@@ -741,6 +808,9 @@ void Sector_CullGridAroundViewNode(SceneNode *pNode, void *pRect)
                 Tri2D_Contains(g_sectors[index]->bounds[3], tri) ||
                 Tri2D_Contains(g_sectors[index]->bounds[1], tri) ||
                 Tri2D_Contains(g_sectors[index]->bounds[0], tri) ||
+                // PORT: also a sector the triangle crosses without holding
+                // any of its corners (Sector_TouchesTriangle).
+                Sector_TouchesTriangle(g_sectors[index]->bounds, tri) ||
                 index == iSector - g_sectorsPerRow - 1 || index == iSector - g_sectorsPerRow ||
                 index == iSector - g_sectorsPerRow + 1 || index == iSector - 1 || index == iSector ||
                 index == iSector + 1 || index == iSector + g_sectorsPerRow - 1 ||

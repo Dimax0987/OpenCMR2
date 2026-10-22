@@ -411,7 +411,12 @@ static void LightingDigest(unsigned *zonesOut, unsigned long long out[5])
         }
         const LightZoneMesh &mesh = *zone.pMesh;
         mixInt(3, mesh.triangleCount); mixInt(3, mesh.vertexCount);
-        mix(3, mesh.pVertices, mesh.vertexCount * 0x30);
+        // Not the diffuse colours: the scene lights write them for the
+        // sectors in view (Scene_RelightSector), as the view culling picks.
+        for (int v = 0; v < mesh.vertexCount; v++) {
+            mix(3, &mesh.pVertices[v], offsetof(MeshVertexF, diffuseColour));
+            mix(3, &mesh.pVertices[v].specularColour, sizeof(MeshVertexF) - offsetof(MeshVertexF, specularColour));
+        }
         mix(3, mesh.pTriangles, mesh.triangleCount * 0x4c);
         mix(3, mesh.pLevels, mesh.vertexCount * 4);
     }

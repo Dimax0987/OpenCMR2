@@ -5,9 +5,11 @@ Scene_LoadLighting turns the 32-bit offsets of the lighting file into
 pointers; OpenCMR2 copies the zones, items and mesh headers into native
 records instead. stage_probe (OPENCMR2_PROBE_LIGHTING) prints pointer-free
 digests of the result after the stage loads: zones, items, item owners as
-(sector, position in its object list), zone mesh data and the sectors' shadow
-meshes. The expected values were produced by the original algorithm (the
-32-bit port before the native copies) and must hold on every target.
+(sector, position in its object list), zone mesh data (without the diffuse
+colours, which the scene lights rewrite for the sectors in view) and the
+sectors' shadow meshes. The expected values were produced by the original
+algorithm (the 32-bit port before the native copies) and must hold on every
+target.
 
     tests/stage_lighting.py --probe build/linux/tests/stage_probe --data GAME
 """
@@ -21,11 +23,11 @@ from pathlib import Path
 
 # (rally cursor, stage cursor): zone count and the five digests.
 EXPECTED = {
-    (0, 0): "210 a3388df08a525b2b 48c17d951e368984 7b6fd26cda701288 b87b364d01f99b3a 611e6807c41a0eb0",
-    (0, 1): "174 574c213c19b8685a 6235d27833e8034f 8b2b8d3c0d55df46 bbb87bd142854a6c b64f5c00449bf1d6",
-    (1, 0): "194 f0ae41f52861f3eb ca86274ce1c4c1e9 4962459863d633fe a3fbdce405d8bfae e526f3e706f7f6f9",
-    (2, 0): "150 4805247a7a683e7e fcaa051a100e7296 2ae24814d74c0197 394f8af40ca3c1a4 a78e58bede1b9b98",
-    (3, 0): "157 fcd8c3f3a566061c d1585a38d6b295a7 5c77c0f9205294b8 38fe91e0dde6186c 3f6caeb4dac4b138",
+    (0, 0): "210 a3388df08a525b2b 48c17d951e368984 7b6fd26cda701288 b637b824908c9d27 611e6807c41a0eb0",
+    (0, 1): "174 574c213c19b8685a 6235d27833e8034f 8b2b8d3c0d55df46 78aa08174180e34b b64f5c00449bf1d6",
+    (1, 0): "194 f0ae41f52861f3eb ca86274ce1c4c1e9 4962459863d633fe 1d35759cfbd1483a e526f3e706f7f6f9",
+    (2, 0): "150 4805247a7a683e7e fcaa051a100e7296 2ae24814d74c0197 c677cfca329b8a07 a78e58bede1b9b98",
+    (3, 0): "157 fcd8c3f3a566061c d1585a38d6b295a7 5c77c0f9205294b8 d8c04c7b808207b1 3f6caeb4dac4b138",
 }
 
 
