@@ -2338,6 +2338,49 @@ void Graphics_SetShadowGeometryState(int value);
 void Game_QueueVisibleSectorNodes(int param1);
 void Game_DrawSortedNodes(int bit);
 
+// PORT: the faces of the cube map end at 80 m (120 m for the view-mask nodes)
+// and see at most that times the square root of three away, but the original
+// drew every sector of the view in all six, most of them clipped away. While
+// the faces are drawn, the culled list keeps only the sectors whose ground
+// rectangle is within 272 m (208 m plus room for the objects that reach out
+// of their sector) of the cube's centre, and is restored after.
+static unsigned short g_cubeSavedSectorIndices[4096];
+
+static int Graphics_KeepCubeMapSectors(const FixVector *pCentre)
+{
+    int saved = g_sectorCullEnabled;
+    int kept = 0;
+    int cx = pCentre->x >> 16;
+    int cz = pCentre->z >> 16;
+
+    memcpy(g_cubeSavedSectorIndices, g_visibleSectorIndices, saved * sizeof(g_visibleSectorIndices[0]));
+    for (int i = 0; i < saved; i++) {
+        Sector *pSector = g_sectors[g_cubeSavedSectorIndices[i]];
+        int minX = pSector->bounds[0][0] >> 16, maxX = minX;
+        int minZ = pSector->bounds[0][1] >> 16, maxZ = minZ;
+        for (int k = 1; k < 4; k++) {
+            int x = pSector->bounds[k][0] >> 16;
+            int z = pSector->bounds[k][1] >> 16;
+            minX = x < minX ? x : minX;
+            maxX = x > maxX ? x : maxX;
+            minZ = z < minZ ? z : minZ;
+            maxZ = z > maxZ ? z : maxZ;
+        }
+        int dx = cx < minX ? minX - cx : cx > maxX ? cx - maxX : 0;
+        int dz = cz < minZ ? minZ - cz : cz > maxZ ? cz - maxZ : 0;
+        if (dx * dx + dz * dz <= 272 * 272)
+            g_visibleSectorIndices[kept++] = g_cubeSavedSectorIndices[i];
+    }
+    g_sectorCullEnabled = kept;
+    return saved;
+}
+
+static void Graphics_RestoreCubeMapSectors(int saved)
+{
+    memcpy(g_visibleSectorIndices, g_cubeSavedSectorIndices, saved * sizeof(g_visibleSectorIndices[0]));
+    g_sectorCullEnabled = saved;
+}
+
 // Scratch view matrix rebuilt for every cube map face (0x0049d3f0 uses it too).
 // GLOBAL: CMR2 0x0059bd28
 FixMatrix g_cubeFaceViewMatrix;
@@ -2367,6 +2410,7 @@ int Graphics_RenderNodeCubeMapFaces(SceneNode *pNode, int bit)
     SceneNode *pChild;
     int i;
     unsigned int sectorIndex;
+    int savedSectors;
     int objectDistance;
 
     farPlane = CGraphics::m_farPlaneFixed;
@@ -2389,6 +2433,8 @@ int Graphics_RenderNodeCubeMapFaces(SceneNode *pNode, int bit)
     Gfx_SetViewport(&viewport);
     Gfx_GetTransform(GFX_TRANSFORM_VIEW, &view);
     Gfx_GetTransform(GFX_TRANSFORM_PROJECTION, &projection);
+    // PORT: only the sectors the faces can reach (Graphics_KeepCubeMapSectors).
+    savedSectors = Graphics_KeepCubeMapSectors(&pCurrent->position);
 
     for (i = 0; i < 6; i++) {
         FixMatrix face;
@@ -2536,6 +2582,7 @@ int Graphics_RenderNodeCubeMapFaces(SceneNode *pNode, int bit)
         Game_DrawSortedNodes(bit);
         Gfx_EndScene();
     }
+    Graphics_RestoreCubeMapSectors(savedSectors);
     CGraphics::SetProjection(0x20000, 0x20000, farPlane, 0x10000);
     // PORT: the original passed a Texture laid over g_graphics whose pSurface
     // is the back buffer.
