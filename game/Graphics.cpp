@@ -2367,6 +2367,7 @@ int Graphics_RenderNodeCubeMapFaces(SceneNode *pNode, int bit)
     SceneNode *pChild;
     int i;
     unsigned int sectorIndex;
+    int objectDistance;
 
     farPlane = CGraphics::m_farPlaneFixed;
     pCurrent = &pNode->current;
@@ -2486,7 +2487,19 @@ int Graphics_RenderNodeCubeMapFaces(SceneNode *pNode, int bit)
                 Gfx_SetTransform(GFX_TRANSFORM_WORLD, &g_identityWorldMatrix);
                 Graphics_DrawMeshLOD(pMesh, 1, 0, 0);
                 while (pObject != NULL) {
-                    if (pObject->pMesh->field_0x114 < 0x140000) {
+                    // PORT: the camera-facing objects within 20 m of the cube,
+                    // each by its own distance; the original read the one kept
+                    // in their shared mesh (Game_DrawDeferredObjects).
+                    if ((pObject->pMesh->flags & 2) != 0) {
+                        FixVector delta;
+                        delta.x = pCurrent->position.x - pObject->position.x;
+                        delta.y = 0;
+                        delta.z = pCurrent->position.z - pObject->position.z;
+                        objectDistance = FixVecLength(&delta);
+                    } else {
+                        objectDistance = pObject->pMesh->field_0x114;
+                    }
+                    if (objectDistance < 0x140000) {
                         if ((pObject->pMesh->flags & 2) != 0) {
                             float scale;
 

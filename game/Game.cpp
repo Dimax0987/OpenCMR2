@@ -2225,6 +2225,27 @@ extern int g_depthSortDrawLists;
 
 void Frontend_SetObjectField118(struct Texture *pTexture, int value);
 
+// PORT: the original sorted these objects, and chose to blend them within
+// 200 m, by a distance it kept in their mesh, which the copies of a tree or
+// a sign share: the distance of whichever copy was queued last. All the
+// copies sorted as one, and their edges switched between blended and cut out
+// together when that one copy crossed 200 m. Each object now sorts by its own
+// distance, and all are blended, as they are drawn farthest first, so no edge
+// changes at a distance.
+struct DeferredDraw {
+    int distance;
+    StageObjectDraw *pObject;
+};
+
+static int __cdecl Game_CompareDeferredDistance(const void *a, const void *b)
+{
+    int distanceA = ((const DeferredDraw *)a)->distance;
+    int distanceB = ((const DeferredDraw *)b)->distance;
+    return distanceA < distanceB ? 1 : distanceA > distanceB ? -1 : 0;
+}
+
+extern SceneNode *g_unk0x0059be6c;
+
 // Draws the objects the deferred pass of the static stage objects queued:
 // sorts them by view depth (farthest first) and, for each one, binds its
 // texture, sets its world matrix and marks the mesh for the culling test of
@@ -2232,20 +2253,28 @@ void Frontend_SetObjectField118(struct Texture *pTexture, int value);
 // FUNCTION: CMR2 0x0049cc50
 void Game_DrawDeferredObjects(void)
 {
+    static DeferredDraw sorted[4096];
+    StageObjectDraw *pObject;
+    FixVector delta;
     unsigned int i;
 
     if ((unsigned int)CGame::m_deferredDrawCount >= 1) {
-        if (g_depthSortDrawLists != 0)
-            qsort(CGame::m_deferredDrawObjects, CGame::m_deferredDrawCount, sizeof(CGame::m_deferredDrawObjects[0]), Game_CompareDeferredDrawDepth);
         for (i = 0; i < (unsigned int)CGame::m_deferredDrawCount; i++) {
-            Frontend_SetObjectField118(CGraphics::m_pTextureManager->textureBuffer[
-                ((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->pMesh->pTriangles->textures[0]], 0);
-            Gfx_SetTransform(GFX_TRANSFORM_WORLD, (GfxMatrix *)((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->matrix);
-            if (((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->pMesh->field_0x114 < 0xc80000)
-                ((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->pMesh->flags |= 8;
-            else
-                ((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->pMesh->flags &= 0xfffffff7;
-            Graphics_DrawMeshLOD(((StageObjectDraw *)CGame::m_deferredDrawObjects[i])->pMesh, 1, 0, 0);
+            pObject = (StageObjectDraw *)CGame::m_deferredDrawObjects[i];
+            delta.x = g_unk0x0059be6c->world.position.x - pObject->position.x;
+            delta.y = 0;
+            delta.z = g_unk0x0059be6c->world.position.z - pObject->position.z;
+            sorted[i].distance = FixVecLength(&delta);
+            sorted[i].pObject = pObject;
+        }
+        if (g_depthSortDrawLists != 0)
+            qsort(sorted, CGame::m_deferredDrawCount, sizeof(sorted[0]), Game_CompareDeferredDistance);
+        for (i = 0; i < (unsigned int)CGame::m_deferredDrawCount; i++) {
+            pObject = sorted[i].pObject;
+            Frontend_SetObjectField118(CGraphics::m_pTextureManager->textureBuffer[pObject->pMesh->pTriangles->textures[0]], 0);
+            Gfx_SetTransform(GFX_TRANSFORM_WORLD, (GfxMatrix *)pObject->matrix);
+            pObject->pMesh->flags |= 8;
+            Graphics_DrawMeshLOD(pObject->pMesh, 1, 0, 0);
         }
         CGame::m_deferredDrawCount = 0;
     }
