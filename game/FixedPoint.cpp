@@ -7,6 +7,7 @@
 #include "Car.h"
 #include "CarParts.h"
 #include "StageTiming.h"
+#include "main.h"
 
 // GLOBAL: CMR2 0x0072d67c
 int g_fixMatrixMultiplyCount;
@@ -725,6 +726,34 @@ static int View_GetFovScale(void)
     return scale;
 }
 
+// PORT: the original moved the far plane in one frame whenever a route node
+// changed the view distance, and a strip of the stage appeared or vanished on
+// the horizon. The far plane drawn now follows that distance, closing half the
+// gap in about a third of a second. It starts at the distance, without
+// sliding, on a new view and after a pause of the frames (a load or a hitch).
+static int g_viewShownFarPlanes[2];
+static int g_viewFarPlaneTimes[2];
+
+void View_ResetShownFarPlane(BYTE view)
+{
+    g_viewShownFarPlanes[view] = 0;
+}
+
+static int View_GetShownFarPlane(BYTE view)
+{
+    int target = g_viewFarPlanes[view];
+    int now = CMain::GetFrameTime();
+    int elapsed = now - g_viewFarPlaneTimes[view];
+
+    g_viewFarPlaneTimes[view] = now;
+    if (g_viewShownFarPlanes[view] <= 0 || elapsed < 0 || elapsed > 250)
+        g_viewShownFarPlanes[view] = target;
+    else
+        g_viewShownFarPlanes[view] +=
+            (int)((long long)(target - g_viewShownFarPlanes[view]) * elapsed / (elapsed + 500));
+    return g_viewShownFarPlanes[view];
+}
+
 // Sets the camera projection for the selected player's view.
 // match 66%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)
 // FUNCTION: CMR2 0x00422d40
@@ -738,6 +767,8 @@ void View_SetPlayerProjection(unsigned int player)
     int fovX = FixMul(0x123d7, FixMul(FixMul(zoom, View_GetFovScale()),
         (int)FTOI(__int64, X87S_MUL(X87S_MUL((16.0 / 9.0), (X87S_DIV((double)g_pGraphics->resY, (double)g_pGraphics->resX))), CGraphics::m_65536))));
     int fovY = FixMul(0x2147a, FixMul(zoom, View_GetFovScale()));
+    // PORT: the far plane eases to the view distance (View_GetShownFarPlane).
+    int farPlane = View_GetShownFarPlane(i);
 
     if (Race_IsMultiplayerRecordMode10() == 0 && RallyData_IsHeadToHeadRaceMode()) {
         if (CGameInfo::IsSplitBarEnabled())
@@ -746,14 +777,14 @@ void View_SetPlayerProjection(unsigned int player)
             fovX *= 2;
     }
     if (CGameInfo::IsActiveCheatEnabled(2)) {
-        CGraphics::SetProjection(-fovX, fovY, g_viewFarPlanes[i], g_viewNearPlanes[i]);
+        CGraphics::SetProjection(-fovX, fovY, farPlane, g_viewNearPlanes[i]);
         return;
     }
-    if ((BYTE)RallyData_IsChampionshipFinalStage() && g_viewFarPlanes[i] < 0x960000) {
+    if ((BYTE)RallyData_IsChampionshipFinalStage() && farPlane < 0x960000) {
         CGraphics::SetProjection(fovX, fovY, 0x960000, g_viewNearPlanes[i]);
         return;
     }
-    CGraphics::SetProjection(fovX, fovY, g_viewFarPlanes[i], g_viewNearPlanes[i]);
+    CGraphics::SetProjection(fovX, fovY, farPlane, g_viewNearPlanes[i]);
 }
 
 // Layout of one force-feedback slot (0x539200). The full definition lives in

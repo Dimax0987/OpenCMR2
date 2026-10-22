@@ -7934,6 +7934,7 @@ unsigned short RallyData_GetSecondaryStageScoreScale(void);
 void StageObject_InitCarSceneTables(void);
 void CarInfo_CacheCameraOffsets(void);
 void StageTiming_SetViewRouteDistanceLimit(BYTE player, unsigned int node, int dir);
+void View_ResetShownFarPlane(BYTE view);
 SceneNode *RallyData_GetChallengeRenderState(void);
 void View_PlaceCarCamera(BYTE param_1);
 int View_IsModeAvailable(BYTE index, int mode);
@@ -8144,6 +8145,8 @@ void View_SetupCameras(void)
         g_unk0x005391c4[i] = 0;
         g_unk0x005391a8[i] = 0;
         StageTiming_SetViewRouteDistanceLimit(0, 0, 1);
+        // PORT: the far plane starts at the stage's distance (FixedPoint.cpp).
+        View_ResetShownFarPlane((BYTE)i);
         g_unk0x00538f00[i] = 0;
         ChaseCamera_Reset(i);
     }
