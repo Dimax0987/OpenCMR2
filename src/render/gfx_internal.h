@@ -86,6 +86,7 @@ struct GfxDrawState {
     DWORD fogColor = 0;
     int fogVertexMode = GFX_FOG_NONE, fogTableMode = GFX_FOG_NONE;
     float fogStart = 0.0f, fogEnd = 1.0f;
+    float fadeStart = 0.0f, fadeEnd = 0.0f;   // Gfx_SetDistanceFade (end <= start: off)
     bool depthTest = true, depthWrite = true;
     int depthFunc = GFX_CMP_LESSEQUAL;
     int cull = GFX_CULL_CCW;
@@ -103,7 +104,8 @@ struct GfxDrawState {
 enum GfxCommandType {
     GFX_CMD_DRAW,
     GFX_CMD_CLEAR,
-    GFX_CMD_TARGET
+    GFX_CMD_TARGET,
+    GFX_CMD_BACKDROP            // copy the back buffer for the distance fade
 };
 
 struct GfxCommand {

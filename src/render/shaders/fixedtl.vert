@@ -13,6 +13,7 @@ layout(location = 2) out vec4 outTex0;
 layout(location = 3) out vec4 outTex1;
 layout(location = 4) out float outFog;
 layout(location = 5) out float outEyeDepth;
+layout(location = 6) out vec3 outEyePosition;
 
 void main()
 {
@@ -29,4 +30,5 @@ void main()
     // Pre-transformed vertices carry their fog factor in specular alpha.
     outFog = inSpecular.w;
     outEyeDepth = w;
+    outEyePosition = vec3(0.0, 0.0, w);   // no distance fade for these
 }

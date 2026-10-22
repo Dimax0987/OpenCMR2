@@ -522,6 +522,22 @@ extern "C" void Gfx_SetRenderTarget(GfxTexture *target)
         Root(target)->renderedTo = true;
 }
 
+extern "C" void Gfx_CaptureBackdrop(void)
+{
+    if (s_target != NULL)
+        return;
+    GfxCommand cmd = {};
+    cmd.type = GFX_CMD_BACKDROP;
+    s_frame.commands.push_back(cmd);
+}
+
+extern "C" void Gfx_SetDistanceFade(float start, float end)
+{
+    s_state.fadeStart = start;
+    s_state.fadeEnd = end;
+    Touch();
+}
+
 // ---- fixed-function state --------------------------------------------------------------
 
 extern "C" void Gfx_SetTransform(int type, const GfxMatrix *matrix)

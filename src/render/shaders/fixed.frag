@@ -6,6 +6,7 @@ layout(location = 2) in vec4 inTex0;
 layout(location = 3) in vec4 inTex1;
 layout(location = 4) in float inFog;
 layout(location = 5) in float inEyeDepth;
+layout(location = 6) in vec3 inEyePosition;
 
 layout(location = 0) out vec4 outColor;
 
@@ -13,6 +14,7 @@ layout(set = 2, binding = 0) uniform sampler2D tex0;
 layout(set = 2, binding = 1) uniform samplerCube cube0;
 layout(set = 2, binding = 2) uniform sampler2D tex1;
 layout(set = 2, binding = 3) uniform samplerCube cube1;
+layout(set = 2, binding = 4) uniform sampler2D backdrop;   // Gfx_CaptureBackdrop
 
 layout(std140, set = 3, binding = 0) uniform FragmentUniforms {
     ivec4 stage0;       // colour op, colour arg1, colour arg2, alpha op
@@ -27,6 +29,7 @@ layout(std140, set = 3, binding = 0) uniform FragmentUniforms {
     vec4 fogParams;     // start, end
     vec4 bumpMatrix;    // m00, m01, m10, m11 (of the bump stage)
     vec4 bumpLuminance; // scale, offset
+    vec4 distanceFade;  // distance where the fade into the backdrop starts, ends; on (z != 0)
 };
 
 const int TOP_DISABLE = 1, TOP_SELECTARG1 = 2, TOP_SELECTARG2 = 3, TOP_MODULATE = 4, TOP_MODULATE2X = 5,
@@ -167,6 +170,16 @@ void main()
             f = range != 0.0 ? clamp((fogParams.y - inEyeDepth) / range, 0.0, 1.0) : 1.0;
         }
         current.rgb = mix(fogColor.rgb, current.rgb, f);
+    }
+
+    // Toward the far plane the scenery dissolves into the sky and backdrop
+    // behind it, the back buffer's pixel as it was before the scenery. By the
+    // distance from the eye, not the depth along the view, so that a point
+    // fades the same however the view turns.
+    if (distanceFade.z != 0.0) {
+        float f = smoothstep(distanceFade.x, distanceFade.y, length(inEyePosition));
+        if (f > 0.0)
+            current.rgb = mix(current.rgb, texelFetch(backdrop, ivec2(gl_FragCoord.xy), 0).rgb, f);
     }
     outColor = current;
 }

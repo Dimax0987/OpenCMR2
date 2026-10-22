@@ -2580,6 +2580,22 @@ void Game_DrawDeferredObjects(void);
 extern FixMatrix g_cubeFaceViewMatrix;
 GfxMatrix *FixMatrix_ToFloat(GfxMatrix *pOut, FixMatrix *pIn);
 
+// PORT: the original cut the scenery at the far plane, so whatever entered
+// the view distance appeared at once on the horizon. Over the last 15% of the
+// view distance the scenery now dissolves into the sky and backdrop already
+// drawn behind it. The view distance stays the stage's: past it the stages
+// are not built to be seen (hill tops with nothing under them, missing
+// triangles).
+static void Game_BeginDistanceFade(void)
+{
+    int end = CGraphics::m_farPlaneFixed;
+    int start = FixMul(end, 0xd99a);
+
+    Gfx_CaptureBackdrop();
+    Gfx_SetDistanceFade(X87S_MUL(X87S_FILD(float, start), CGraphics::m_oneOver65536),
+                        X87S_MUL(X87S_FILD(float, end), CGraphics::m_oneOver65536));
+}
+
 // match 94%: the residual diff is register allocation (the relight loop walks
 // the sector list from a register where the original keeps the pointer in the
 // argument slot, and the inlined fixed point normalisation uses different
@@ -2663,6 +2679,8 @@ int Game_DrawSceneViewport(SceneNode *pRoot, SceneNode *pCamera, void *pRect, in
             CGraphics::SetProjection(0, 0, 0x960000, 0);
             Game_DrawUnsortedNodes(bit);
             CGraphics::SetProjection(0, 0, farPlane, 0);
+            // PORT: the scenery fades into the backdrop (Game_BeginDistanceFade).
+            Game_BeginDistanceFade();
             Graphics_EnableFog();
             Graphics_SetLightingMode(0);
             Game_DrawCulledSectorMeshes();
@@ -2694,6 +2712,7 @@ int Game_DrawSceneViewport(SceneNode *pRoot, SceneNode *pCamera, void *pRect, in
                 Game_DrawSortedNodes(bit);
                 Game_DrawDeferredObjects();
             }
+            Gfx_SetDistanceFade(0.0f, 0.0f);
         } else {
             Game_DrawWorldMeshNodesAnd2DLayer();
         }

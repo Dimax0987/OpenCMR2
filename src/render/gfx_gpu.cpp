@@ -56,6 +56,7 @@ struct FragmentUniforms {
     float fogParams[4];
     float bumpMatrix[4];
     float bumpLuminance[4];
+    float distanceFade[4];
 };
 
 struct ClearUniforms {
@@ -186,6 +187,7 @@ struct Executor : GfxExecutor {
     SDL_Window *window = nullptr;
     SDL_GPUShader *vs3d = nullptr, *vsTL = nullptr, *fs = nullptr, *vsClear = nullptr, *fsClear = nullptr;
     SDL_GPUTexture *backColor = nullptr, *backDepth = nullptr;
+    SDL_GPUTexture *backdrop = nullptr;    // the copy of backColor the distance fade reads
     int backWidth = 0, backHeight = 0;
     SDL_GPUTextureFormat colorFormat = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
     SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT;
@@ -221,6 +223,7 @@ struct Executor : GfxExecutor {
             SDL_ReleaseGPUSampler(device, s.second);
         SDL_ReleaseGPUTexture(device, backColor);
         SDL_ReleaseGPUTexture(device, backDepth);
+        SDL_ReleaseGPUTexture(device, backdrop);
         SDL_ReleaseGPUTexture(device, white2D);
         SDL_ReleaseGPUTexture(device, whiteCube);
         SDL_ReleaseGPUBuffer(device, vertexBuffer);
@@ -310,7 +313,7 @@ struct Executor : GfxExecutor {
 
         vs3d = Shader(SHADER_CODE(fixed3d_vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
         vsTL = Shader(SHADER_CODE(fixedtl_vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-        fs = Shader(SHADER_CODE(fixed_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 1);
+        fs = Shader(SHADER_CODE(fixed_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 5, 1);
         vsClear = Shader(SHADER_CODE(clear_vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
         fsClear = Shader(SHADER_CODE(clear_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
         if (!vs3d || !vsTL || !fs || !vsClear || !fsClear)
@@ -361,13 +364,16 @@ struct Executor : GfxExecutor {
             SDL_WaitForGPUIdle(device);
             SDL_ReleaseGPUTexture(device, backColor);
             SDL_ReleaseGPUTexture(device, backDepth);
+            SDL_ReleaseGPUTexture(device, backdrop);
             backColor = CreateTexture(SDL_GPU_TEXTURETYPE_2D, colorFormat, width, height, 1, 1,
                                       SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
             backDepth = CreateTexture(SDL_GPU_TEXTURETYPE_2D, depthFormat, width, height, 1, 1,
                                       SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
+            backdrop = CreateTexture(SDL_GPU_TEXTURETYPE_2D, colorFormat, width, height, 1, 1,
+                                     SDL_GPU_TEXTUREUSAGE_SAMPLER);
             backWidth = width;
             backHeight = height;
-            if (backColor == NULL || backDepth == NULL)
+            if (backColor == NULL || backDepth == NULL || backdrop == NULL)
                 return false;
         }
         SDL_SetWindowResizable(window, true);
@@ -846,7 +852,9 @@ struct Executor : GfxExecutor {
         return TextureKind(stage) == 1 && stage.magFilter == GFX_FILTER_POINT && stage.mipFilter == GFX_MIPFILTER_NONE;
     }
 
-    void FillFragmentUniforms(const GfxDrawState &s, FragmentUniforms &u)
+    // fade: the draw is a 3D one into the back buffer, which the distance
+    // fade applies to.
+    void FillFragmentUniforms(const GfxDrawState &s, bool fade, FragmentUniforms &u)
     {
         memset(&u, 0, sizeof(u));
         const GfxStageState &a = s.stages[0], &b = s.stages[1];
@@ -879,9 +887,15 @@ struct Executor : GfxExecutor {
         memcpy(u.bumpMatrix, a.bumpMat, sizeof(u.bumpMatrix));
         u.bumpLuminance[0] = a.bumpLumScale;
         u.bumpLuminance[1] = a.bumpLumOffset;
+        if (fade && s.fadeEnd > s.fadeStart) {
+            u.distanceFade[0] = s.fadeStart;
+            u.distanceFade[1] = s.fadeEnd;
+            u.distanceFade[2] = 1.0f;
+        }
     }
 
-    void TextureBindings(const GfxDrawState &s, SDL_GPUTextureSamplerBinding bindings[4])
+    // The stages' textures (2D and cube for each), then the backdrop.
+    void TextureBindings(const GfxDrawState &s, SDL_GPUTextureSamplerBinding bindings[5])
     {
         for (int i = 0; i < 2; i++) {
             const GfxStageState &stage = s.stages[i];
@@ -902,6 +916,7 @@ struct Executor : GfxExecutor {
             bindings[i * 2] = { (texture != NULL && !cube) ? texture : white2D, sampler };
             bindings[i * 2 + 1] = { (texture != NULL && cube) ? texture : whiteCube, sampler };
         }
+        bindings[4] = { backdrop, Sampler(GfxStageState()) };
     }
 
     // What a render pass has bound: each draw sets only what differs from the
@@ -911,7 +926,7 @@ struct Executor : GfxExecutor {
         bool viewportSet = false, texturesSet = false, indicesSet = false;
         SDL_GPUViewport viewport = {};
         SDL_Rect scissor = {};
-        SDL_GPUTextureSamplerBinding textures[4] = {};
+        SDL_GPUTextureSamplerBinding textures[5] = {};
         SDL_GPUBuffer *vertices = nullptr;
     };
 
@@ -1118,6 +1133,23 @@ struct Executor : GfxExecutor {
                 target = c.target;
                 continue;
             }
+            if (c.type == GFX_CMD_BACKDROP) {
+                // A copy pass between render passes; the next draw starts a
+                // render pass that loads the back buffer as it is.
+                if (target != NULL)
+                    continue;
+                if (pass != NULL) {
+                    SDL_EndGPURenderPass(pass);
+                    pass = NULL;
+                }
+                SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
+                SDL_GPUTextureLocation src = {}, dst = {};
+                src.texture = backColor;
+                dst.texture = backdrop;
+                SDL_CopyGPUTextureToTexture(copy, &src, &dst, backWidth, backHeight, 1, false);
+                SDL_EndGPUCopyPass(copy);
+                continue;
+            }
             if (pass == NULL) {
                 size_t cleared;
                 pass = BeginPass(cmd, target, targetW, targetH, frame.commands, i, &cleared);
@@ -1182,16 +1214,16 @@ struct Executor : GfxExecutor {
                 vertexUniformScaled = scaled;
             }
             FragmentUniforms fu;
-            FillFragmentUniforms(s, fu);
+            FillFragmentUniforms(s, target == NULL && !c.transformed, fu);
             if (!fragmentUniformsSet || memcmp(&fu, &fragmentUniforms, sizeof(fu)) != 0) {
                 SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
                 fragmentUniforms = fu;
                 fragmentUniformsSet = true;
             }
-            SDL_GPUTextureSamplerBinding textures[4];
+            SDL_GPUTextureSamplerBinding textures[5];
             TextureBindings(s, textures);
             if (!bound.texturesSet || memcmp(textures, bound.textures, sizeof(textures)) != 0) {
-                SDL_BindGPUFragmentSamplers(pass, 0, textures, 4);
+                SDL_BindGPUFragmentSamplers(pass, 0, textures, 5);
                 memcpy(bound.textures, textures, sizeof(textures));
                 bound.texturesSet = true;
             }

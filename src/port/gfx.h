@@ -265,6 +265,14 @@ void Gfx_PopState(void);
    or, with NULL, the back buffer. */
 void Gfx_SetRenderTarget(GfxTexture *target);
 
+/* Distance fade: keeps a copy of the back buffer as it is now (the sky and
+   the backdrop, drawn first), and 3D draws into the back buffer then blend
+   into that copy between distances start and end from the eye, so the
+   scenery dissolves into what lies behind it before the far plane cuts it. end <= start turns
+   the fade off. */
+void Gfx_CaptureBackdrop(void);
+void Gfx_SetDistanceFade(float start, float end);
+
 /* ---- fixed-function state -------------------------------------------------- */
 
 void Gfx_SetTransform(int type, const GfxMatrix *matrix);

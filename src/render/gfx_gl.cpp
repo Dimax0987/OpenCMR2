@@ -36,7 +36,7 @@ namespace {
     X(DepthRange) X(ClearColor) X(ClearDepth) X(Clear) X(ColorMask) X(DepthMask) X(DepthFunc) X(BlendFunc)    \
     X(CullFace) X(FrontFace) X(PixelStorei) X(ReadPixels) X(Finish)                                           \
     X(GenTextures) X(DeleteTextures) X(BindTexture) X(ActiveTexture) X(TexImage2D) X(TexSubImage2D)           \
-    X(CompressedTexImage2D) X(TexParameteri) X(GetTexImage)                                                   \
+    X(CompressedTexImage2D) X(TexParameteri) X(GetTexImage) X(CopyTexSubImage2D)                              \
     X(GenSamplers) X(DeleteSamplers) X(BindSampler) X(SamplerParameteri) X(SamplerParameterf)                 \
     X(GenBuffers) X(DeleteBuffers) X(BindBuffer) X(BufferData) X(BindBufferRange) X(MapBufferRange)           \
     X(UnmapBuffer) X(GenVertexArrays) X(DeleteVertexArrays) X(BindVertexArray) X(EnableVertexAttribArray)      \
@@ -102,6 +102,7 @@ struct FragmentUniforms {
     float fogParams[4];
     float bumpMatrix[4];
     float bumpLuminance[4];
+    float distanceFade[4];
 };
 
 enum { VERTEX_BLOCK, FRAGMENT_BLOCK };
@@ -208,6 +209,7 @@ struct Executor : GfxExecutor {
     GLuint program3d = 0, programTL = 0;
     GLuint vertexArray = 0, vertexBuffer = 0, indexBuffer = 0, uniformBuffer = 0;
     GLuint backFramebuffer = 0, backColor = 0, backDepth = 0;
+    GLuint backdrop = 0;    // the copy of backColor the distance fade reads
     int backWidth = 0, backHeight = 0;
     GLuint white2D = 0, whiteCube = 0;
     GLint uniformAlignment = 256;
@@ -232,7 +234,7 @@ struct Executor : GfxExecutor {
         int blend = -1, srcBlend = -1, destBlend = -1, depthTest = -1, depthWrite = -1, depthFunc = -1, cull = -1;
         GLint viewport[4] = { -1, -1, -1, -1 }, scissor[4] = { -1, -1, -1, -1 };
         float depthRange[2] = { -1, -1 };
-        GLuint textures[4] = { ~0u, ~0u, ~0u, ~0u }, samplers[4] = { ~0u, ~0u, ~0u, ~0u };
+        GLuint textures[5] = { ~0u, ~0u, ~0u, ~0u, ~0u }, samplers[5] = { ~0u, ~0u, ~0u, ~0u, ~0u };
     } bound;
 
     ~Executor() override
@@ -241,8 +243,8 @@ struct Executor : GfxExecutor {
             return;
         for (auto &s : samplers)
             gl.DeleteSamplers(1, &s.second);
-        GLuint textures[] = { backColor, white2D, whiteCube };
-        gl.DeleteTextures(3, textures);
+        GLuint textures[] = { backColor, backdrop, white2D, whiteCube };
+        gl.DeleteTextures(4, textures);
         gl.DeleteRenderbuffers(1, &backDepth);
         gl.DeleteFramebuffers(1, &backFramebuffer);
         GLuint buffers[] = { vertexBuffer, indexBuffer, uniformBuffer, readbackBuffer };
@@ -300,8 +302,8 @@ struct Executor : GfxExecutor {
         gl.UniformBlockBinding(program, gl.GetUniformBlockIndex(program, "VertexUniforms"), VERTEX_BLOCK);
         gl.UniformBlockBinding(program, gl.GetUniformBlockIndex(program, "FragmentUniforms"), FRAGMENT_BLOCK);
         gl.UseProgram(program);
-        static const char *const samplerNames[4] = { "tex0", "cube0", "tex1", "cube1" };
-        for (int i = 0; i < 4; i++)
+        static const char *const samplerNames[5] = { "tex0", "cube0", "tex1", "cube1", "backdrop" };
+        for (int i = 0; i < 5; i++)
             gl.Uniform1i(gl.GetUniformLocation(program, samplerNames[i]), i);
         return program;
     }
@@ -400,8 +402,12 @@ struct Executor : GfxExecutor {
             if (backFramebuffer == 0) {
                 gl.GenFramebuffers(1, &backFramebuffer);
                 gl.GenTextures(1, &backColor);
+                gl.GenTextures(1, &backdrop);
                 gl.GenRenderbuffers(1, &backDepth);
             }
+            gl.BindTexture(GL_TEXTURE_2D, backdrop);
+            gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+            gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
             gl.BindTexture(GL_TEXTURE_2D, backColor);
             gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
             gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
@@ -411,7 +417,7 @@ struct Executor : GfxExecutor {
             gl.FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, backColor, 0);
             gl.FramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, backDepth);
             bound.framebuffer = backFramebuffer;
-            bound.textures[0] = bound.textures[1] = bound.textures[2] = bound.textures[3] = ~0u;
+            InvalidateTextureBinding();
             if (gl.CheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
                 Sys_Log("gfx: back buffer %dx%d incomplete", width, height);
                 return false;
@@ -689,6 +695,17 @@ struct Executor : GfxExecutor {
                 }
             }
         }
+        // Unit 4: the backdrop of the distance fade, read by texel.
+        if (bound.textures[4] != backdrop) {
+            gl.ActiveTexture(GL_TEXTURE0 + 4);
+            gl.BindTexture(GL_TEXTURE_2D, backdrop);
+            bound.textures[4] = backdrop;
+        }
+        GLuint sampler = Sampler(GfxStageState());
+        if (bound.samplers[4] != sampler) {
+            gl.BindSampler(4, sampler);
+            bound.samplers[4] = sampler;
+        }
     }
 
     // ---- uniforms (as gfx_gpu.cpp's) ----
@@ -787,7 +804,9 @@ struct Executor : GfxExecutor {
         u.target[3] = viewport.height ? -1.0f / viewport.height : 0.0f;
     }
 
-    void FillFragmentUniforms(const GfxDrawState &s, FragmentUniforms &u)
+    // fade: the draw is a 3D one into the back buffer, which the distance
+    // fade applies to.
+    void FillFragmentUniforms(const GfxDrawState &s, bool fade, FragmentUniforms &u)
     {
         memset(&u, 0, sizeof(u));
         const GfxStageState &a = s.stages[0], &b = s.stages[1];
@@ -820,6 +839,11 @@ struct Executor : GfxExecutor {
         memcpy(u.bumpMatrix, a.bumpMat, sizeof(u.bumpMatrix));
         u.bumpLuminance[0] = a.bumpLumScale;
         u.bumpLuminance[1] = a.bumpLumOffset;
+        if (fade && s.fadeEnd > s.fadeStart) {
+            u.distanceFade[0] = s.fadeStart;
+            u.distanceFade[1] = s.fadeEnd;
+            u.distanceFade[2] = 1.0f;
+        }
     }
 
     GLintptr AppendUniforms(const void *data, size_t size)
@@ -872,7 +896,7 @@ struct Executor : GfxExecutor {
                 vertexScaled = scaled;
             }
             FragmentUniforms f;
-            FillFragmentUniforms(s, f);
+            FillFragmentUniforms(s, target == NULL && !c.transformed, f);
             if (fragmentOffset < 0 || memcmp(&f, &fragment, sizeof(f)) != 0) {
                 fragmentOffset = AppendUniforms(&f, sizeof(f));
                 fragment = f;
@@ -1103,6 +1127,15 @@ struct Executor : GfxExecutor {
             }
             if (c.type == GFX_CMD_CLEAR) {
                 Clear(c, target == NULL, targetW, targetH);
+                continue;
+            }
+            if (c.type == GFX_CMD_BACKDROP) {
+                if (target != NULL)
+                    continue;
+                gl.ActiveTexture(GL_TEXTURE0 + 4);
+                gl.BindTexture(GL_TEXTURE_2D, backdrop);
+                bound.textures[4] = backdrop;
+                gl.CopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, backWidth, backHeight);
                 continue;
             }
             const GfxDrawState &s = frame.states[c.state];
