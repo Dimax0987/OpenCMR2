@@ -517,7 +517,7 @@ void CInput::ApplyControllerButtonBindings(unsigned short param1) {
     unsigned short uVar2;
     ControllerData * pController;
 
-    raw = *(unsigned int *)&param1;
+    raw = param1;
     uVar2 = param1;
     uVar1 = m_unk0x005168f4[uVar2];
     pController = &m_controllerInfo[uVar1];
@@ -658,12 +658,15 @@ BYTE CInput::FindFirstClearBindingBit(unsigned int param1) {
     return iVar1;
 }
 
+static unsigned int s_pendingRacePresses[8];
+
 // FUNCTION: CMR2 0x0049eb50
 void CInput::RebuildAvailableInputDevices(void)
 {
     int i;
 
     DInputReleaseDevices();
+    memset(s_pendingRacePresses, 0, sizeof(s_pendingRacePresses));
     m_unk0x0059f8cc.field_0x1 = 2;
     m_unk0x0059f8cc.field_0x0 = 0;
     m_unk0x0059f8cc.field_0x2 = 0;
@@ -1406,6 +1409,9 @@ void CInput::InitDetectedControllerSlot(DeviceInfo *pDevice, int index)
         pController->field_0x136 = 0x80;
         pController->field_0x138 = 0x100;
         pController->field_0x13a = 0x200;
+#ifdef __ANDROID__
+        pController->field_0x13a = 0x800; // Start pauses on handhelds.
+#endif
         return;
     }
     if (pController->field_0x10c != 0) {
@@ -1464,6 +1470,22 @@ void CInput::RefreshControllerConfigurations(void)
     }
     if (m_controllerCount < 6)
         memset(&m_controllerInfo[m_controllerCount], 0, (6 - m_controllerCount) * sizeof(ControllerData));
+#ifdef __ANDROID__
+    // A handheld's built-in gamepad must work before the controls menu can
+    // be reached. Preserve a valid saved joystick assignment, otherwise use
+    // the first SDL gamepad. Keyboard/touch input is still merged by the game.
+    if (m_unk0x005168f4[0] < 2 || m_unk0x005168f4[0] >= m_controllerCount) {
+        m_unk0x005168f4[0] = 0;
+        for (i = 2; i < m_controllerCount; ++i) {
+            int joystick = m_availableDevices[i].field_0x18;
+            if (joystick >= 0 && joystick < 4 && Input_IsGamepad(m_unk0x0059f6b0[joystick])) {
+                m_unk0x005168f4[0] = (unsigned short)i;
+                break;
+            }
+        }
+    }
+    ApplyControllerButtonBindings(0);
+#endif
     m_hasLoadedControllerInfo = TRUE;
 }
 
@@ -1557,10 +1579,34 @@ void CInput::UpdateInputFrameDelta(void)
 // FUNCTION: CMR2 0x0049eab0
 void CInput::UpdateAllAvailableDevices(void)
 {
+    // Frontend/pause transitions must not replay unconsumed driving actions.
+    memset(s_pendingRacePresses, 0, sizeof(s_pendingRacePresses));
+#ifdef __ANDROID__
+    Input_RescanChangedJoysticks();
+#endif
     int i;
 
     for (i = 0; i < 8; i++)
         UpdateDevice(i);
+}
+
+// PORT: poll held buttons and axes on every simulation step, but deliver
+// presses only on a step that updates a player using that device. This also
+// retains a complete press/release between two player steps. Reusing an edge
+// on every simulation step would instead shift multiple gears on a held key.
+void CInput::UpdateRaceDevices(unsigned int readyDevices)
+{
+    for (int i = 0; i < 8; ++i) {
+        DeviceInfo *device = UpdateDevice(i);
+        if (device == NULL)
+            continue;
+        s_pendingRacePresses[i] |= device->field_0x8;
+        device->field_0x8 = 0;
+        if ((readyDevices & (1u << i)) != 0) {
+            device->field_0x8 = s_pendingRacePresses[i];
+            s_pendingRacePresses[i] = 0;
+        }
+    }
 }
 
 // match 57%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)

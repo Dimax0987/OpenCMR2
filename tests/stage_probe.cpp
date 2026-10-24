@@ -64,6 +64,7 @@ extern void Race_StartPlayerAndOpponentReplays(int);
 extern void StageTiming_RecordDriverTimeoutFinish(int);
 extern BYTE *StageUI_GetRaceResultTable();
 extern Menu *g_pHeaderMenu;
+extern int NetRace_IsPlayerFadeActive(BYTE);
 extern void GameInfo_SetConfiguredCheat(int, int);
 extern void GameInfo_ApplyCheatsForGameMode();
 extern char *Race_GetStagePathBuffer38340();
@@ -589,13 +590,19 @@ int main(int argc, char **argv) {
             // of Enter, and count how often the cursor moved.
             if (resultsPresses && mode == 3 && probe.finishInjected && menu && menu->itemCount == 2 &&
                 pressesDone <= resultsPresses) {
-                if (!pressAt) { pressAt = virtualTime + 200; pressCursor = menu->cursor; }
+                // The result menu can exist while its fade still blocks input.
+                if (!pressAt && !NetRace_IsPlayerFadeActive(0)) {
+                    pressAt = virtualTime + 200;
+                    pressCursor = menu->cursor;
+                }
                 if (menu->cursor != pressCursor) { ++pressMoves; pressCursor = menu->cursor; }
-                if (pressesDone < resultsPresses && virtualTime >= pressAt) {
+                // Hold the final press for 80 ms too: at high frame rates a
+                // one-frame pulse can fit entirely between simulation steps.
+                if (pressAt && (pressesDone < resultsPresses || pressDown) && virtualTime >= pressAt) {
                     if (!pressDown) { pressDown = true; ++pressesDone; }
                     if (virtualTime < pressAt + 80) keys[INPUT_KEY_DOWN] = 0x80;
                     else { pressDown = false; pressAt += 160; }
-                } else if (pressesDone == resultsPresses && virtualTime >= pressAt + 80) {
+                } else if (pressAt && pressesDone == resultsPresses && virtualTime >= pressAt + 80) {
                     fprintf(stderr, "probe: results menu %u presses, %u moves\n", pressesDone, pressMoves);
                     ++pressesDone;
                 }

@@ -1,13 +1,23 @@
 package io.github.pablocpas.opencmr2
 
 import android.os.Bundle
+import androidx.annotation.Keep
 import android.view.KeyEvent
 import android.view.MotionEvent
 import org.libsdl.app.SDLActivity
+import org.libsdl.app.SDLControllerManager
 
 /** The game: SDL runs SDL_main from libmain.so, with the on-screen controls over it. */
 class GameActivity : SDLActivity() {
     private var controls: TouchControls? = null
+
+    // Called by input_sdl.cpp before opening a controller.
+    @Keep
+    fun getControllerMapping(name: String, vendor: Int, product: Int): String =
+        ControllerProfiles.mapping(this, name, vendor, product)
+
+    @Keep
+    fun useTouchControlsOnly(): Boolean = ControllerProfiles.touchOnly(this)
 
     override fun getLibraries() = arrayOf("SDL3", "main")
 
@@ -25,7 +35,8 @@ class GameActivity : SDLActivity() {
     // so the release is held back long enough for it to see the press.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         controls?.onInput(event.source)
-        if (event.keyCode != KeyEvent.KEYCODE_BACK || mBrokenLibraries)
+        if (event.keyCode != KeyEvent.KEYCODE_BACK || mBrokenLibraries ||
+            SDLControllerManager.isDeviceSDLJoystick(event.deviceId))
             return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             onNativeKeyDown(KeyEvent.KEYCODE_ESCAPE)

@@ -105,6 +105,11 @@ SCENARIOS['rally-challenge-results-menu'] = (1100, {
     'OPENCMR2_PROBE_RESULTS_PRESSES': '30',
     'fps': '60',
 })
+# High display rates must preserve each full press as well. Finish the
+# shorter sequence before the next automatic results fade blocks menu input.
+_count, _settings = SCENARIOS['rally-challenge-results-menu']
+SCENARIOS['rally-challenge-results-menu-144fps'] = (
+    _count, dict(_settings, fps='144', OPENCMR2_PROBE_RESULTS_PRESSES='20'))
 # Every car of the selection menu (51) with the all-cars cheat; the bonus cars
 # index tables past the six championship teams.
 for car, name in [(12, 'lancia-integrale'), (20, 'ford-puma'), (21, 'ford-escort')]:

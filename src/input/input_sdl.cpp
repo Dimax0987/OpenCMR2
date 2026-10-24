@@ -11,6 +11,11 @@
 
 #include <algorithm>
 #include <vector>
+#include <string>
+#include <sstream>
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
 
 namespace {
 
@@ -48,6 +53,27 @@ namespace {
 const int kMaxJoysticks = 4;
 
 bool s_initialised;
+#ifdef __ANDROID__
+bool s_touchOnly;
+
+bool AndroidTouchOnly()
+{
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject activity = (jobject)SDL_GetAndroidActivity();
+    if (env == NULL || activity == NULL)
+        return false;
+    jclass type = env->GetObjectClass(activity);
+    jmethodID method = env->GetMethodID(type, "useTouchControlsOnly", "()Z");
+    bool result = method != NULL && env->CallBooleanMethod(activity, method);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        result = false;
+    }
+    env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+    return result;
+}
+#endif
 const BYTE *s_testKeyboard;
 bool s_heldBack[SDL_SCANCODE_COUNT];
 std::vector<SDL_JoystickID> s_openJoysticks;
@@ -61,6 +87,9 @@ void EnsureInit()
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
         SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC);
         s_initialised = true;
+#ifdef __ANDROID__
+        s_touchOnly = AndroidTouchOnly();
+#endif
         // Steam replaces the controllers it handles with virtual gamepads and
         // hides the real ones through these: log them with the controllers.
         for (const char *name : {"SteamVirtualGamepadInfo", "SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD",
@@ -239,11 +268,99 @@ void BuildEffect(const InputEffectParams &p, SDL_HapticEffect *e)
 
 } // namespace
 
+// Apply only the controls the user changed, preserving SDL's automatic axes
+// and other buttons. Resolve raw-input collisions so one press does not also
+// perform the old action. This works for otherwise unknown joysticks too.
+bool Input_ApplyGamepadMapping(SDL_JoystickID id, const char *overrides)
+{
+    if (overrides == NULL || *overrides == 0)
+        return true;
+    std::vector<std::pair<std::string, std::string>> changes;
+    std::string field;
+    std::istringstream input(overrides);
+    while (std::getline(input, field, ',')) {
+        size_t colon = field.find(':');
+        if (colon != std::string::npos)
+            changes.emplace_back(field.substr(0, colon), field.substr(colon + 1));
+    }
+    char guid[33];
+    SDL_GUIDToString(SDL_GetJoystickGUIDForID(id), guid, sizeof(guid));
+    const char *deviceName = SDL_GetJoystickNameForID(id);
+    std::string name = deviceName ? deviceName : "Controller";
+    std::replace(name.begin(), name.end(), ',', ' ');
+    std::string mapping = std::string(guid) + "," + name + ",";
+    char *base = SDL_GetGamepadMappingForID(id);
+    if (base != NULL) {
+        std::istringstream fields(base);
+        std::getline(fields, field, ','); // GUID
+        std::getline(fields, field, ','); // name
+        while (std::getline(fields, field, ',')) {
+            size_t colon = field.find(':');
+            if (colon == std::string::npos)
+                continue;
+            const std::string target = field.substr(0, colon);
+            const std::string source = field.substr(colon + 1);
+            bool replaced = false;
+            for (const auto &change : changes)
+                if (target == change.first || (!change.second.empty() && source == change.second))
+                    replaced = true;
+            if (!replaced)
+                mapping += field + ",";
+        }
+        SDL_free(base);
+    }
+    for (const auto &change : changes)
+        if (!change.second.empty())
+            mapping += change.first + ":" + change.second + ",";
+    return SDL_SetGamepadMapping(id, mapping.c_str());
+}
+
+#ifdef __ANDROID__
+namespace {
+void ApplyAndroidControllerProfile(SDL_JoystickID id)
+{
+    // The launcher captures Android events and stores SDL bindings. Ask the
+    // activity once when opening a device; polling remains entirely in SDL.
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject activity = (jobject)SDL_GetAndroidActivity();
+    if (env == NULL || activity == NULL)
+        return;
+    jclass type = env->GetObjectClass(activity);
+    jmethodID method = env->GetMethodID(type, "getControllerMapping", "(Ljava/lang/String;II)Ljava/lang/String;");
+    if (method != NULL) {
+        const char *name = SDL_GetJoystickNameForID(id);
+        jstring jname = env->NewStringUTF(name ? name : "");
+        jstring result = (jstring)env->CallObjectMethod(activity, method, jname,
+            (jint)SDL_GetJoystickVendorForID(id), (jint)SDL_GetJoystickProductForID(id));
+        if (!env->ExceptionCheck() && result != NULL) {
+            const char *mapping = env->GetStringUTFChars(result, NULL);
+            if (mapping != NULL) {
+                if (!Input_ApplyGamepadMapping(id, mapping))
+                    Sys_Log("controller profile: %s", SDL_GetError());
+                env->ReleaseStringUTFChars(result, mapping);
+            }
+            env->DeleteLocalRef(result);
+        }
+        env->DeleteLocalRef(jname);
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        Sys_Log("controller profile: could not read Android settings");
+    }
+    env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+}
+}
+#endif
+
 // ---- devices -------------------------------------------------------------------
 
 extern "C" int Input_GetJoystickCount(void)
 {
     EnsureInit();
+#ifdef __ANDROID__
+    if (s_touchOnly) return 0;
+#endif
     int count = 0;
     SDL_JoystickID *ids = SDL_GetJoysticks(&count);
     SDL_free(ids);
@@ -253,6 +370,9 @@ extern "C" int Input_GetJoystickCount(void)
 extern "C" BOOL Input_JoysticksChanged(void)
 {
     EnsureInit();
+#ifdef __ANDROID__
+    if (s_touchOnly) return !s_openJoysticks.empty();
+#endif
     int count = 0;
     SDL_JoystickID *ids = SDL_GetJoysticks(&count);
     std::vector<SDL_JoystickID> present(ids, ids + (count > kMaxJoysticks ? kMaxJoysticks : count));
@@ -291,6 +411,9 @@ extern "C" InputDevice *Input_OpenJoystick(int index)
     }
     SDL_JoystickID id = ids[index];
     SDL_free(ids);
+#ifdef __ANDROID__
+    ApplyAndroidControllerProfile(id);
+#endif
     SDL_Gamepad *gamepad = SDL_IsGamepad(id) ? SDL_OpenGamepad(id) : NULL;
     SDL_Joystick *joystick = gamepad ? SDL_GetGamepadJoystick(gamepad) : SDL_OpenJoystick(id);
     if (joystick == NULL) {

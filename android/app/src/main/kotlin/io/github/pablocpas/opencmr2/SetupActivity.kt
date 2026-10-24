@@ -37,6 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,13 +64,10 @@ import kotlinx.coroutines.withContext
 class SetupActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (GameData.isInstalled(this)) {
-            startGame()
-            return
-        }
         enableEdgeToEdge()
         setContent {
             SetupTheme {
+                var installed by remember { mutableStateOf(GameData.isInstalled(this)) }
                 val model: SetupViewModel = viewModel()
                 val state by model.state.collectAsState()
                 // Keep the screen on while copying: the import stops if the app is closed.
@@ -76,9 +76,12 @@ class SetupActivity : ComponentActivity() {
                     else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
                 LaunchedEffect(state) {
-                    if (state is SetupState.Done) startGame()
+                    if (state is SetupState.Done) installed = true
                 }
-                SetupScreen(state, onFolderChosen = model::import, onCancel = model::cancel)
+                if (installed) LauncherScreen(
+                    onStart = ::startGame,
+                    onControls = { startActivity(Intent(this, ControllerActivity::class.java)) },
+                ) else SetupScreen(state, onFolderChosen = model::import, onCancel = model::cancel)
             }
         }
     }
@@ -123,7 +126,7 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 @Composable
-private fun SetupTheme(content: @Composable () -> Unit) {
+internal fun SetupTheme(content: @Composable () -> Unit) {
     val accent = Color(0xFF01899D)
     val colors = if (isSystemInDarkTheme()) darkColorScheme(primary = Color(0xFF5CD5EA))
                  else lightColorScheme(primary = accent)
@@ -214,5 +217,18 @@ private fun errorText(error: Throwable): String {
             Formatter.formatShortFileSize(context, error.available),
         )
         else -> stringResource(R.string.setup_failed, error.localizedMessage ?: error.toString())
+    }
+}
+
+@Composable
+private fun LauncherScreen(onStart: () -> Unit, onControls: () -> Unit) {
+    Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
+        Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Image(painterResource(R.drawable.logo), null, Modifier.size(96.dp).clip(RoundedCornerShape(24.dp)))
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
+            Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.launcher_start)) }
+            TextButton(onClick = onControls) { Text(stringResource(R.string.controllers_title)) }
+        }
     }
 }

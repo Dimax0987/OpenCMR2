@@ -8,6 +8,10 @@
 #include "port/input.h"
 #include "Input.h"
 #include "Menu.h"
+#include "platform/platform.h"
+#include "platform/testing.h"
+#include "main.h"
+#include "Car.h"
 
 #include <SDL3/SDL.h>
 
@@ -19,6 +23,8 @@ extern void Input_TranslatePedalsToMenuKeys();
 extern void Input_MergeAssignedJoystickButtons(int slot, DeviceInfo *out);
 extern void Input_RescanChangedJoysticks();
 extern unsigned short Input_GetAssignedController();
+extern BYTE g_carSimulationClockFlags;
+extern int Car_UpdateEngineNoteFalloff(int *);
 
 namespace {
 
@@ -121,6 +127,148 @@ void CheckMenuNavigation(SDL_Joystick *virt, DeviceInfo *pad)
     MenuInput(pad);
     SDL_SetJoystickVirtualButton(virt, SDL_GAMEPAD_BUTTON_EAST, true);
     Check((MenuInput(pad) & 0x30) == 0x20, "B goes back in menus");
+}
+
+void CheckRacePresses(SDL_Joystick *virt, DeviceInfo *pad)
+{
+    BYTE keys[256] = {};
+    Platform_SetTestKeyboard(keys);
+    CInput::m_unk0x0059f8cc.field_0x0 = 0;
+    CInput::SetupKeyboard();
+    CInput::m_unk0x0059f8cc.field_0x0 = 3;
+    const unsigned padBit = 1u << int(pad - CInput::m_availableDevices);
+    const unsigned actionBits = 0x20 | 0x40 | 0x80 | 0x400;
+    keys[0x1b] = keys[0x1a] = keys[0x2e] = keys[INPUT_KEY_ESCAPE] = 0;
+    SDL_SetJoystickVirtualButton(virt, SDL_GAMEPAD_BUTTON_EAST, false);
+    CInput::UpdateAllAvailableDevices();
+
+    // The real mixed-rate scheduler supplies opponent-only steps, as on a
+    // super special. Inject input exactly on those steps at common frame rates.
+    Car cars[2] = {};
+    Car *oldBuffer = g_carBuffer;
+    const short oldCount = g_carOrderCount;
+    short oldOrder[2] = {g_carOrder[0], g_carOrder[1]};
+    g_carBuffer = cars;
+    g_carOrderCount = 2;
+    g_carOrder[0] = 0; g_carOrder[1] = 1;
+    for (unsigned fps : {30u, 60u, 120u, 144u, 240u}) {
+        memset(cars, 0, sizeof(cars));
+        cars[0].simulationRateHz = 25.f;
+        cars[1].simulationRateHz = 50.f;
+        g_carSimulationClockFlags = 0;
+        CMain::m_frameTime = 1000;
+        int phase;
+        Car_UpdateEngineNoteFalloff(&phase);
+        memset(keys, 0, sizeof(keys));
+        SDL_SetJoystickVirtualButton(virt, SDL_GAMEPAD_BUTTON_EAST, false);
+        CInput::UpdateAllAvailableDevices();
+        int injected = 0, delivered = 0;
+        bool armed = true, pending = false;
+        for (unsigned frame = 1; frame <= fps * 3; ++frame) {
+            CMain::m_frameTime = 1000 + frame * 1000 / fps;
+            int steps = Car_UpdateEngineNoteFalloff(&phase);
+            for (int step = 0; step < steps; ++step) {
+                bool playerStep = cars[0].simulationStepsRemaining > 0;
+                bool press = !playerStep && armed;
+                keys[0x1b] = keys[0x1a] = keys[0x2e] = keys[INPUT_KEY_ESCAPE] = press ? 0x80 : 0;
+                SDL_SetJoystickVirtualButton(virt, SDL_GAMEPAD_BUTTON_EAST, press);
+                if (press) { ++injected; armed = false; pending = true; }
+                CInput::UpdateRaceDevices(playerStep ? 1u | padBit : 0u);
+                unsigned keyboard = CInput::m_availableDevices[0].field_0x8 & actionBits;
+                unsigned gamepad = pad->field_0x8 & 0x20;
+                if (!playerStep) Check(keyboard == 0 && gamepad == 0, "opponent does not consume player presses");
+                else {
+                    Check(keyboard == (pending ? actionBits : 0), "gear/camera/pause edges reach player exactly once");
+                    Check(gamepad == (pending ? 0x20u : 0), "gamepad edge reaches player after release");
+                    if (pending) { ++delivered; pending = false; }
+                    armed = true;
+                }
+                for (Car &car : cars) if (car.simulationStepsRemaining > 0) --car.simulationStepsRemaining;
+            }
+        }
+        Check(injected > 0 && delivered >= injected - 1, "mixed-rate scheduler exercises lost-input path");
+    }
+    // Independent devices keep their edges until the corresponding player
+    // runs, and holding a button must not repeatedly shift gears.
+    memset(keys, 0, sizeof(keys));
+    SDL_SetJoystickVirtualButton(virt, SDL_GAMEPAD_BUTTON_EAST, false);
+    CInput::UpdateAllAvailableDevices();
+    keys[0x1b] = keys[CInput::m_availableDevices[1].keyboard.field_0x46d] = 0x80;
+    CInput::UpdateRaceDevices(0);
+    CInput::UpdateRaceDevices(1);
+    Check((CInput::m_availableDevices[0].field_0x8 & 0x20) != 0 &&
+          (CInput::m_availableDevices[1].field_0x8 & 0x20) == 0, "player one does not consume player two presses");
+    CInput::UpdateRaceDevices(2);
+    Check((CInput::m_availableDevices[1].field_0x8 & 0x20) != 0, "player two receives deferred press");
+    for (int i = 0; i < 10; ++i) {
+        CInput::UpdateRaceDevices(3);
+        Check(((CInput::m_availableDevices[0].field_0x8 | CInput::m_availableDevices[1].field_0x8) & 0x20) == 0,
+              "held gear buttons never repeat");
+    }
+    memset(keys, 0, sizeof(keys));
+    CInput::UpdateAllAvailableDevices();
+    // Pending actions cannot leak out of a race into a frontend/pause menu.
+    keys[0x1b] = 0x80;
+    CInput::UpdateRaceDevices(0);
+    CInput::UpdateAllAvailableDevices();
+    keys[0x1b] = 0;
+    CInput::UpdateRaceDevices(1);
+    Check((CInput::m_availableDevices[0].field_0x8 & 0x20) == 0, "frontend clears pending race actions");
+    Platform_SetTestKeyboard(nullptr);
+    g_carBuffer = oldBuffer;
+    g_carOrderCount = oldCount;
+    g_carOrder[0] = oldOrder[0]; g_carOrder[1] = oldOrder[1];
+}
+
+void CheckCustomMapping(SDL_JoystickID id, SDL_Joystick *virt)
+{
+    SDL_SetJoystickVirtualButton(virt, SDL_GAMEPAD_BUTTON_EAST, false);
+    SDL_SetJoystickVirtualButton(virt, SDL_GAMEPAD_BUTTON_SOUTH, false);
+    Check(Input_ApplyGamepadMapping(id, "a:b1,b:b0"), "custom button swap applies");
+    InputDevice *custom = Input_OpenJoystick(0);
+    Check(custom && Input_IsGamepad(custom), "custom layout opens as a gamepad");
+    if (!custom) return;
+    SDL_SetJoystickVirtualButton(virt, SDL_GAMEPAD_BUTTON_EAST, true);
+    InputJoystickState state = Read(custom);
+    Check(state.rgbButtons[0] && !state.rgbButtons[1], "remapped confirm has no old action");
+    SDL_SetJoystickVirtualAxis(virt, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, SDL_JOYSTICK_AXIS_MAX);
+    Check(Read(custom).lRz < -30000, "button override preserves automatic analog triggers");
+    Input_CloseDevice(custom);
+    Check(Input_ApplyGamepadMapping(id, "a:b0,b:b1"), "automatic buttons can be restored");
+    SDL_SetJoystickVirtualButton(virt, SDL_GAMEPAD_BUTTON_EAST, false);
+    SDL_SetJoystickVirtualAxis(virt, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, SDL_JOYSTICK_AXIS_MIN);
+}
+
+void CheckUnknownController()
+{
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_UNKNOWN;
+    desc.name = "Unmapped handheld";
+    desc.naxes = 2;
+    desc.nbuttons = 36;
+    SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+    SDL_Joystick *virt = SDL_OpenJoystick(id);
+    Check(virt && !SDL_IsGamepad(id), "unknown handheld initially has no SDL gamepad layout");
+    Check(Input_ApplyGamepadMapping(id, "a:b20,b:b21,leftx:a0,lefty:a1,lefttrigger:b15,righttrigger:b16"),
+          "a manual profile adds an unknown controller");
+    InputDevice *device = Input_OpenJoystick(0);
+    Check(device && Input_IsGamepad(device), "unknown handheld becomes a standard gamepad");
+    if (device) {
+        InputJoystickState state = Read(device);
+        Check(state.lZ > 30000 && state.lRz > 30000, "digital triggers initially released");
+        SDL_SetJoystickVirtualButton(virt, 20, true);
+        SDL_SetJoystickVirtualButton(virt, 15, true);
+        SDL_SetJoystickVirtualButton(virt, 16, true);
+        SDL_SetJoystickVirtualAxis(virt, 0, SDL_JOYSTICK_AXIS_MIN);
+        state = Read(device);
+        Check(state.rgbButtons[0] && !state.rgbButtons[1], "generic handheld button confirms");
+        Check(state.lZ < -30000 && state.lRz < -30000, "digital handheld triggers operate independently");
+        Check(state.lX < -30000, "manual profile preserves analog steering");
+        Input_CloseDevice(device);
+    }
+    SDL_CloseJoystick(virt);
+    SDL_DetachVirtualJoystick(id);
 }
 
 void CheckWheelMenuPedals(InputDevice *wheel, DeviceInfo *info)
@@ -262,10 +410,12 @@ int main()
         Check(slot.field_0x210[2].present != 0 && slot.field_0x2d8[2] == 5, "default throttle on the right trigger");
         Check(slot.field_0x210[3].present != 0 && slot.field_0x2d8[3] == 2, "default brake on the left trigger");
         CheckMenuNavigation(virt, pad);
+        CheckRacePresses(virt, pad);
         Input_CloseDevice(CInput::m_unk0x0059f6b0[pad->field_0x18]);
         CInput::m_unk0x0059f6b0[pad->field_0x18] = NULL;
     }
 
+    CheckCustomMapping(id, virt);
     SDL_CloseJoystick(virt);
     SDL_DetachVirtualJoystick(id);
 
@@ -316,9 +466,10 @@ int main()
           "a disconnected wheel is closed and no longer listed");
     CInput::DInputReleaseDevices();
 
+    CheckUnknownController();
     SDL_DestroyWindow(window);
     SDL_Quit();
     if (s_failures == 0)
-        puts("gamepad layout: unfocused input, driving pedals, menus, wheels and hotplug passed");
+        puts("gamepad layout: input, mixed-rate race edges, profiles, analog/digital triggers, menus and hotplug passed");
     return s_failures == 0 ? 0 : 1;
 }

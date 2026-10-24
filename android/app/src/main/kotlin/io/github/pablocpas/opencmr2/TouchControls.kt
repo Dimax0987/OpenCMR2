@@ -164,8 +164,9 @@ class TouchControls(private val activity: Activity, parent: ViewGroup) : InputMa
         device.supportsSource(InputDevice.SOURCE_GAMEPAD) && !device.supportsSource(InputDevice.SOURCE_TOUCHSCREEN)
 
     private fun show(visible: Boolean) {
-        if (!visible) releaseAll()
-        overlay.isVisible = visible
+        val show = visible || ControllerProfiles.showTouch(activity) || ControllerProfiles.touchOnly(activity)
+        if (!show) releaseAll()
+        overlay.isVisible = show
     }
 
     private fun updateVisibility() =

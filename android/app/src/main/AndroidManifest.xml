@@ -35,6 +35,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ControllerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.OpenCMR2.Setup" />
+
         <!-- SDLActivity: SDL handles these configuration changes itself. -->
         <activity
             android:name=".GameActivity"

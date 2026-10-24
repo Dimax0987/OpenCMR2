@@ -247,6 +247,8 @@ public:
     static void QueueVirtualKeyPress(unsigned int param1);
     static void UpdateInputFrameDelta(void);
     static void UpdateAllAvailableDevices(void);
+    // Race steps may update only the opponent. Keep edges until their device is read by a player.
+    static void UpdateRaceDevices(unsigned int readyDevices);
     static void SetControllerForceFeedbackValue(unsigned short param1, DWORD param2);
     static void ReadKeyboardState(void);
     static int GetButtonIndexFromMask(unsigned int mask);

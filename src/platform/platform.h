@@ -37,5 +37,7 @@ bool Shortcut_Update(bool present);
 // Hides a held key from the game's keyboard state until it is released
 // (the key of a platform shortcut such as Alt+Enter).
 void Input_HoldBackKey(SDL_Scancode scancode);
+// Sparse SDL layout overrides, applied before opening the controller.
+bool Input_ApplyGamepadMapping(SDL_JoystickID id, const char *overrides);
 
 #endif
