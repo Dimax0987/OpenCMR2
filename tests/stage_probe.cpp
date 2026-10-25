@@ -13,6 +13,9 @@
 #include "Game.h"
 #include "Frontend.h"
 #include "GameInfo.h"
+#include "Graphics.h"
+#include "RaceCallbackStorage.h"
+#include "port/gfx.h"
 #include "FrontendMenus.h"
 #include "Menu.h"
 #include "Car.h"
@@ -93,9 +96,16 @@ struct Probe : Diagnostics::TimingObserver {
     bool playbackCorrect = true;
     bool finishInjected = false;
     bool leftRace = false;      // a state other than driving after the finish
+    int challengeWidth = 0, challengeHeight = 0;
+    bool challengeSizeSet = false, challengeLayoutSeen = false, challengeLayoutRestored = true;
     unsigned nextStageDrivingTicks = 0;
     BYTE state = 0;
     explicit Probe(FILE *file, unsigned count) : trace(file), target(count) {
+        if (const char *size = getenv("OPENCMR2_PROBE_CHALLENGE_LAYOUT")) {
+            if (sscanf(size, "%dx%d", &challengeWidth, &challengeHeight) != 2 ||
+                challengeWidth < 640 || challengeWidth > 8192 || challengeHeight < 480 || challengeHeight > 8192)
+                exit(2);
+        }
         if (const char *path = getenv("OPENCMR2_STATE_CAPTURE")) {
             memory = fopen(path, "wb");
             if (!memory) { perror(path); exit(2); }
@@ -130,8 +140,22 @@ struct Probe : Diagnostics::TimingObserver {
     }
     void EndFrame() override {
         TimingObserver::EndFrame();
+        if (challengeSizeSet && challengeLayoutRestored &&
+            (g_pGraphics->resX != challengeWidth || g_pGraphics->resY != challengeHeight)) {
+            fprintf(stderr, "probe: challenge menu did not restore the display size\n");
+            challengeLayoutRestored = false;
+        }
         if (CGame::GetFrontendResourceMode() == 3 && tick == frameTickStart && Crt_GetRandState() != frameRng)
             ++renderOnlyRngChanges;
+    }
+    void BeginPresent() override {
+        TimingObserver::BeginPresent();
+        if (challengeSizeSet && !challengeLayoutSeen && CGame::GetFrontendResourceMode() == 3 &&
+            g_raceCallbackStorage.records[0].bits.state == 6) {
+            challengeLayoutSeen = true;
+            fprintf(stderr, "probe: challenge layout %dx%d on %dx%d\n", int(g_pGraphics->resX),
+                    int(g_pGraphics->resY), challengeWidth, challengeHeight);
+        }
     }
     void BeginTick(unsigned char value) override {
         TimingObserver::BeginTick(value);
@@ -491,6 +515,15 @@ int main(int argc, char **argv) {
         // The dummy driver does not focus windows. This test dispatches frames
         // explicitly, so SDL focus and wall time cannot influence its clock.
         const int mode = CGame::GetFrontendResourceMode();
+        // Exercise the actual bracket renderer with the existing texture set
+        // on a larger display, then continue into a real Rally Challenge race.
+        if (probe.challengeWidth && !probe.challengeSizeSet && mode == 3 &&
+            CGameInfo::GetConfiguredGameMode() == 4 && g_raceCallbackStorage.records[0].bits.state == 6) {
+            if (!Gfx_SetVideoMode(probe.challengeWidth, probe.challengeHeight, FALSE)) return 1;
+            g_pGraphics->resX = probe.challengeWidth;
+            g_pGraphics->resY = probe.challengeHeight;
+            probe.challengeSizeSet = true;
+        }
         // Create the fixture from a real garage session. A second probe run
         // selects it through the frontend's Load Game menu.
         if (mode == 2 && !sessionSaved && getenv("OPENCMR2_PROBE_SAVE_SESSION")) {
@@ -636,6 +669,7 @@ int main(int argc, char **argv) {
     Diagnostics::observer = nullptr;
     if (!probe.Write((std::string(argv[2]) + ".frames.csv").c_str())) return 1;
     const bool ok = probe.tick == ticks && probe.drivingTick > 0 && probe.scenarioCorrect && probe.playbackCorrect && !ferror(file) &&
+        (!probe.challengeWidth || (probe.challengeLayoutSeen && probe.challengeLayoutRestored)) &&
         (!getenv("OPENCMR2_PROBE_EXPAND_MAP") || mapExpanded) &&
         (!getenv("OPENCMR2_PROBE_FINISH_AT_TICK") || (probe.finishInjected &&
             (resultsPresses ? pressesDone > resultsPresses : probe.nextStageDrivingTicks >= 100))) &&

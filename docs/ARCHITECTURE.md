@@ -86,6 +86,11 @@ view is configurable (`View_SetPlayerProjection`). Further rendering
 improvements will be added one at a time, each behind an option, with the
 original look as the default.
 
+The Rally Challenge bracket is rendered inside the race state machine.
+Its full-screen draw enters the same menu screen used by the frontend, so
+panels, text and icons follow `menu_scale` together. The physical display
+size is restored before the next race frame.
+
 Textures: the game decodes TGA/DDS itself and writes pixels through
 `Gfx_LockTexture`, using the pixel format the backend reports. Co-driver
 arrows and the menu arrows/checkmarks/crosses/boxes/circles can receive a

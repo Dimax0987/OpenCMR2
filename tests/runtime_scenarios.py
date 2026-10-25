@@ -110,6 +110,26 @@ SCENARIOS['rally-challenge-results-menu'] = (1100, {
 _count, _settings = SCENARIOS['rally-challenge-results-menu']
 SCENARIOS['rally-challenge-results-menu-144fps'] = (
     _count, dict(_settings, fps='144', OPENCMR2_PROBE_RESULTS_PRESSES='20'))
+# The bracket lives in the race state machine, where the frontend's menu
+# scaling wrapper does not run. Check its real render path and restoration
+# of the physical display size before continuing into a race.
+for label, size, scale, layout in [
+        ('native', '640x480', '100', '640x480'),
+        ('1080p', '1920x1080', '100', '853x480'),
+        ('ultrawide', '2560x1080', '100', '1138x480'),
+        ('larger', '1920x1080', '125', '683x384'),
+        ('legacy', '1920x1080', '0', '1920x1080')]:
+    SCENARIOS[f'rally-challenge-layout-{label}'] = (500, {
+        'OPENCMR2_PROBE_CURSORS': '88:4',
+        'OPENCMR2_PROBE_EXPECT_MODE': '4',
+        'OPENCMR2_PROBE_EXPECT_CARS': '2',
+        'OPENCMR2_PROBE_EXPECT_COUNTRY': '8',
+        'OPENCMR2_PROBE_EXPECT_STAGE': '10',
+        'OPENCMR2_PROBE_UNLOCK_TRACKS': '1',
+        'OPENCMR2_PROBE_CHALLENGE_LAYOUT': size,
+        'menu_scale': scale,
+        'challenge_layout': layout,
+    })
 # Every car of the selection menu (51) with the all-cars cheat; the bonus cars
 # index tables past the six championship teams.
 for car, name in [(12, 'lancia-integrale'), (20, 'ford-puma'), (21, 'ford-escort')]:
@@ -174,13 +194,15 @@ def verify(probe, data, output, cpu_runs=False):
         (run / 'user').mkdir(parents=True)
         # The menus' animations move in pixels, so their screen sets when the
         # races start: the scenarios keep the original's.
-        (run / 'user' / 'opencmr2.ini').write_text('[video]\nmenu_scale = 0\n')
+        settings = dict(settings)
+        menu_scale = settings.pop('menu_scale', '0')
+        challenge_layout = settings.pop('challenge_layout', None)
+        (run / 'user' / 'opencmr2.ini').write_text(f'[video]\nmenu_scale = {menu_scale}\n')
         env = {k: v for k, v in os.environ.items() if not k.startswith('OPENCMR2_PROBE_')}
         env.update(OPENCMR2_HEADLESS='1', SDL_VIDEODRIVER='dummy',
                    SDL_AUDIODRIVER='dummy', XDG_DATA_HOME=str(run / 'user'))
         if name == 'saved-game-load':
             env['XDG_DATA_HOME'] = str(output / 'saved-game-create' / 'user')
-        settings = dict(settings)
         fps = settings.pop('fps', '30')
         env.update(settings)
         log_path = run / 'run.log'
@@ -194,6 +216,11 @@ def verify(probe, data, output, cpu_runs=False):
         if len(records) != count or records[-1]['tick'] != count - 1:
             raise ValueError(f'{name}: incomplete trace')
         report[name] = {'ticks': count, 'driving_ticks': records[-1]['driving_tick']}
+        if challenge_layout:
+            expected = f'probe: challenge layout {challenge_layout} on {settings["OPENCMR2_PROBE_CHALLENGE_LAYOUT"]}'
+            if expected not in log:
+                raise ValueError(f'{name}: incorrect bracket scaling; expected {expected}')
+            report[name]['menu_layout'] = challenge_layout
         if name == 'saved-game-create' and 'probe: saved garage session' not in log:
             raise ValueError('real garage session was not saved')
         if name == 'saved-game-load' and not all(

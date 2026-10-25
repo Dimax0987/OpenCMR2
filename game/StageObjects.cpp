@@ -8679,6 +8679,9 @@ void StageObject_ClearAndDrawSplitPositions(int unused1, int unused2)
 {
     int i;
 
+    // PORT: the Rally Challenge bracket is a full-screen menu, rendered
+    // inside the race state machine rather than the frontend dispatcher.
+    MenuScreen_Begin();
     CGraphics::ClearTarget();
     CGraphics::ClearZBuffer();
     StageUI_DrawChampionshipBar();
@@ -8692,6 +8695,7 @@ void StageObject_ClearAndDrawSplitPositions(int unused1, int unused2)
     }
     Game_DrawSceneViewport(RallyData_GetChallengeRenderState(), RallyData_GetChallengeSceneState(), (void *)RallyData_GetViewScreenRectangle(0), 0, 0);
     Graphics_PresentFrameAndResetCounters();
+    MenuScreen_End();
 }
 
 struct ObjectMatrix16 { int v[16]; };
