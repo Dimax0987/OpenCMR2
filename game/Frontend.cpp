@@ -627,6 +627,64 @@ int Frontend_ComputeRippleHeight(int *pCentre, int x, int y, int phase, int wave
     return g_sinTable[(FixDiv(FixVecLength(&d) % wavelength, wavelength) + phase) & 0xfff];
 }
 
+extern char g_matrixMaps[11][0xd8];
+
+// Reuse the original ripple on a continuous mesh. Neighbouring cells share
+// their corner positions, UVs and brightness, so there are no gaps between
+// them and the shader follows the flag's lines through the deformation.
+static bool FrontendDraw_VectorFlagBackground(short x0, short y0, char *pMap)
+{
+    int country;
+    for (country = 0; country < 11; country++)
+        if (pMap == g_matrixMaps[country])
+            break;
+    if (country == 11)
+        return false;
+    if (country == 10)
+        country = 7; // UK is also the English language background.
+    // Borrow the renderer's one-texel flag textures on every draw: changing
+    // video mode may have recreated the device since the last menu frame.
+    static Texture flags[10];
+    Texture *texture = &flags[country];
+    texture->pSurface = Gfx_GetVectorFlagTexture(country < 8 ? GFX_FLAG_FINLAND + country
+                                                         : GFX_FLAG_GERMANY + country - 8);
+    if (texture->pSurface == NULL)
+        return false;
+    texture->width = texture->height = 1;
+    texture->blendMode = 0;
+    int width = (int)(g_pGraphics->resX * 18) / 640 * 17 + CFrontend::m_pLgMatrixTexture->width;
+    int height = (int)(g_pGraphics->resY * 18) / 480 * 11 + CFrontend::m_pLgMatrixTexture->height;
+    int centre1[2] = { 0, 0 }, centre2[2] = { (int)g_pGraphics->resX, 0 };
+    GfxTLVertex vertices[13][19];
+    for (int y = 0; y <= 12; y++) {
+        for (int x = 0; x <= 18; x++) {
+            float px = x0 + width * (x / 18.0f), py = y0 + height * (y / 12.0f);
+            int u = (int)(px * 65536.0f / g_pGraphics->resX);
+            int v = (int)(py * 65536.0f / g_pGraphics->resX);
+            int wave = (Frontend_ComputeRippleHeight(centre1, u, v, g_matrixPhase1, 0x20000) +
+                        Frontend_ComputeRippleHeight(centre2, u, v, g_matrixPhase2, 0x140000)) / 2;
+            int brightness = (255 * (wave / 4 + 0xc000)) / 65536;
+            GfxTLVertex &vertex = vertices[y][x];
+            vertex.sx = px - 3.0f * wave / 65536.0f - 0.5f;
+            vertex.sy = py - 3.0f * wave / 65536.0f - 0.5f;
+            vertex.sz = 0;
+            vertex.rhw = 1;
+            vertex.color = GFX_RGBA(brightness, brightness, brightness, 255);
+            vertex.specular = 0xff000000;
+            vertex.tu = x / 18.0f;
+            vertex.tv = y / 12.0f;
+        }
+    }
+    for (int y = 0; y < 12; y++) {
+        for (int x = 0; x < 18; x++) {
+            GfxTLVertex quad[] = { vertices[y][x], vertices[y][x + 1],
+                                   vertices[y + 1][x], vertices[y + 1][x + 1] };
+            Sprite_QueueQuad(texture, quad, 1);
+        }
+    }
+    return true;
+}
+
 // Draws the one-pixel outline of pRect (x, y, width, height) in pColour as
 // four one-pixel thick rectangles.
 // FUNCTION: CMR2 0x004d27e0
@@ -682,6 +740,8 @@ void FrontendDraw_AnimatedMatrixBackground(short x0, short y0, char *pMap)
     centre2[1] = 0;
     g_matrixPhase1 = (short)(((CMain::GetFrameDelta() + 1) * -0x6000) / 360);
     g_matrixPhase2 = (short)(((CMain::GetFrameDelta() + 1) * -0x3000) / 360);
+    if (FrontendDraw_VectorFlagBackground(x0, y0, pMap))
+        return;
     g_frontendDrawRect[2] = CFrontend::m_pLgMatrixTexture->width;
     g_frontendDrawRect[3] = CFrontend::m_pLgMatrixTexture->height;
     for (i = 0; i < 0x12; i++) {

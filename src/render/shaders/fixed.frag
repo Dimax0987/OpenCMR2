@@ -1,4 +1,7 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "flags.glsl"
 
 layout(location = 0) in vec4 inDiffuse;
 layout(location = 1) in vec4 inSpecular;
@@ -18,7 +21,7 @@ layout(set = 2, binding = 4) uniform sampler2D backdrop;   // Gfx_CaptureBackdro
 
 layout(std140, set = 3, binding = 0) uniform FragmentUniforms {
     ivec4 stage0;       // colour op, colour arg1, colour arg2, alpha op
-    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump, 4 distance field), scaled point filter
+    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump, 4 distance field, 5..14 country flags), scaled point filter
     ivec4 stage1;
     ivec4 stage1b;
     vec4 textureFactor;
@@ -99,6 +102,8 @@ vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, vec4 coord)
         return vec4(1.0);
     if (kind == 4)
         return SampleDistanceField(t2, coord.xy);
+    if (kind >= 5)
+        return SampleVectorFlag(coord.xy, kind - 4);
     if (scaledPoint != 0)
         return SampleScaledPoint(t2, coord.xy);
     return texture(t2, coord.xy);

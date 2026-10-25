@@ -26,6 +26,7 @@ struct GfxTexture {
     bool renderedTo;            // the GPU copy is newer (render targets)
     void *gpu;                  // executor's object
     GfxTexture *replacement;    // drawn instead (Gfx_SetTextureReplacement)
+    int countryFlag = 0;        // GFX_FLAG_*: drawn from geometry instead of pixels
 };
 
 // The texture a draw reads for t: its cube, or its replacement.

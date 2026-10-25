@@ -22,6 +22,7 @@ bool s_stateDirty = true;
 GfxFrame s_frame;
 GfxReadback s_readback;
 std::vector<GfxTexture *> s_textures;     // every live texture (not face views)
+GfxTexture *s_vectorFlagTextures[GFX_FLAG_SPAIN] = {};
 int s_width = 640, s_height = 480;
 GfxTexture *s_target;
 std::vector<std::pair<GfxDrawState, GfxTexture *>> s_savedStates;
@@ -826,6 +827,9 @@ extern "C" void Gfx_DestroyTexture(GfxTexture *texture)
                 goto flushed;
             }
 flushed:
+    for (GfxTexture *&flag : s_vectorFlagTextures)
+        if (flag == texture)
+            flag = NULL;
     Gfx_DestroyTexture(texture->replacement);
     if (s_executor != NULL)
         s_executor->DestroyTexture(texture);
@@ -852,6 +856,20 @@ extern "C" int Gfx_GetDistanceFieldScale(GfxTexture *texture)
     if (drawn == NULL || !(drawn->flags & GFX_TEXTURE_DISTANCE_FIELD) || Root(texture)->width <= 0)
         return 0;
     return drawn->width / Root(texture)->width;
+}
+
+extern "C" GfxTexture *Gfx_GetVectorFlagTexture(int country)
+{
+    if (country < GFX_FLAG_FINLAND || country > GFX_FLAG_SPAIN ||
+        !Platform_GetSettingInt("video.vector_flags", 1))
+        return NULL;
+    GfxTexture *&texture = s_vectorFlagTextures[country - 1];
+    if (texture == NULL) {
+        texture = Gfx_CreateTexture(1, 1, GFX_FORMAT_BGRA8, 1, 0);
+        if (texture != NULL)
+            texture->countryFlag = country;
+    }
+    return texture;
 }
 
 extern "C" int Gfx_GetTextureMipCount(GfxTexture *texture)

@@ -843,6 +843,8 @@ struct Executor : GfxExecutor {
             return 3;
         if (t->flags & GFX_TEXTURE_DISTANCE_FIELD)
             return 4;
+        if (t->countryFlag != 0)
+            return 4 + t->countryFlag;
         return 1;
     }
 

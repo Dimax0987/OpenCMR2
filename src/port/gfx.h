@@ -413,6 +413,17 @@ void Gfx_SetTextureReplacement(GfxTexture *texture, GfxTexture *replacement);
    texel of its own, or 0 if it is drawn from its own pixels. */
 int Gfx_GetDistanceFieldScale(GfxTexture *texture);
 
+/* Menu flags drawn from geometry in the fragment shader, at the screen's
+   resolution. */
+enum GfxCountryFlag {
+    GFX_FLAG_FINLAND = 1, GFX_FLAG_GREECE, GFX_FLAG_FRANCE, GFX_FLAG_SWEDEN,
+    GFX_FLAG_AUSTRALIA, GFX_FLAG_KENYA, GFX_FLAG_ITALY, GFX_FLAG_UK,
+    GFX_FLAG_GERMANY, GFX_FLAG_SPAIN
+};
+/* Full-cell flag texture, owned by the renderer and valid until shutdown.
+   Returns NULL when vector flags are disabled. */
+GfxTexture *Gfx_GetVectorFlagTexture(int country);
+
 /* Fills the lower mip levels from the top one (box filter). */
 void Gfx_GenerateMipmaps(GfxTexture *texture);
 /* Copies the top level of src into dst, converting the format (compressed

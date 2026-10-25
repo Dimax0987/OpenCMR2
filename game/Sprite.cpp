@@ -53,6 +53,8 @@ static float g_spriteScreenScale = 1.0f;
 // (Sprite_SetNextSubpixelOffset).
 static int g_spriteNextSubpixel[2];
 
+static const int kSpriteCustomQuad = 0x10000;
+
 #define SPRITE_VERTEX(v, px, py, u, vv)                                             \
     (v)->sx = (float)(px);                                                          \
     (v)->sy = (float)(py);                                                          \
@@ -125,6 +127,12 @@ void Sprite_DrawLayer(int layer)
         // A sprite without texture is skipped without advancing (as the original does).
         if (pSprite->pTexture == NULL)
             continue;
+        if (pSprite->param & kSpriteCustomQuad) {
+            // Sprite_QueueQuad wrote these vertices when it queued the sprite.
+            pVert += 4;
+            pSprite++;
+            continue;
+        }
         w = (float)(unsigned int)pSprite->pTexture->width;
         u0 = X87S_DIV((float)pSprite->src.x, w);
         u1 = X87S_DIV(X87S_FILD(float, (pSprite->src.x + pSprite->src.w)), w);
@@ -409,6 +417,22 @@ void Sprite_Queue(SpriteRect *pSrc, SpriteRect *pDst, Texture *pTexture, int lay
         QUEUE_SPRITE(g_spriteLayer4, g_spriteCount4, 4)
         return;
     }
+}
+
+void Sprite_QueueQuad(Texture *pTexture, const GfxTLVertex *vertices, int layer)
+{
+    unsigned int *counts[] = { &g_spriteCount1, &g_spriteCount2, &g_spriteCount3, &g_spriteCount4 };
+    GfxTLVertex *buffers[] = { g_spriteVerts1, g_spriteVerts2, g_spriteVerts3, g_spriteVerts4 };
+    if (layer < 1 || layer > 4 || pTexture == NULL)
+        return;
+    unsigned int index = *counts[layer - 1];
+    if (index >= SPRITE_LAYER_MAX)
+        return;
+    SpriteRect rect = {};
+    BYTE white[] = { 255, 255, 255, 255 };
+    Sprite_Queue(&rect, &rect, pTexture, layer, 0, NULL, NULL, white, kSpriteCustomQuad);
+    for (int i = 0; i < 4; i++)
+        buffers[layer - 1][index * 4 + i] = vertices[i];
 }
 
 // GLOBAL: CMR2 0x005112e8
