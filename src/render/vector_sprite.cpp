@@ -77,8 +77,8 @@ bool Read(GfxTexture *texture, Image &image) {
     return ok;
 }
 
-// Most frequent visible, non-black fill; the other colour is the original
-// black outline. Monochrome symbols simply keep their original ink colour.
+// Most frequent visible, non-black fill. The second colour is recovered
+// separately: the race menus use white detail on blue rather than black ink.
 uint32_t FillColour(const Image &image, Cell c) {
     std::map<uint32_t, unsigned> colours;
     bool visible = false;
@@ -94,6 +94,27 @@ uint32_t FillColour(const Image &image, Cell c) {
     auto best =
         std::max_element(colours.begin(), colours.end(), [](auto a, auto b) { return a.second < b.second; });
     return best != colours.end() ? best->first : visible ? 0 : 0xffffff;
+}
+
+uint32_t DetailColour(const Image &image, Cell c, uint32_t base) {
+    uint32_t colour = base;
+    int furthest = 0;
+    for (int y = 0; y < c.h; y++)
+        for (int x = 0; x < c.w; x++) {
+            uint32_t p = image.pixels[(c.y + y) * image.w + c.x + x];
+            if ((p >> 24) < 240)
+                continue;
+            int distance = 0;
+            for (int shift : {0, 8, 16}) {
+                int delta = int((p >> shift) & 255) - int((base >> shift) & 255);
+                distance += delta * delta;
+            }
+            if (distance > furthest) {
+                furthest = distance;
+                colour = p & 0xffffff;
+            }
+        }
+    return colour;
 }
 
 float At(const std::vector<float> &mask, int w, int h, int x, int y) {
@@ -206,21 +227,26 @@ std::vector<float> Trace(const std::vector<float> &mask, int w, int h, int up, b
 Built Build(const Image &image, const std::vector<Cell> &cells, bool curves) {
     int texels = cells.front().w >= 96 ? 2 : 4;
     int up = texels * kOversample;
-    Built built{image.w * texels, image.h * texels * 2, {}};
+    Built built{image.w * texels, image.h * texels * 3, {}};
     built.pixels.assign((size_t)built.w * built.h * 4, 0);
     for (Cell cell : cells) {
         int w = cell.w + 2 * kPad, h = cell.h + 2 * kPad;
         std::vector<float> alpha((size_t)w * h), fill(alpha.size());
         uint32_t colour = FillColour(image, cell);
+        uint32_t detailColour = DetailColour(image, cell, colour);
         float base[] = {float(colour & 255), float((colour >> 8) & 255), float((colour >> 16) & 255)};
-        float norm = base[0] * base[0] + base[1] * base[1] + base[2] * base[2];
+        float detail[] = {float(detailColour & 255), float((detailColour >> 8) & 255),
+                          float((detailColour >> 16) & 255)};
+        float delta[] = {base[0] - detail[0], base[1] - detail[1], base[2] - detail[2]};
+        float norm = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
         bool coloured = false;
         for (int y = 0; y < cell.h; y++)
             for (int x = 0; x < cell.w; x++) {
                 uint32_t p = image.pixels[(cell.y + y) * image.w + cell.x + x];
                 size_t i = (y + kPad) * w + x + kPad;
                 alpha[i] = (p >> 24) / 255.0f;
-                float dot = (p & 255) * base[0] + ((p >> 8) & 255) * base[1] + ((p >> 16) & 255) * base[2];
+                float dot = ((p & 255) - detail[0]) * delta[0] + (((p >> 8) & 255) - detail[1]) * delta[1] +
+                            (((p >> 16) & 255) - detail[2]) * delta[2];
                 fill[i] = norm > 0 ? std::clamp(dot / norm, 0.0f, 1.0f) * alpha[i] : alpha[i];
                 coloured |= alpha[i] > .9f && fill[i] < .1f && norm > 0;
             }
@@ -245,13 +271,17 @@ Built Build(const Image &image, const std::vector<Cell> &cells, bool curves) {
                     built.pixels[i * 4 + channel] = (uint8_t)lroundf(std::clamp(field, 0.0f, 1.0f) * 255);
                 }
                 // BGRA bytes: B = outer coverage field, G = fill field. R
-                // marks whether the fill/black boundary is used.
+                // marks whether the boundary between two colours is used.
                 built.pixels[i * 4 + 2] = coloured ? 255 : 0;
                 built.pixels[i * 4 + 3] = 255;
-                size_t palette = i + (size_t)built.w * (built.h / 2);
-                for (int channel = 0; channel < 3; channel++)
+                size_t band = (size_t)built.w * (built.h / 3);
+                size_t palette = i + band;
+                for (int channel = 0; channel < 3; channel++) {
                     built.pixels[palette * 4 + channel] = (uint8_t)base[channel];
+                    built.pixels[(palette + band) * 4 + channel] = (uint8_t)detail[channel];
+                }
                 built.pixels[palette * 4 + 3] = 255;
+                built.pixels[(palette + band) * 4 + 3] = 255;
             }
     }
     return built;

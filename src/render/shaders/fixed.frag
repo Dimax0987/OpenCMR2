@@ -121,10 +121,12 @@ vec4 SampleVectorIcon(sampler2D field, sampler2D original, vec2 uv, int scaledPo
     vec2 pixels = uv * vec2(textureSize(original, 0));
     if (all(greaterThanEqual(fwidth(pixels), vec2(0.999))))
         return scaledPoint != 0 ? SampleScaledPoint(original, uv) : texture(original, uv);
-    vec4 distances = textureLod(field, uv * vec2(1.0, 0.5), 0.0);
-    vec3 colour = textureLod(field, uv * vec2(1.0, 0.5) + vec2(0.0, 0.5), 0.0).rgb;
+    vec2 fieldUV = uv * vec2(1.0, 1.0 / 3.0);
+    vec4 distances = textureLod(field, fieldUV, 0.0);
+    vec3 colour = textureLod(field, fieldUV + vec2(0.0, 1.0 / 3.0), 0.0).rgb;
+    vec3 detail = textureLod(field, fieldUV + vec2(0.0, 2.0 / 3.0), 0.0).rgb;
     float ink = distances.r > 0.5 ? IconCoverage(distances.g) : 1.0;
-    return vec4(colour * ink, IconCoverage(distances.b));
+    return vec4(mix(detail, colour, ink), IconCoverage(distances.b));
 }
 
 vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, sampler2D original, vec4 coord)

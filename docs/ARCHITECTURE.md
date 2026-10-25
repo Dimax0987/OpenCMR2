@@ -91,7 +91,8 @@ Textures: the game decodes TGA/DDS itself and writes pixels through
 arrows and the menu arrows/checkmarks/crosses/boxes/circles can receive a
 replacement traced from those original pixels (`vector_sprite.cpp`,
 `video.vector_icons`). Potrace extracts their contours, with separate fields
-for opacity and coloured fill/black detail. Original cell rectangles and
+for opacity and the boundary between its two original colours (including
+the blue/white selection arrows in race menus). Original cell rectangles and
 colours are retained. The renderer also binds the untouched source texture,
 which native-size and smaller draws sample directly. Enlarged draws use the
 traced fields. The distance transform is shared with the outlined fonts.

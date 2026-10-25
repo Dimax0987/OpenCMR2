@@ -19,10 +19,10 @@ static GfxTexture *Texture(int w, int h) {
 static void Pixel(GfxTexture *t, int x, int y, uint32_t colour) {
     memcpy(t->levels[0][0].data() + ((size_t)y * t->width + x) * 4, &colour, 4);
 }
-static const uint8_t *Field(GfxTexture *t, float x, float y, bool palette = false) {
+static const uint8_t *Field(GfxTexture *t, float x, float y, int band = 0) {
     GfxTexture *drawn = Gfx_DrawnTexture(t);
     int scale = Gfx_GetDistanceFieldScale(t);
-    int px = int(x * scale), py = int(y * scale) + (palette ? drawn->height / 2 : 0);
+    int px = int(x * scale), py = int(y * scale) + band * drawn->height / 3;
     return drawn->levels[0][0].data() + ((size_t)py * drawn->width + px) * 4;
 }
 static void CheckReplacement(GfxTexture *texture, const std::vector<uint8_t> &original) {
@@ -31,8 +31,8 @@ static void CheckReplacement(GfxTexture *texture, const std::vector<uint8_t> &or
     Check(texture->levels[0][0] == original, "native source pixels remain unchanged");
     int scale = Gfx_GetDistanceFieldScale(texture);
     Check(scale >= 2 && drawn->width == texture->width * scale &&
-              drawn->height == texture->height * scale * 2,
-          "source coordinates cover the same cells, with a separate palette band");
+              drawn->height == texture->height * scale * 3,
+          "source coordinates cover the same cells, with two separate palette bands");
     Check(Gfx_GetSpriteTexelInset(texture) == .5f / scale, "scaled sprites use the field's own texel inset");
 }
 static void Monochrome() {
@@ -67,6 +67,29 @@ static void Monochrome() {
         CheckReplacement(icon, before);
         Gfx_DestroyTexture(icon);
     }
+}
+static void RaceMenu() {
+    auto *icon = Texture(16, 16);
+    constexpr uint32_t blue = 0xff464fb8, white = 0xffffffff;
+    for (int y = 1; y < 15; y++)
+        for (int x = 1; x < 15; x++) {
+            bool arrow = y >= 4 && y <= 11 && x == 11 - abs(y - 7);
+            Pixel(icon, x, y, arrow ? white : blue);
+        }
+    // An antialiased pixel lies on the blue/white segment, not the blue/black one.
+    Pixel(icon, 7, 4, 0xffa2a7dc);
+    auto original = icon->levels[0][0];
+    VectorSprite_Replace(".\\game\\menus\\Ar_640A.tga", icon);
+    CheckReplacement(icon, original);
+    const auto *base = Field(icon, 3.5f, 7.5f, 1);
+    const auto *detail = Field(icon, 3.5f, 7.5f, 2);
+    Check(base[0] == 184 && base[1] == 79 && base[2] == 70, "race menu keeps its original blue");
+    Check(detail[0] == 255 && detail[1] == 255 && detail[2] == 255,
+          "race menu keeps white arrow detail rather than assuming black");
+    Check(Field(icon, 3.5f, 7.5f)[1] > 128, "blue background remains on the base side");
+    Check(Field(icon, 11.5f, 7.5f)[1] < 128, "white selection arrow remains visible inside the square");
+    Check(Field(icon, 11.5f, 7.5f)[2] == 255, "race menu uses both colour layers");
+    Gfx_DestroyTexture(icon);
 }
 static void Arrows(int w, int h) {
     struct Cell {
@@ -112,6 +135,7 @@ int main() {
     SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "OPENCMR2_HEADLESS", "1", true);
     Check(Gfx_SetVideoMode(640, 480, FALSE), "initialise headless renderer");
     Monochrome();
+    RaceMenu();
     Arrows(256, 128);
     Arrows(512, 256);
     auto *other = Texture(16, 16);
