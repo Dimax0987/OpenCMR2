@@ -82,6 +82,10 @@ add_executable(country_flags_test country_flags.cpp)
 target_link_libraries(country_flags_test PRIVATE opencmr2_platform)
 add_test(NAME country_flags COMMAND country_flags_test ${CMAKE_CURRENT_SOURCE_DIR}/reference/menu-flags.txt)
 
+add_executable(vector_sprites_test vector_sprites.cpp)
+target_link_libraries(vector_sprites_test PRIVATE opencmr2_platform)
+add_test(NAME vector_sprites COMMAND vector_sprites_test)
+
 add_executable(saved_game_test saved_game.cpp)
 target_link_libraries(saved_game_test PRIVATE opencmr2_platform)
 add_test(NAME saved_game COMMAND saved_game_test)

@@ -162,6 +162,7 @@ the game.
 | `[video] menu_scale` | `100` | Size of the menus in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
 | `[video] outline_fonts` | `1` | Draw the text from outlines, sharp at any size (`1`), or from the original's bitmaps (`0`) |
 | `[video] vector_flags` | `1` | Keep the original dotted menu flags, drawing each dot's circular edge at screen resolution when enlarged (`1`), or magnify the original dot bitmap (`0`); native-size dots and small statistics flags keep their original pixels |
+| `[video] vector_icons` | `1` | Trace the original co-driver arrows and menu arrows/checkmarks/crosses/boxes/circles for sharp enlarged edges (`1`), or keep the bitmaps (`0`); native-size icons keep their original pixels |
 | `[video] vsync` | `1` | Wait for the display's refresh (`1`) or draw frames as soon as they are ready (`0`) |
 | `[video] graphics_api` | `auto` | Renderer: `sdl_gpu` (Vulkan, Direct3D 12, Metal), `opengl` (OpenGL 3.3, Linux and Windows), or `auto` for SDL GPU when the GPU has a Vulkan, Direct3D 12 or Metal driver (not a software one) and OpenGL otherwise |
 | `[video] window_scale` | `1` | Size of the window in multiples of the game's resolution, applied when leaving fullscreen |
@@ -314,8 +315,8 @@ The full index is in [docs/README.md](docs/README.md).
 ## Licence
 
 OpenCMR2 is licensed under the [GPL-3.0](LICENSE). Bundled third-party code
-keeps its own licence: SDL3 (zlib), ENet (MIT), the Bink decoder (LGPL-2.1)
-and RadialGamePad (GPL-3.0).
+keeps its own licence: SDL3 (zlib), ENet (MIT), Potrace (GPL-2.0-or-later),
+the Bink decoder (LGPL-2.1) and RadialGamePad (GPL-3.0).
 
 OpenCMR2 is an unofficial project, not affiliated with or endorsed by
 Codemasters or Electronic Arts. Colin McRae Rally 2.0 is a trademark of its

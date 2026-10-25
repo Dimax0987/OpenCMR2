@@ -87,6 +87,16 @@ improvements will be added one at a time, each behind an option, with the
 original look as the default.
 
 Textures: the game decodes TGA/DDS itself and writes pixels through
+`Gfx_LockTexture`, using the pixel format the backend reports. Co-driver
+arrows and the menu arrows/checkmarks/crosses/boxes/circles can receive a
+replacement traced from those original pixels (`vector_sprite.cpp`,
+`video.vector_icons`). Potrace extracts their contours, with separate fields
+for opacity and coloured fill/black detail. Original cell rectangles and
+colours are retained. The renderer also binds the untouched source texture,
+which native-size and smaller draws sample directly. Enlarged draws use the
+traced fields. The distance transform is shared with the outlined fonts.
+
+Other textures keep their original image data. They are uploaded through
 `Gfx_LockTexture`, using the pixel format the backend reports. The backend
 offers 32-bit BGRA8, BC1 and BC3 (the DDS formats on the disc), and a dU/dV/L
 bump format.

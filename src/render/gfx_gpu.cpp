@@ -313,7 +313,7 @@ struct Executor : GfxExecutor {
 
         vs3d = Shader(SHADER_CODE(fixed3d_vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
         vsTL = Shader(SHADER_CODE(fixedtl_vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-        fs = Shader(SHADER_CODE(fixed_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 5, 1);
+        fs = Shader(SHADER_CODE(fixed_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 7, 1);
         vsClear = Shader(SHADER_CODE(clear_vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
         fsClear = Shader(SHADER_CODE(clear_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
         if (!vs3d || !vsTL || !fs || !vsClear || !fsClear)
@@ -845,6 +845,8 @@ struct Executor : GfxExecutor {
             return 4;
         if (t->flags & GFX_TEXTURE_MENU_DOT)
             return 5;
+        if (t->flags & GFX_TEXTURE_VECTOR_ICON)
+            return 6;
         return 1;
     }
 
@@ -855,7 +857,8 @@ struct Executor : GfxExecutor {
     // filter does.
     bool ScaledPoint(const GfxStageState &stage)
     {
-        return TextureKind(stage) == 1 && stage.magFilter == GFX_FILTER_POINT && stage.mipFilter == GFX_MIPFILTER_NONE;
+        int kind = TextureKind(stage);
+        return (kind == 1 || kind == 6) && stage.magFilter == GFX_FILTER_POINT && stage.mipFilter == GFX_MIPFILTER_NONE;
     }
 
     // fade: the draw is a 3D one into the back buffer, which the distance
@@ -901,14 +904,14 @@ struct Executor : GfxExecutor {
     }
 
     // The stages' textures (2D and cube for each), then the backdrop.
-    void TextureBindings(const GfxDrawState &s, SDL_GPUTextureSamplerBinding bindings[5])
+    void TextureBindings(const GfxDrawState &s, SDL_GPUTextureSamplerBinding bindings[7])
     {
         for (int i = 0; i < 2; i++) {
             const GfxStageState &stage = s.stages[i];
             GfxTexture *t = Gfx_DrawnTexture(stage.texture);
             GpuTexture *g = t != NULL ? Ensure(t) : NULL;
             GfxStageState sampled = stage;
-            if (ScaledPoint(stage) || TextureKind(stage) == 5)
+            if (ScaledPoint(stage) || TextureKind(stage) == 5 || TextureKind(stage) == 6)
                 sampled.minFilter = sampled.magFilter = GFX_FILTER_LINEAR;
             // A distance field is read between its texels, and from its mip
             // levels where it is drawn smaller.
@@ -921,6 +924,10 @@ struct Executor : GfxExecutor {
             SDL_GPUTexture *texture = g != NULL ? g->texture : NULL;
             bindings[i * 2] = { (texture != NULL && !cube) ? texture : white2D, sampler };
             bindings[i * 2 + 1] = { (texture != NULL && cube) ? texture : whiteCube, sampler };
+            GpuTexture *native = t != NULL && (t->flags & GFX_TEXTURE_VECTOR_ICON) ? Ensure(stage.texture) : NULL;
+            GfxStageState source = stage;
+            if (ScaledPoint(stage)) source.minFilter = source.magFilter = GFX_FILTER_LINEAR;
+            bindings[5 + i] = { native != NULL ? native->texture : white2D, Sampler(source) };
         }
         bindings[4] = { backdrop, Sampler(GfxStageState()) };
     }
@@ -932,7 +939,7 @@ struct Executor : GfxExecutor {
         bool viewportSet = false, texturesSet = false, indicesSet = false;
         SDL_GPUViewport viewport = {};
         SDL_Rect scissor = {};
-        SDL_GPUTextureSamplerBinding textures[5] = {};
+        SDL_GPUTextureSamplerBinding textures[7] = {};
         SDL_GPUBuffer *vertices = nullptr;
     };
 
@@ -1226,10 +1233,10 @@ struct Executor : GfxExecutor {
                 fragmentUniforms = fu;
                 fragmentUniformsSet = true;
             }
-            SDL_GPUTextureSamplerBinding textures[5];
+            SDL_GPUTextureSamplerBinding textures[7];
             TextureBindings(s, textures);
             if (!bound.texturesSet || memcmp(textures, bound.textures, sizeof(textures)) != 0) {
-                SDL_BindGPUFragmentSamplers(pass, 0, textures, 5);
+                SDL_BindGPUFragmentSamplers(pass, 0, textures, 7);
                 memcpy(bound.textures, textures, sizeof(textures));
                 bound.texturesSet = true;
             }

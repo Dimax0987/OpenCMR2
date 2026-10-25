@@ -234,7 +234,8 @@ struct Executor : GfxExecutor {
         int blend = -1, srcBlend = -1, destBlend = -1, depthTest = -1, depthWrite = -1, depthFunc = -1, cull = -1;
         GLint viewport[4] = { -1, -1, -1, -1 }, scissor[4] = { -1, -1, -1, -1 };
         float depthRange[2] = { -1, -1 };
-        GLuint textures[5] = { ~0u, ~0u, ~0u, ~0u, ~0u }, samplers[5] = { ~0u, ~0u, ~0u, ~0u, ~0u };
+        GLuint textures[7] = { ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u };
+        GLuint samplers[7] = { ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u };
     } bound;
 
     ~Executor() override
@@ -302,8 +303,8 @@ struct Executor : GfxExecutor {
         gl.UniformBlockBinding(program, gl.GetUniformBlockIndex(program, "VertexUniforms"), VERTEX_BLOCK);
         gl.UniformBlockBinding(program, gl.GetUniformBlockIndex(program, "FragmentUniforms"), FRAGMENT_BLOCK);
         gl.UseProgram(program);
-        static const char *const samplerNames[5] = { "tex0", "cube0", "tex1", "cube1", "backdrop" };
-        for (int i = 0; i < 5; i++)
+        static const char *const samplerNames[7] = { "tex0", "cube0", "tex1", "cube1", "backdrop", "native0", "native1" };
+        for (int i = 0; i < 7; i++)
             gl.Uniform1i(gl.GetUniformLocation(program, samplerNames[i]), i);
         return program;
     }
@@ -656,6 +657,8 @@ struct Executor : GfxExecutor {
             return 4;
         if (t->flags & GFX_TEXTURE_MENU_DOT)
             return 5;
+        if (t->flags & GFX_TEXTURE_VECTOR_ICON)
+            return 6;
         return 1;
     }
 
@@ -663,7 +666,8 @@ struct Executor : GfxExecutor {
     // linear sampler by the shader.
     bool ScaledPoint(const GfxStageState &stage)
     {
-        return TextureKind(stage) == 1 && stage.magFilter == GFX_FILTER_POINT && stage.mipFilter == GFX_MIPFILTER_NONE;
+        int kind = TextureKind(stage);
+        return (kind == 1 || kind == 6) && stage.magFilter == GFX_FILTER_POINT && stage.mipFilter == GFX_MIPFILTER_NONE;
     }
 
     // The two stages' textures and samplers: units 0 and 2 for 2D textures,
@@ -675,7 +679,7 @@ struct Executor : GfxExecutor {
             GfxTexture *t = Gfx_DrawnTexture(stage.texture);
             GlTexture *g = t != NULL ? Ensure(t) : NULL;
             GfxStageState sampled = stage;
-            if (ScaledPoint(stage) || TextureKind(stage) == 5)
+            if (ScaledPoint(stage) || TextureKind(stage) == 5 || TextureKind(stage) == 6)
                 sampled.minFilter = sampled.magFilter = GFX_FILTER_LINEAR;
             if (TextureKind(stage) == 4) {
                 sampled.minFilter = sampled.magFilter = GFX_FILTER_LINEAR;
@@ -695,6 +699,21 @@ struct Executor : GfxExecutor {
                     gl.BindSampler(unit, sampler);
                     bound.samplers[unit] = sampler;
                 }
+            }
+            GlTexture *native = t != NULL && (t->flags & GFX_TEXTURE_VECTOR_ICON) ? Ensure(stage.texture) : NULL;
+            GfxStageState source = stage;
+            if (ScaledPoint(stage)) source.minFilter = source.magFilter = GFX_FILTER_LINEAR;
+            GLuint original = native != NULL ? native->texture : white2D;
+            GLuint sourceSampler = Sampler(source);
+            int unit = 5 + i;
+            if (bound.textures[unit] != original) {
+                gl.ActiveTexture(GL_TEXTURE0 + unit);
+                gl.BindTexture(GL_TEXTURE_2D, original);
+                bound.textures[unit] = original;
+            }
+            if (bound.samplers[unit] != sourceSampler) {
+                gl.BindSampler(unit, sourceSampler);
+                bound.samplers[unit] = sourceSampler;
             }
         }
         // Unit 4: the backdrop of the distance fade, read by texel.

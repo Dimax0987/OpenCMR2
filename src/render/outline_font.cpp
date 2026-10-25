@@ -18,6 +18,7 @@
 #include "platform/platform.h"
 #include "port/sys.h"
 #include "fonts_embedded.h"
+#include "distance_field.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -265,74 +266,6 @@ void PlaceGlyph(const Fit &fit, int glyph, const Ink &ink, bool matchWidth, int 
     }
 }
 
-// Squared Euclidean distance transform (Felzenszwalb and Huttenlocher): each
-// value becomes the squared distance to the nearest zero.
-void DistanceTransform1D(const float *f, float *d, int n, std::vector<int> &v, std::vector<double> &z)
-{
-    int k = 0;
-    v[0] = 0;
-    z[0] = -1e30;
-    z[1] = 1e30;
-    for (int q = 1; q < n; q++) {
-        double s;
-        for (;;) {
-            int p = v[k];
-            s = (((double)f[q] + (double)q * q) - ((double)f[p] + (double)p * p)) / (2.0 * (q - p));
-            if (s > z[k])
-                break;
-            k--;
-        }
-        k++;
-        v[k] = q;
-        z[k] = s;
-        z[k + 1] = 1e30;
-    }
-    k = 0;
-    for (int q = 0; q < n; q++) {
-        while (z[k + 1] < q)
-            k++;
-        double dq = q - v[k];
-        d[q] = (float)std::min(dq * dq + f[v[k]], 1e20);
-    }
-}
-
-void DistanceTransform(std::vector<float> &grid, int w, int h)
-{
-    const int n = std::max(w, h);
-    std::vector<float> f(n), d(n);
-    std::vector<double> z(n + 1);
-    std::vector<int> v(n);
-    for (int x = 0; x < w; x++) {
-        for (int y = 0; y < h; y++)
-            f[y] = grid[(size_t)y * w + x];
-        DistanceTransform1D(f.data(), d.data(), h, v, z);
-        for (int y = 0; y < h; y++)
-            grid[(size_t)y * w + x] = d[y];
-    }
-    for (int y = 0; y < h; y++) {
-        DistanceTransform1D(&grid[(size_t)y * w], d.data(), w, v, z);
-        memcpy(&grid[(size_t)y * w], d.data(), w * sizeof(float));
-    }
-}
-
-// Signed distances of a coverage's samples to its edge (at 0.5), in
-// samples, positive inside.
-std::vector<float> SignedDistance(const std::vector<float> &coverage, int w, int h)
-{
-    const float inf = 1e20f;
-    std::vector<float> toInside(coverage.size()), toOutside(coverage.size());
-    for (size_t i = 0; i < coverage.size(); i++) {
-        bool in = coverage[i] >= 0.5f;
-        toInside[i] = in ? 0.0f : inf;
-        toOutside[i] = in ? inf : 0.0f;
-    }
-    DistanceTransform(toInside, w, h);
-    DistanceTransform(toOutside, w, h);
-    for (size_t i = 0; i < coverage.size(); i++)
-        toInside[i] = toOutside[i] > 0 ? sqrtf(toOutside[i]) - 0.5f : 0.5f - sqrtf(toInside[i]);
-    return toInside;
-}
-
 // How far a fit's glyphs are from the original's, in coverage per unit of
 // ink, at the best of its weights from minWeight to maxWeight (which it sets).
 float FitError(Fit &fit, const Bitmap &bm, const std::vector<std::pair<Cell, int>> &refs, float minWeight,
@@ -348,7 +281,7 @@ float FitError(Fit &fit, const Bitmap &bm, const std::vector<std::pair<Cell, int
         const int w = c.w * up, h = c.h * up;
         drawn.assign((size_t)w * h, 0.0f);
         PlaceGlyph(fit, ref.second, ink, false, up, c.w, c.h, drawn);
-        std::vector<float> distance = SignedDistance(drawn, w, h);
+        std::vector<float> distance = DistanceField::FromCoverage(drawn, w, h);
         for (int s = 0; s < steps; s++) {
             const float weight = (minWeight + (maxWeight - minWeight) * s / (steps - 1)) * up;
             for (int y = 0; y < c.h; y++)
@@ -467,7 +400,7 @@ void WriteField(const std::vector<float> &coverage, const Cell &c, int texels, f
 {
     const int up = texels * kOversample;
     const int w = c.w * up, h = c.h * up;
-    std::vector<float> distance = SignedDistance(coverage, w, h);
+    std::vector<float> distance = DistanceField::FromCoverage(coverage, w, h);
     for (int ty = 0; ty < c.h * texels; ty++) {
         int oy = c.y * texels + ty;
         if (oy < 0 || oy >= outHeight)

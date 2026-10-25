@@ -855,7 +855,8 @@ extern "C" void Gfx_SetTextureReplacement(GfxTexture *texture, GfxTexture *repla
 extern "C" int Gfx_GetDistanceFieldScale(GfxTexture *texture)
 {
     GfxTexture *drawn = Gfx_DrawnTexture(texture);
-    if (drawn == NULL || !(drawn->flags & GFX_TEXTURE_DISTANCE_FIELD) || Root(texture)->width <= 0)
+    if (drawn == NULL || !(drawn->flags & (GFX_TEXTURE_DISTANCE_FIELD | GFX_TEXTURE_VECTOR_ICON)) ||
+        Root(texture)->width <= 0)
         return 0;
     return drawn->width / Root(texture)->width;
 }

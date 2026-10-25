@@ -1,0 +1,8 @@
+Potrace 1.16, the unmodified tracing library core by Peter Selinger.
+Source: https://potrace.sourceforge.net/download/1.16/potrace-1.16.tar.gz
+Archive SHA256: be8248a17dedd6ccbaab2fcc45835bb0502d062e40fbded3bc56028ce5eb7acc
+License: GNU GPL version 2 or later; see COPYING.
+
+Used by src/render/vector_sprite.cpp to recover Bezier outlines from the
+player's original UI textures at load time. No game artwork is distributed.
+No external executable, SVG converter or installed Potrace library is used.

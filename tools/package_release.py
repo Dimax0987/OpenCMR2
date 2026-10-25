@@ -81,6 +81,7 @@ def main():
     entries = [(path, f"{folder}/{path.name}") for path in files]
     licenses = [(ROOT / "LICENSE", "OpenCMR2-LICENSE"),
                 (ROOT / "third_party/enet/LICENSE", "ENet-LICENSE"),
+                (ROOT / "third_party/potrace/COPYING", "Potrace-COPYING"),
                 (ROOT / "src/video/COPYING.LGPLv2.1", "Bink-decoder-COPYING.LGPLv2.1"),
                 (ROOT / "third_party/tex-gyre-heros/GUST-FONT-LICENSE.txt", "TeX-Gyre-Heros-GUST-FONT-LICENSE.txt")]
     licenses += [(path, f"{index + 1}-{path.name}") for index, path in enumerate(args.license)]

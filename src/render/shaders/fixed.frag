@@ -15,10 +15,12 @@ layout(set = 2, binding = 1) uniform samplerCube cube0;
 layout(set = 2, binding = 2) uniform sampler2D tex1;
 layout(set = 2, binding = 3) uniform samplerCube cube1;
 layout(set = 2, binding = 4) uniform sampler2D backdrop;   // Gfx_CaptureBackdrop
+layout(set = 2, binding = 5) uniform sampler2D native0;
+layout(set = 2, binding = 6) uniform sampler2D native1;
 
 layout(std140, set = 3, binding = 0) uniform FragmentUniforms {
     ivec4 stage0;       // colour op, colour arg1, colour arg2, alpha op
-    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump, 4 distance field, 5 menu dot), scaled point filter
+    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump, 4 distance field, 5 menu dot, 6 vector icon), scaled point filter
     ivec4 stage1;
     ivec4 stage1b;
     vec4 textureFactor;
@@ -107,7 +109,25 @@ vec4 SampleMenuDot(sampler2D t2, vec2 uv)
     return vec4(1.0, 1.0, 1.0, coverage);
 }
 
-vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, vec4 coord)
+float IconCoverage(float distance)
+{
+    return clamp((distance - 0.5) / max(fwidth(distance), 1e-5) + 0.5, 0.0, 1.0);
+}
+
+vec4 SampleVectorIcon(sampler2D field, sampler2D original, vec2 uv, int scaledPoint)
+{
+    // The original image remains bound, including its compressed format.
+    // Native-size and smaller draws therefore preserve the original pixels.
+    vec2 pixels = uv * vec2(textureSize(original, 0));
+    if (all(greaterThanEqual(fwidth(pixels), vec2(0.999))))
+        return scaledPoint != 0 ? SampleScaledPoint(original, uv) : texture(original, uv);
+    vec4 distances = textureLod(field, uv * vec2(1.0, 0.5), 0.0);
+    vec3 colour = textureLod(field, uv * vec2(1.0, 0.5) + vec2(0.0, 0.5), 0.0).rgb;
+    float ink = distances.r > 0.5 ? IconCoverage(distances.g) : 1.0;
+    return vec4(colour * ink, IconCoverage(distances.b));
+}
+
+vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, sampler2D original, vec4 coord)
 {
     if (kind == 2)
         return texture(tc, coord.xyz);
@@ -117,6 +137,8 @@ vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, vec4 coord)
         return SampleDistanceField(t2, coord.xy);
     if (kind == 5)
         return SampleMenuDot(t2, coord.xy);
+    if (kind == 6)
+        return SampleVectorIcon(t2, original, coord.xy, scaledPoint);
     if (scaledPoint != 0)
         return SampleScaledPoint(t2, coord.xy);
     return texture(t2, coord.xy);
@@ -157,7 +179,7 @@ void main()
             if (stage0.x == TOP_BUMPENVMAPLUMINANCE)
                 luminance = clamp(bump.b * bumpLuminance.x + bumpLuminance.y, 0.0, 1.0);
         } else {
-            vec4 texel = Sample(stage0b.z, stage0b.w, tex0, cube0, inTex0);
+            vec4 texel = Sample(stage0b.z, stage0b.w, tex0, cube0, native0, inTex0);
             vec4 color = Op(stage0.x, Arg(stage0.y, current, texel), Arg(stage0.z, current, texel));
             float alpha = stage0.w == TOP_DISABLE ? current.a
                                                   : Op(stage0.w, Arg(stage0b.x, current, texel), Arg(stage0b.y, current, texel)).a;
@@ -166,7 +188,7 @@ void main()
         // Stage 1.
         if (stage1.x != TOP_DISABLE) {
             vec4 coord = inTex1 + vec4(bumpOffset, 0.0, 0.0);
-            vec4 texel = Sample(stage1b.z, stage1b.w, tex1, cube1, coord);
+            vec4 texel = Sample(stage1b.z, stage1b.w, tex1, cube1, native1, coord);
             texel.rgb *= luminance;
             vec4 color = Op(stage1.x, Arg(stage1.y, current, texel), Arg(stage1.z, current, texel));
             float alpha = stage1.w == TOP_DISABLE ? current.a

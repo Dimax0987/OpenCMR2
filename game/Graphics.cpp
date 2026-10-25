@@ -1,4 +1,5 @@
 #include "port/sys.h"
+#include "port/vector_sprite.h"
 #include <stdio.h>
 #include "FloatToInt.h"
 #include <stddef.h>
@@ -2703,6 +2704,7 @@ Texture *CGraphics::LoadDDSTexture(DDSFile *pDDS, Texture *pTexture)
         BltMipMaps(pTexture);
     if (!(pTexture->flags & 0x1000))
         CFileBuffer::FreeGenericFileBuffer(pDDS);
+    VectorSprite_Replace(pTexture->name, pTexture->pSurface);
     return pTexture;
 }
 
@@ -6180,6 +6182,7 @@ Texture *CGraphics::LoadTGATexture(BYTE *pTGA, Texture *pTexture)
         BltMipMaps(pTexture);
     if (!(pTexture->flags & 0x1000))
         CFileBuffer::FreeGenericFileBuffer(pTGA);
+    VectorSprite_Replace(pTexture->name, pTexture->pSurface);
     return pTexture;
 }
 

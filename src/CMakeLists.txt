@@ -237,10 +237,19 @@ find_package(Threads REQUIRED)
 target_link_libraries(opencmr2_net PUBLIC enet Threads::Threads)
 
 # ---- platform subsystems ---------------------------------------------------------
+set(POTRACE_DIR ${PROJECT_SOURCE_DIR}/third_party/potrace)
+add_library(opencmr2_potrace STATIC ${POTRACE_DIR}/curve.c ${POTRACE_DIR}/trace.c
+    ${POTRACE_DIR}/decompose.c ${POTRACE_DIR}/potracelib.c)
+target_compile_definitions(opencmr2_potrace PRIVATE VERSION="1.16" HAVE_INTTYPES_H=1)
+target_include_directories(opencmr2_potrace PUBLIC ${POTRACE_DIR})
+set_target_properties(opencmr2_potrace PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(opencmr2_platform PRIVATE opencmr2_potrace)
 target_sources(opencmr2_platform PRIVATE
     render/gfx_core.cpp
     render/gfx_gpu.cpp
     render/outline_font.cpp
+    render/distance_field.cpp
+    render/vector_sprite.cpp
     ${SHADER_HEADER}
     ${FONTS_HEADER}
     ${ICON_HEADER}

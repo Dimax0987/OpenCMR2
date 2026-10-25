@@ -387,7 +387,8 @@ enum GfxTextureFlags {
     GFX_TEXTURE_STAGING = 8,          /* CPU only: a source for Gfx_CopyTexture */
     GFX_TEXTURE_DISTANCE_FIELD = 16,  /* alpha is a signed distance to the edge, 0.5 on it: drawn with
                                          an edge of one pixel at any scale */
-    GFX_TEXTURE_MENU_DOT = 32        /* the original large menu dot, drawn as a circle when enlarged */
+    GFX_TEXTURE_MENU_DOT = 32,       /* the original large menu dot, drawn as a circle when enlarged */
+    GFX_TEXTURE_VECTOR_ICON = 64     /* traced colour/alpha fields, with native source bound separately */
 };
 
 /* mipLevels counts the top level (1 = no mipmaps). */
