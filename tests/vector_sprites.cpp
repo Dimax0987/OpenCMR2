@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <vector>
 
 static void Check(bool ok, const char *message) {
@@ -131,6 +132,65 @@ static void Arrows(int w, int h) {
     }
     Gfx_DestroyTexture(atlas);
 }
+
+static void Maps() {
+    for (int track = 1; track <= 8; track++) {
+        auto *map = Texture(128, 128);
+        for (int y = 0; y < 128; y++)
+            for (int x = 0; x < 128; x++) {
+                float radius = hypotf(x + .5f - 64, y + .5f - 64);
+                if (radius > 41 && radius < 44)
+                    Pixel(map, x, y, 0xffffffff);
+            }
+        auto original = map->levels[0][0];
+        char name[64];
+        snprintf(name, sizeof(name), ".\\game\\tracks\\chall\\CHA%02d.DDS", track);
+        VectorSprite_Replace(name, map);
+        CheckReplacement(map, original);
+        Check(Field(map, 106.5f, 64.5f)[0] > 128, "arcade route retains its narrow white stroke");
+        Check(Field(map, 64.5f, 64.5f)[0] < 128, "closed route keeps its transparent interior");
+        Check(Field(map, 112.5f, 64.5f)[0] < 128, "route padding remains transparent");
+        Gfx_DestroyTexture(map);
+    }
+    for (int size : {16, 32}) {
+        auto *dot = Texture(size, size);
+        // The original small matrix point is padded, with its centre near
+        // the top-left corner, not at the centre of the texture.
+        int centre = size == 16 ? 3 : 5;
+        for (int y = 0; y < 2 * centre; y++)
+            for (int x = 0; x < 2 * centre; x++)
+                if (hypotf(x + .5f - centre, y + .5f - centre) < centre)
+                    Pixel(dot, x, y, 0xffffffff);
+        auto original = dot->levels[0][0];
+        VectorSprite_Replace(".\\frontend\\textures\\SmMatrix.tga", dot);
+        CheckReplacement(dot, original);
+        Check(Field(dot, centre + .125f, centre + .125f)[0] > 128,
+              "selection point keeps its original centre");
+        Check(Field(dot, size - 1.5f, size - 1.5f)[0] < 128, "selection point retains its padded cell");
+        Check(Field(dot, centre - 1.125f, centre + .125f)[0] ==
+                  Field(dot, centre + 1.125f, centre + .125f)[0],
+              "enlarged selection point stays circular and centred");
+        Gfx_DestroyTexture(dot);
+    }
+    auto *marker = Texture(64, 64);
+    for (int y = 0; y < 64; y++)
+        for (int x = 0; x < 64; x++)
+            if (hypotf(x + .5f - 32, y + .5f - 33) < 28)
+                Pixel(marker, x, y, 0xffffffff);
+    auto original = marker->levels[0][0];
+    VectorSprite_Replace(".\\NEWIMAGE\\OSD\\CHALL\\CHALBLOB.TGA", marker);
+    CheckReplacement(marker, original);
+    Check(Field(marker, 32.5f, 33.5f)[0] > 128 && Field(marker, 1.5f, 1.5f)[0] < 128,
+          "car marker keeps its silhouette and transparent padding");
+    Gfx_DestroyTexture(marker);
+
+    for (const char *name : {"cha00.dds", "cha09.dds", "cha011.dds", "cha0a.dds", "cha01hi.dds"}) {
+        auto *other = Texture(128, 128);
+        VectorSprite_Replace(name, other);
+        Check(Gfx_DrawnTexture(other) == other, "only the eight arcade thumbnail names are traced");
+        Gfx_DestroyTexture(other);
+    }
+}
 int main() {
     SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "OPENCMR2_HEADLESS", "1", true);
     Check(Gfx_SetVideoMode(640, 480, FALSE), "initialise headless renderer");
@@ -138,6 +198,7 @@ int main() {
     RaceMenu();
     Arrows(256, 128);
     Arrows(512, 256);
+    Maps();
     auto *other = Texture(16, 16);
     VectorSprite_Replace("car.tga", other);
     Check(Gfx_DrawnTexture(other) == other, "unrelated textures remain unchanged");

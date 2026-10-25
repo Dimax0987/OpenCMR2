@@ -97,6 +97,14 @@ colours are retained. The renderer also binds the untouched source texture,
 which native-size and smaller draws sample directly. Enlarged draws use the
 traced fields. The distance transform is shared with the outlined fonts.
 
+Arcade HUD maps (`cha01` through `cha08`, 128x128) and their car markers
+(`chalblob`) use the same contour path, controlled separately by
+`video.vector_maps`. The selection maps retain their original 36x36 DMD cell
+grids and palette: only the shared `SmMatrix` point is replaced. Enlarged
+points are circles fitted to the original coverage's centre and area;
+native-size and smaller draws still read the source bitmap. Map coordinates,
+car positions, padding and sprite placement stay in the game's code.
+
 Other textures keep their original image data. They are uploaded through
 `Gfx_LockTexture`, using the pixel format the backend reports. The backend
 offers 32-bit BGRA8, BC1 and BC3 (the DDS formats on the disc), and a dU/dV/L

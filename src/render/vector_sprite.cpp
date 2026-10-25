@@ -37,7 +37,18 @@ struct Built {
 constexpr int kPad = 2, kOversample = 4;
 constexpr float kSpread = 2.0f;
 
+bool IsArcadeMap(const std::string &name) {
+    return name.size() == 5 && name.compare(0, 4, "cha0") == 0 && name[4] >= '1' && name[4] <= '8';
+}
+
+bool IsMap(const std::string &name) {
+    return IsArcadeMap(name) || name == "smmatrix" || name == "chalblob";
+}
+
 std::vector<Cell> Cells(const std::string &name, int w, int h) {
+    if ((IsArcadeMap(name) && w == 128 && h == 128) ||
+        (name == "smmatrix" && w == h && (w == 16 || w == 32)) || (name == "chalblob" && w == 64 && h == 64))
+        return {{0, 0, w, h}};
     if (name == "arrows4") {
         if (w == 256 && h == 128) {
             std::vector<Cell> cells;
@@ -224,8 +235,33 @@ std::vector<float> Trace(const std::vector<float> &mask, int w, int h, int up, b
     return distance;
 }
 
-Built Build(const Image &image, const std::vector<Cell> &cells, bool curves) {
-    int texels = cells.front().w >= 96 ? 2 : 4;
+// The selection map is made of circular points, not a continuous route.
+// Retain each point's original centre and painted area, including its padding.
+std::vector<float> Circle(const std::vector<float> &mask, int w, int h, int up) {
+    double area = 0, cx = 0, cy = 0;
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            float a = mask[y * w + x];
+            area += a;
+            cx += (x + .5) * a;
+            cy += (y + .5) * a;
+        }
+    if (area == 0)
+        return {};
+    cx /= area;
+    cy /= area;
+    float radius = (float)sqrt(area / 3.141592653589793);
+    int rw = w * up, rh = h * up;
+    std::vector<float> distance((size_t)rw * rh);
+    for (int y = 0; y < rh; y++)
+        for (int x = 0; x < rw; x++)
+            distance[y * rw + x] =
+                (radius - hypotf((x + .5f) / up - (float)cx, (y + .5f) / up - (float)cy)) * up;
+    return distance;
+}
+
+Built Build(const Image &image, const std::vector<Cell> &cells, bool curves, bool map, bool dots) {
+    int texels = !map && cells.front().w >= 96 ? 2 : 4;
     int up = texels * kOversample;
     Built built{image.w * texels, image.h * texels * 3, {}};
     built.pixels.assign((size_t)built.w * built.h * 4, 0);
@@ -250,7 +286,7 @@ Built Build(const Image &image, const std::vector<Cell> &cells, bool curves) {
                 fill[i] = norm > 0 ? std::clamp(dot / norm, 0.0f, 1.0f) * alpha[i] : alpha[i];
                 coloured |= alpha[i] > .9f && fill[i] < .1f && norm > 0;
             }
-        auto outer = Trace(alpha, w, h, up, curves);
+        auto outer = dots ? Circle(alpha, w, h, up) : Trace(alpha, w, h, up, curves);
         auto inner = coloured ? Trace(fill, w, h, up, curves) : std::vector<float>();
         if (outer.empty() || (coloured && inner.empty()))
             return {};
@@ -289,7 +325,7 @@ Built Build(const Image &image, const std::vector<Cell> &cells, bool curves) {
 } // namespace
 
 extern "C" void VectorSprite_Replace(const char *name, GfxTexture *texture) {
-    if (!name || !texture || texture->replacement || !Platform_GetSettingInt("video.vector_icons", 1))
+    if (!name || !texture || texture->replacement)
         return;
     std::string base(name);
     base = base.substr(base.find_last_of("\\/") + 1);
@@ -299,6 +335,9 @@ extern "C" void VectorSprite_Replace(const char *name, GfxTexture *texture) {
     if (dot == std::string::npos || (base.substr(dot) != ".tga" && base.substr(dot) != ".dds"))
         return;
     base.resize(dot);
+    bool map = IsMap(base);
+    if (!Platform_GetSettingInt(map ? "video.vector_maps" : "video.vector_icons", 1))
+        return;
     auto cells = Cells(base, texture->width, texture->height);
     if (cells.empty())
         return;
@@ -315,7 +354,8 @@ extern "C" void VectorSprite_Replace(const char *name, GfxTexture *texture) {
     static std::map<std::string, Built> cache;
     auto found = cache.find(key);
     if (found == cache.end()) {
-        Built built = Build(image, cells, base == "arrows4" || base == "circle");
+        Built built =
+            Build(image, cells, map || base == "arrows4" || base == "circle", map, base == "smmatrix");
         if (built.pixels.empty())
             return;
         size_t bytes = built.pixels.size();
@@ -324,7 +364,8 @@ extern "C" void VectorSprite_Replace(const char *name, GfxTexture *texture) {
         if (bytes > 32 * 1024 * 1024)
             cache.clear();
         found = cache.emplace(key, std::move(built)).first;
-        Sys_Log("icons: %s: traced %d original cells to Bezier outlines", base.c_str(), (int)cells.size());
+        Sys_Log("%s: %s: vectorised %d original cells", map ? "maps" : "icons", base.c_str(),
+                (int)cells.size());
     }
     const Built &built = found->second;
     GfxTexture *replacement =

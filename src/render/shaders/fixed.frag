@@ -121,7 +121,12 @@ vec4 SampleVectorIcon(sampler2D field, sampler2D original, vec2 uv, int scaledPo
     vec2 pixels = uv * vec2(textureSize(original, 0));
     if (all(greaterThanEqual(fwidth(pixels), vec2(0.999))))
         return scaledPoint != 0 ? SampleScaledPoint(original, uv) : texture(original, uv);
-    vec2 fieldUV = uv * vec2(1.0, 1.0 / 3.0);
+    // Keep the field's filter footprint inside its band. Padded matrix
+    // points touch the texture edges; sampling a palette band there would
+    // turn transparent padding into thin lines across adjacent map cells.
+    vec2 halfTexel = 0.5 / vec2(textureSize(field, 0));
+    vec2 fieldUV = clamp(uv * vec2(1.0, 1.0 / 3.0), halfTexel,
+                         vec2(1.0, 1.0 / 3.0) - halfTexel);
     vec4 distances = textureLod(field, fieldUV, 0.0);
     vec3 colour = textureLod(field, fieldUV + vec2(0.0, 1.0 / 3.0), 0.0).rgb;
     vec3 detail = textureLod(field, fieldUV + vec2(0.0, 2.0 / 3.0), 0.0).rgb;
