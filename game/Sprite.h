@@ -110,9 +110,6 @@ extern unsigned int g_tri2DCount4;
 
 void Sprite_Init(void);
 void Sprite_Queue(SpriteRect *pSrc, SpriteRect *pDst, Texture *pTexture, int layer, short angleDeg, int *pCentre, SpriteRect *pUv2, BYTE *pColour, int param);
-// PORT: a textured quad with fractional UVs and per-corner positions/colours,
-// in triangle-strip order, queued alongside the ordinary sprites.
-void Sprite_QueueQuad(Texture *pTexture, const GfxTLVertex *vertices, int layer);
 // PORT: moves the next queued sprite right and down by a fraction of a pixel
 // (16.16, 0 to 0xffff).
 void Sprite_SetNextSubpixelOffset(int x, int y);

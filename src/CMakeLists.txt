@@ -132,7 +132,7 @@ foreach(shader IN LISTS SHADER_SOURCES)
         OUTPUT ${output}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/shaders
         COMMAND ${GLSLANG_VALIDATOR} -V --target-env vulkan1.0 -o ${output} ${SHADER_DIR}/${shader}
-        DEPENDS ${SHADER_DIR}/${shader} ${SHADER_DIR}/common.glsl ${SHADER_DIR}/flags.glsl
+        DEPENDS ${SHADER_DIR}/${shader} ${SHADER_DIR}/common.glsl
         COMMENT "Compiling shader ${shader}")
     list(APPEND SHADER_FILES ${output})
     if(OPENCMR2_SHADERS_MSL)

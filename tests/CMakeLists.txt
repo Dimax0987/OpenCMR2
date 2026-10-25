@@ -80,7 +80,7 @@ set_tests_properties(frontend_language PROPERTIES TIMEOUT 30)
 
 add_executable(country_flags_test country_flags.cpp)
 target_link_libraries(country_flags_test PRIVATE opencmr2_platform)
-add_test(NAME country_flags COMMAND country_flags_test)
+add_test(NAME country_flags COMMAND country_flags_test ${CMAKE_CURRENT_SOURCE_DIR}/reference/menu-flags.txt)
 
 add_executable(saved_game_test saved_game.cpp)
 target_link_libraries(saved_game_test PRIVATE opencmr2_platform)

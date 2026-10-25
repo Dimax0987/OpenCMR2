@@ -1,7 +1,4 @@
 #version 450
-#extension GL_GOOGLE_include_directive : require
-
-#include "flags.glsl"
 
 layout(location = 0) in vec4 inDiffuse;
 layout(location = 1) in vec4 inSpecular;
@@ -21,7 +18,7 @@ layout(set = 2, binding = 4) uniform sampler2D backdrop;   // Gfx_CaptureBackdro
 
 layout(std140, set = 3, binding = 0) uniform FragmentUniforms {
     ivec4 stage0;       // colour op, colour arg1, colour arg2, alpha op
-    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump, 4 distance field, 5..14 country flags), scaled point filter
+    ivec4 stage0b;      // alpha arg1, alpha arg2, texture kind (0 none, 1 2D, 2 cube, 3 bump, 4 distance field, 5 menu dot), scaled point filter
     ivec4 stage1;
     ivec4 stage1b;
     vec4 textureFactor;
@@ -94,6 +91,22 @@ vec4 SampleDistanceField(sampler2D t2, vec2 uv)
     return vec4(t.rgb, clamp((t.a - 0.5) / w + 0.5, 0.0, 1.0));
 }
 
+// The large matrix sprite is a white circle in a padded cell: 11 pixels
+// across in the 16x16 set, 18 in the 32x32 set. Keep its original coverage
+// at native size and below; enlarged, evaluate its edge at screen resolution.
+// The surrounding game code still controls every dot's position and colour.
+vec4 SampleMenuDot(sampler2D t2, vec2 uv)
+{
+    vec2 size = vec2(textureSize(t2, 0));
+    vec2 p = uv * size;
+    if (all(greaterThanEqual(fwidth(p), vec2(0.999))))
+        return SampleScaledPoint(t2, uv);
+    float radius = size.x < 24.0 ? 5.5 : 9.0;
+    float distance = length(p - vec2(radius)) - radius;
+    float coverage = clamp(0.5 - distance / max(fwidth(distance), 1e-5), 0.0, 1.0);
+    return vec4(1.0, 1.0, 1.0, coverage);
+}
+
 vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, vec4 coord)
 {
     if (kind == 2)
@@ -102,8 +115,8 @@ vec4 Sample(int kind, int scaledPoint, sampler2D t2, samplerCube tc, vec4 coord)
         return vec4(1.0);
     if (kind == 4)
         return SampleDistanceField(t2, coord.xy);
-    if (kind >= 5)
-        return SampleVectorFlag(coord.xy, kind - 4);
+    if (kind == 5)
+        return SampleMenuDot(t2, coord.xy);
     if (scaledPoint != 0)
         return SampleScaledPoint(t2, coord.xy);
     return texture(t2, coord.xy);

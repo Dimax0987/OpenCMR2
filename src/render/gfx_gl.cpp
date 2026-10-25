@@ -654,8 +654,8 @@ struct Executor : GfxExecutor {
             return 3;
         if (t->flags & GFX_TEXTURE_DISTANCE_FIELD)
             return 4;
-        if (t->countryFlag != 0)
-            return 4 + t->countryFlag;
+        if (t->flags & GFX_TEXTURE_MENU_DOT)
+            return 5;
         return 1;
     }
 
@@ -675,7 +675,7 @@ struct Executor : GfxExecutor {
             GfxTexture *t = Gfx_DrawnTexture(stage.texture);
             GlTexture *g = t != NULL ? Ensure(t) : NULL;
             GfxStageState sampled = stage;
-            if (ScaledPoint(stage))
+            if (ScaledPoint(stage) || TextureKind(stage) == 5)
                 sampled.minFilter = sampled.magFilter = GFX_FILTER_LINEAR;
             if (TextureKind(stage) == 4) {
                 sampled.minFilter = sampled.magFilter = GFX_FILTER_LINEAR;

@@ -385,8 +385,9 @@ enum GfxTextureFlags {
     GFX_TEXTURE_CUBE = 2,             /* six faces */
     GFX_TEXTURE_DYNAMIC = 4,          /* changed often */
     GFX_TEXTURE_STAGING = 8,          /* CPU only: a source for Gfx_CopyTexture */
-    GFX_TEXTURE_DISTANCE_FIELD = 16   /* alpha is a signed distance to the edge, 0.5 on it: drawn with
+    GFX_TEXTURE_DISTANCE_FIELD = 16,  /* alpha is a signed distance to the edge, 0.5 on it: drawn with
                                          an edge of one pixel at any scale */
+    GFX_TEXTURE_MENU_DOT = 32        /* the original large menu dot, drawn as a circle when enlarged */
 };
 
 /* mipLevels counts the top level (1 = no mipmaps). */
@@ -412,17 +413,13 @@ void Gfx_SetTextureReplacement(GfxTexture *texture, GfxTexture *replacement);
 /* Texels of the distance field texture is drawn from (its replacement) per
    texel of its own, or 0 if it is drawn from its own pixels. */
 int Gfx_GetDistanceFieldScale(GfxTexture *texture);
-
-/* Menu flags drawn from geometry in the fragment shader, at the screen's
-   resolution. */
-enum GfxCountryFlag {
-    GFX_FLAG_FINLAND = 1, GFX_FLAG_GREECE, GFX_FLAG_FRANCE, GFX_FLAG_SWEDEN,
-    GFX_FLAG_AUSTRALIA, GFX_FLAG_KENYA, GFX_FLAG_ITALY, GFX_FLAG_UK,
-    GFX_FLAG_GERMANY, GFX_FLAG_SPAIN
-};
-/* Full-cell flag texture, owned by the renderer and valid until shutdown.
-   Returns NULL when vector flags are disabled. */
-GfxTexture *Gfx_GetVectorFlagTexture(int country);
+/* Give the large menu matrix dot a geometric replacement. Its original
+   pixels are kept for native-size and smaller draws; the game still queues
+   the same dots, colours and positions. [video] vector_flags = 0 disables it. */
+void Gfx_VectorizeMenuDot(GfxTexture *texture);
+/* Half a source texel for bitmaps, half a field texel for distance fields,
+   and zero for geometry (which must not be cropped to texel centres). */
+float Gfx_GetSpriteTexelInset(GfxTexture *texture);
 
 /* Fills the lower mip levels from the top one (box filter). */
 void Gfx_GenerateMipmaps(GfxTexture *texture);

@@ -22,7 +22,6 @@ bool s_stateDirty = true;
 GfxFrame s_frame;
 GfxReadback s_readback;
 std::vector<GfxTexture *> s_textures;     // every live texture (not face views)
-GfxTexture *s_vectorFlagTextures[GFX_FLAG_SPAIN] = {};
 int s_width = 640, s_height = 480;
 GfxTexture *s_target;
 std::vector<std::pair<GfxDrawState, GfxTexture *>> s_savedStates;
@@ -822,14 +821,17 @@ extern "C" void Gfx_DestroyTexture(GfxTexture *texture)
     // Draws recorded this frame may still use it: flush them first.
     for (const GfxDrawState &state : s_frame.states)
         for (const GfxStageState &stage : state.stages)
-            if (Root(stage.texture) == texture) {
+            if (Root(stage.texture) == texture ||
+                (Root(stage.texture) != NULL && Root(stage.texture)->replacement == texture)) {
                 Flush();
                 goto flushed;
             }
 flushed:
-    for (GfxTexture *&flag : s_vectorFlagTextures)
-        if (flag == texture)
-            flag = NULL;
+    // Shutdown may visit a replacement before its owner. Detach it so the
+    // owner cannot destroy it a second time (also applies to font fields).
+    for (GfxTexture *owner : s_textures)
+        if (owner->replacement == texture)
+            owner->replacement = NULL;
     Gfx_DestroyTexture(texture->replacement);
     if (s_executor != NULL)
         s_executor->DestroyTexture(texture);
@@ -858,18 +860,29 @@ extern "C" int Gfx_GetDistanceFieldScale(GfxTexture *texture)
     return drawn->width / Root(texture)->width;
 }
 
-extern "C" GfxTexture *Gfx_GetVectorFlagTexture(int country)
+extern "C" void Gfx_VectorizeMenuDot(GfxTexture *texture)
 {
-    if (country < GFX_FLAG_FINLAND || country > GFX_FLAG_SPAIN ||
-        !Platform_GetSettingInt("video.vector_flags", 1))
-        return NULL;
-    GfxTexture *&texture = s_vectorFlagTextures[country - 1];
-    if (texture == NULL) {
-        texture = Gfx_CreateTexture(1, 1, GFX_FORMAT_BGRA8, 1, 0);
-        if (texture != NULL)
-            texture->countryFlag = country;
-    }
-    return texture;
+    texture = Root(texture);
+    if (texture == NULL || texture->replacement != NULL || texture->width != texture->height ||
+        (texture->width != 16 && texture->width != 32) || !Platform_GetSettingInt("video.vector_flags", 1))
+        return;
+    // Keep the original coverage for draws at native size and below. At
+    // larger sizes the shader draws the same circle from its geometry.
+    GfxTexture *dot = Gfx_CreateTexture(texture->width, texture->height, texture->format, 1,
+                                       GFX_TEXTURE_MENU_DOT);
+    if (dot == NULL)
+        return;
+    Gfx_CopyTexture(dot, texture);
+    Gfx_SetTextureReplacement(texture, dot);
+}
+
+extern "C" float Gfx_GetSpriteTexelInset(GfxTexture *texture)
+{
+    GfxTexture *drawn = Gfx_DrawnTexture(texture);
+    if (drawn != NULL && (drawn->flags & GFX_TEXTURE_MENU_DOT))
+        return 0.0f;
+    int field = Gfx_GetDistanceFieldScale(texture);
+    return field > 0 ? 0.5f / field : 0.5f;
 }
 
 extern "C" int Gfx_GetTextureMipCount(GfxTexture *texture)
