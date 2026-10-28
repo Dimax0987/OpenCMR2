@@ -43,7 +43,10 @@ SaveBlock g_saveBlock;
 #include "StageSplitData.h"
 // Per-car "stage record" finish message flags (0x536e88): a separate int[2] in
 // the original that overlaps the last time of the second split record.
-#define g_finishStageRecordMessage ((int *)(g_stageSplitBlock + 0x8c))
+// PORT: the original kept these two flags in the split block, at 0x8c (the
+// unused 14th time of car 2's record) and 0x90; with four records there they
+// would overlap car 3's.
+int g_finishStageRecordMessage[STAGE_SPLIT_CARS];
 #include "FixedPoint.h"
 #include <stdlib.h>
 #include "StageTiming.h"
@@ -702,6 +705,12 @@ int RallyData_BuildStageRouteDistanceColumn(void)
     return totalB;
 }
 
+// PORT: 4-player split screen helpers (StageObjects.cpp).
+int View_IsQuadSplit(void);
+int View_ShiftX(int view, int end);
+int View_ShiftY(int view, int end);
+int View_ShiftCentreX(int view);
+
 // FUNCTION: CMR2 0x00411880
 int RallyData_IsHeadToHeadRaceMode(void)
 {
@@ -728,10 +737,18 @@ unsigned char RallyDataStageIndex(void)
 	return g_selectedRallyData >> 5 & 0x1f;
 }
 
+// PORT: number of player cars in the stage. The original keeps it in the two
+// bits 14-15 of g_selectedRallyData (1 or 2 players). Four-player split screen
+// needs 3 and 4: the bits hold min(n, 3) and the count itself lives beside them.
+BYTE g_portPlayerCars;
+
 // FUNCTION: CMR2 0x004074f0
 unsigned char RallyDataState(void)
 {
-	return g_selectedRallyData >> 0xe & 3;
+	unsigned char n = g_selectedRallyData >> 0xe & 3;
+	if (n == 3 && g_portPlayerCars > 3)
+		return g_portPlayerCars;
+	return n;
 }
 
 // FUNCTION: CMR2 0x00407e50
@@ -1827,7 +1844,7 @@ void RallyData_FillStageSplitEditorRows(Menu *param_1, int param_2, char param_3
 // The setting pair RallyData_GetDriverSettingPair returns in the rally modes;
 // callers read both values.
 // GLOBAL: CMR2 0x0052ea60
-int g_unk0x0052ea60[2];
+int g_unk0x0052ea60[4];  // PORT: 4-player split screen
 
 unsigned int RallyData_GetSelectionBits10To11(void);
 unsigned char RallyData_GetSelectionFlag26(void);
@@ -2617,13 +2634,14 @@ char g_positionFormat[] = "%d / %d  %d";
 char g_stageSlashFormat[] = " / ";
 
 BYTE *StageObject_GetPlayerViewRectangle(int view);
+extern int g_portHudQuadLayout;   // PORT: StageObjects.cpp
 int StageTiming_GetFinishOrderSecondaryEntry(int index);
 int StageTiming_GetClockTime(void);
 int RallyData_GetActiveCarRaceRecordField0(Car *p);
 int RallyData_GetRouteAvailabilityState(void);
-extern int g_unk0x00536c88[2];
-extern int g_unk0x00536c00[2];
-extern int g_finishLeaderMessage[2];
+extern int g_unk0x00536c88[4];
+extern int g_unk0x00536c00[4];
+extern int g_finishLeaderMessage[4];
 void StageUI_NoOpMapEvent(int, short *);
 BYTE StageTiming_GetCheckpointField1A(int index);
 extern BYTE g_gapTextColour[4];
@@ -2830,12 +2848,9 @@ void RallyData_DrawCarStageGapPanel(int car, short *pRect)
     int dimensionFixed;
 
     if (RallyData_IsHeadToHeadRaceMode()) {
-        if (CGameInfo::IsSplitBarEnabled()) {
-            if (car == 1)
-                yShift = (int)g_pGraphics->resY / 2;
-        } else if (car == 0) {
-            xShift = -((int)g_pGraphics->resX / 2);
-        }
+        // PORT: from the view's rectangle (also the 2x2 split screen).
+        yShift = View_ShiftY(car, 0);
+        xShift = View_ShiftX(car, 1);
     }
     rect[0] = (short)(((int)g_pGraphics->resX * 0xab9b >> 16) + xShift);
     rect[1] = (short)(((int)g_pGraphics->resY << 12 >> 16) + yShift);
@@ -2964,7 +2979,7 @@ unsigned int RallyData_GetSetupLowNibble(void);
 // GLOBAL: CMR2 0x00536c08
 BYTE g_unk0x00536c08[4];
 // GLOBAL: CMR2 0x00536c88
-int g_unk0x00536c88[2];
+int g_unk0x00536c88[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x00536cac
 BYTE g_unk0x00536cac[4];
 // GLOBAL: CMR2 0x00536cb0
@@ -3043,7 +3058,7 @@ unsigned int NetPlayers_GetPreviousBestTime(void);
 int g_splitTargetsLoaded;
 // Per car: the HUD gap shows a blank time (no reference yet).
 // GLOBAL: CMR2 0x00536c0c
-int g_splitGapBlank[2];
+int g_splitGapBlank[4];
 // GLOBAL: CMR2 0x00536c14
 int g_stageStartRecorded;
 // Per car: frames the split gap stays on the HUD (75 after a split).
@@ -3199,13 +3214,13 @@ unsigned char RallyData_GetSelectionFlag26(void);
 unsigned int RallyData_GetSetupFlag11(void);
 
 // GLOBAL: CMR2 0x00536c00
-int g_unk0x00536c00[2];
+int g_unk0x00536c00[4];
 // GLOBAL: CMR2 0x00536c28
-int g_finishLeaderMessage[2];
+int g_finishLeaderMessage[4];
 // GLOBAL: CMR2 0x00536c3c
 int g_profileBestStageTime;
 // GLOBAL: CMR2 0x00536ec4
-int g_unk0x00536ec4[2];
+int g_unk0x00536ec4[4];
 // Name of the fastest driver on the stage so far (8 bytes in the original;
 // longer names run into the next fields as there), the last split passed and
 // the screen width the split bars were laid out for; kept as one block up to
@@ -3396,13 +3411,17 @@ void RallyData_DrawStageResultRows(int car, short *position)
             pixelFixed = (int)FTOI(__int64, X87S_MUL((double)(textY - 1), CGraphics::m_65536));
             dimensionFixed = (int)FTOI(__int64, X87S_MUL((double)g_pGraphics->resY, CGraphics::m_65536));
             FormatGapToLeader(time, 5, 5,
-                              0x51e4 - (int)FTOI(__int64, X87S_MUL((double)position[0], g_minus65536)),
+                              // PORT: the x is a fraction of the screen; the original added the
+                              // view's left edge in pixels (always 0 in its top/bottom split).
+                              0x51e4 + FixDiv((int)position[0] << 16, (int)g_pGraphics->resX << 16),
                               FixDiv(pixelFixed, dimensionFixed), &g_stageResultTextColour, 0x24, NULL, 0);
         } else {
             pixelFixed = (int)FTOI(__int64, X87S_MUL((double)(textY - 1), CGraphics::m_65536));
             dimensionFixed = (int)FTOI(__int64, X87S_MUL((double)g_pGraphics->resY, CGraphics::m_65536));
             FormatGapToLeader(-1, 5, 5,
-                              0x51e4 - (int)FTOI(__int64, X87S_MUL((double)position[0], g_minus65536)),
+                              // PORT: the x is a fraction of the screen; the original added the
+                              // view's left edge in pixels (always 0 in its top/bottom split).
+                              0x51e4 + FixDiv((int)position[0] << 16, (int)g_pGraphics->resX << 16),
                               FixDiv(pixelFixed, dimensionFixed), &g_stageResultTextColour, 0x24, NULL, 0);
         }
         rect[1] += (short)baseHeight;
@@ -4156,9 +4175,9 @@ void RallyData_ResetPlayerRouteProbes(void);
 #include "RaceRecord.h"
 
 // GLOBAL: CMR2 0x00538a78
-unsigned int g_routeProbeBestDistance[2];
+unsigned int g_routeProbeBestDistance[4];
 // GLOBAL: CMR2 0x00538a80
-unsigned short g_routeProbeIndex[2];
+unsigned short g_routeProbeIndex[4];
 // GLOBAL: CMR2 0x00538a84
 int g_routeNodeCount;
 // GLOBAL: CMR2 0x00538a88
@@ -4166,11 +4185,11 @@ int g_unk0x00538a88;
 // GLOBAL: CMR2 0x00538a94
 int g_unk0x00538a94;
 // GLOBAL: CMR2 0x00538a98
-short g_routeProbeBestIndex[2];
+short g_routeProbeBestIndex[4];
 // GLOBAL: CMR2 0x00538aa8
 RaceRecord g_raceRecords[8];
 // GLOBAL: CMR2 0x00538c8c
-int g_routeProbeCycles[2];
+int g_routeProbeCycles[4];
 
 // Restarts race record index; the two players also reset their route probe.
 // FUNCTION: CMR2 0x004207a0
@@ -4227,7 +4246,7 @@ void RallyData_ResetPlayerRouteProbes(void)
 
     *(int *)g_routeProbeIndex = 0;
     *(int *)g_routeProbeBestIndex = 0;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 4; i++) {   // PORT: 4-player split screen
         g_routeProbeCycles[i] = 0;
         g_routeProbeBestDistance[i] = 0;
     }
@@ -4934,6 +4953,11 @@ unsigned int RallyData_GetKnockoutCountryNibble(void)
 // FUNCTION: CMR2 0x00407500
 void RallyData_SetSelectionBits14To15(BYTE param1)
 {
+    // PORT: up to 4 player cars (see RallyDataState).
+    extern BYTE g_portPlayerCars;
+    g_portPlayerCars = param1;
+    if (param1 > 3)
+        param1 = 3;
     g_selectedRallyData = ((param1 & 3) << 14) | (g_selectedRallyData & 0xffff3fffU);
 }
 
@@ -5413,7 +5437,7 @@ void RallyData_RecordChampionshipMedal(int index, int place)
 int g_playerSplitPositions[8][2];
 // Three split rows shown around each player's rank.
 // GLOBAL: CMR2 0x00536c94
-int g_splitNearbyRankRows[2][3];
+int g_splitNearbyRankRows[4][3];
 
 int RallyData_GetCarRaceRecordField10(Car *p);
 int StageTiming_GetCheckpointField0(int index);
@@ -5625,6 +5649,7 @@ struct StageTableEntry;
 StageTableEntry *StageObject_GetScreenRectangleEntry(int index);
 void StageObject_InitScreenRectangles(void);
 int Race_IsMultiplayerRecordMode10(void);
+int View_IsQuadSplit(void);
 
 // Screen rectangle of a view: full screen, or the half chosen by the split
 // direction (vertical or horizontal).
@@ -5637,8 +5662,11 @@ int *RallyData_GetViewScreenRectangle(int view)
 
     StageObject_InitScreenRectangles();
     pRect = (int *)StageObject_GetViewRectangleIndex(view);
-    if ((BYTE)RallyDataState() == 1 || Race_IsMultiplayerRecordMode10() != 0) {
-        pSource = (int *)StageObject_GetScreenRectangleEntry(0);
+    if ((BYTE)RallyDataState() == 1 || Race_IsMultiplayerRecordMode10() != 0 || g_portHudQuadLayout) {
+        pSource = (int *)StageObject_GetScreenRectangleEntry(0);   // PORT: also the quarter's HUD layout
+    } else if (View_IsQuadSplit()) {
+        // PORT: 4-player split screen, one quarter per view.
+        pSource = (int *)StageObject_GetScreenRectangleEntry(5 + (view & 3));
     } else if (view == 0) {
         if (CGameInfo::IsSplitBarEnabled())
             pSource = (int *)StageObject_GetScreenRectangleEntry(1);
@@ -5803,13 +5831,13 @@ int StageTiming_GetGroupedCheckpointValue(int index, int car);
 
 // Per car: a split was passed before the leader's time there was known.
 // GLOBAL: CMR2 0x00536c18
-int g_splitGapAwaitingLeader[2];
+int g_splitGapAwaitingLeader[4];
 // Per car: gap to the leader at the last split, shown by the HUD.
 // GLOBAL: CMR2 0x00536fe4
-int g_splitGapTime[2];
+int g_splitGapTime[4];
 // Per car: a split gap has been recorded since the stage start.
 // GLOBAL: CMR2 0x00537054
-int g_splitGapRecorded[2];
+int g_splitGapRecorded[4];
 
 // Updates the split timer and stage sound for a player.
 // FUNCTION: CMR2 0x00413200
@@ -6304,14 +6332,19 @@ void RallyData_UpdateViewFrameAndDebugOverlay(CallbackStateMachine *param1, int 
         Race_DrawPlayerCallSlots(maskedView, g_viewScreenRect);
         Hud_EndView();
     }
-    if ((BYTE)RallyDataState() == 2 && param3 != 0) {
-        // PORT: the HUD laid out for the screen, element by element.
+    if ((BYTE)RallyDataState() >= 2 && param3 != 0) {  // PORT: also 3 and 4 players
+        // PORT: the HUD laid out for the screen, element by element; the
+        // view's rectangle on the HUD's screen (the one in g_viewScreenRect
+        // is on the real screen, and a quarter of the 2x2 split screen lays
+        // out as a whole screen).
+        int *pHudRect;
         Hud_BeginView(maskedView);
-        Dash_Draw(maskedView, g_viewScreenRect);
+        pHudRect = RallyData_GetViewScreenRectangle(maskedView);
+        Dash_Draw(maskedView, pHudRect);
         Hud_Element();
-        RallyData_DrawAndHandleCarHUD(maskedView, (short *)g_viewScreenRect);
+        RallyData_DrawAndHandleCarHUD(maskedView, (short *)pHudRect);
         Hud_Element();
-        Race_DrawPlayerCallSlots(maskedView, g_viewScreenRect);
+        Race_DrawPlayerCallSlots(maskedView, pHudRect);
         Hud_EndView();
     }
 }
@@ -6807,12 +6840,9 @@ void RallyData_LayoutPlayerSplitBars(void)
                 yOff = 0;
                 uTime = *pTime;
                 if (RallyData_IsHeadToHeadRaceMode() != 0) {
-                    if (CGameInfo::IsSplitBarEnabled() == 0) {
-                        if (car == 0)
-                            xOff = -((int)g_pGraphics->resX / 2);
-                    } else if (car == 1) {
-                        yOff = (int)g_pGraphics->resY / 2;
-                    }
+                    // PORT: from the view's rectangle (also the 2x2 split screen).
+                    xOff = View_ShiftX(car, 1);
+                    yOff = View_ShiftY(car, 0);
                 }
                 uTime = FixDiv(uTime, total);
                 pGeo[-1] = (short)((FixMul(uTime, span) >> 16) + barStart + xOff);
@@ -6867,7 +6897,7 @@ storeSplitColour:
                 pSpan++;
             } while (split != 0);
             car++;
-        } while (car <= 1);
+        } while (car < STAGE_SPLIT_CARS);   // PORT: four bars
     }
     Hud_EndLayout();
 }
@@ -7168,6 +7198,15 @@ void RallyData_ResetPlayerSplitDisplays(void)
     g_splitGapTime[0] = 0;
     g_splitGapAwaitingLeader[1] = 0;
     g_splitGapTime[1] = 0;
+    // PORT: cars 3 and 4 of the split screen.
+    for (car = 2; car < STAGE_SPLIT_CARS; car++) {
+        g_splitGapBlank[car] = 0;
+        g_splitGapRecorded[car] = 0;
+        g_splitGapAwaitingLeader[car] = 0;
+        g_splitGapTime[car] = 0;
+    }
+    for (car = 0; car < STAGE_SPLIT_CARS; car++)
+        g_finishStageRecordMessage[car] = 0;
     g_splitTargetsLoaded = 0;
     g_stageFinishBeepPlayed = 0;
     g_stageTargetTime = 0;
@@ -7177,7 +7216,7 @@ void RallyData_ResetPlayerSplitDisplays(void)
         ((int *)g_splitNearbyRankRows)[i] = -1;
     // The original walks a record base 4 bytes in front of g_stageSplitData, so
     // the dword right before the array gets cleared as well.
-    for (car = 0; car < 2; car++) {
+    for (car = 0; car < STAGE_SPLIT_CARS; car++) {   // PORT: four records
         p = (int *)((char *)g_stageSplitData + car * 0x48 - 4);
         p[3] = -1;
         p[2] = 0;
@@ -7418,8 +7457,10 @@ void RallyData_RebuildSectorStaticObjectTables(void)
                  pObject = StageObject_GetNext(pObject)) {
                 if (pObject->pMesh == NULL)
                     continue;
+                // PORT: the original's split-screen relief (the minor scene
+                // objects go) also for the 3- and 4-player split screen.
                 if ((pObject->flags & 0x8000) == 0 &&
-                    (char)RallyDataState() == 2) {
+                    (char)RallyDataState() >= 2) {
                     pObject->visible = 0;
                 }
                 pMesh = pObject->pMesh;
@@ -7669,7 +7710,7 @@ void RallyData_ResetStageClockAndRecords(int keepName)
     g_stageFinishBeepPlayed = 0;
     *(short *)g_unk0x00536c08 = 0;
     *(short *)g_unk0x00536cac = 0;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 4; i++) {   // PORT: 4-player split screen
         g_unk0x00536c00[i] = 0;
         g_finishStageRecordMessage[i] = 0;
         g_finishLeaderMessage[i] = 0;
@@ -7984,6 +8025,15 @@ void RallyData_DrawViewEndFrameOverlay(CallbackStateMachine *pKey, int view)
             pRecords = pKey->records;
             if ((BYTE)pRecords[i].packedState == 9) {
                 other = (i + 1) % 2;
+                // PORT: with 3 or 4 players, the first other player still racing.
+                if ((BYTE)RallyDataState() > 2) {
+                    int j;
+                    for (j = 1; j < (BYTE)RallyDataState(); j++) {
+                        other = (unsigned short)((i + j) % (BYTE)RallyDataState());
+                        if ((BYTE)pRecords[other].packedState == 8)
+                            break;
+                    }
+                }
                 if ((BYTE)pRecords[other].packedState == 8 && CGameInfo::IsInRaceMenuOpen() == 0 && (BYTE)RallyDataState() > 1 &&
                     Race_ReadTransitionState3811C() == 100) {
                     if ((char)RallyData_GetSelectionFlag26()) {
@@ -8018,7 +8068,18 @@ void RallyData_DrawViewEndFrameOverlay(CallbackStateMachine *pKey, int view)
         divider:
             if (Race_IsMultiplayerRecordMode10() == 0 && RallyData_IsHeadToHeadRaceMode() != 0 && CGameInfo::IsInRaceMenuOpen() == 0 && i == 1 &&
                 ((BYTE)pRecords[1].packedState != 10 || GameMenu_IsPauseHeaderActive() != 0)) {
-                if (CGameInfo::IsSplitBarEnabled()) {
+                if (View_IsQuadSplit()) {
+                    // PORT: the cross between the four quarters.
+                    rect[0] = 0;
+                    rect[1] = ((short *)StageObject_GetPlayerViewRectangle(2))[1];
+                    rect[2] = (short)g_pGraphics->resX;
+                    rect[3] = 1;
+                    Sprite_FillRect(&g_pGraphics->field309_0x150, rect, g_unk0x00516cd8, 2);
+                    rect[0] = ((short *)StageObject_GetPlayerViewRectangle(1))[0];
+                    rect[1] = 0;
+                    rect[2] = 1;
+                    rect[3] = (short)g_pGraphics->resY;
+                } else if (CGameInfo::IsSplitBarEnabled()) {
                     rect[0] = 0;
                     rect[2] = ((short *)StageObject_GetPlayerViewRectangle(1))[2];
                     rect[3] = 1;
@@ -8123,12 +8184,9 @@ draw:
     dx = 0;
     dy = 0;
     if (RallyData_IsHeadToHeadRaceMode()) {
-        if (car == 0) {
-            if (CGameInfo::IsSplitBarEnabled())
-                dy = -((int)g_pGraphics->resY / 2);
-        } else if (car == 1 && CGameInfo::IsSplitBarEnabled() == 0) {
-            dx = (int)g_pGraphics->resX / 2;
-        }
+        // PORT: from the view's rectangle (also the 2x2 split screen).
+        dy = View_ShiftY(car, 1);
+        dx = View_ShiftX(car, 0);
     }
     x = (short)((int)(g_pGraphics->resX * 0xc00) >> 16) + dx;
     y = (short)(((int)(g_pGraphics->resY * 0xd668) >> 16) + dy) + (short)((int)(g_pGraphics->resY * 0xccc) >> 16) - 1;
@@ -8195,14 +8253,15 @@ void RallyData_DrawStageTimePanel(int car, short *pRect)
     rect[2] = (short)((int)(g_pGraphics->resX * 0x4865) >> 16) + 1;
     rect[0] = (short)((int)(g_pGraphics->resX * 0xab9b) >> 16);
     if (RallyData_IsHeadToHeadRaceMode()) {
+        // PORT: from the view's rectangle (a quarter of the 2x2 split screen
+        // lays out as a whole screen, see Hud_BeginView).
         if (CGameInfo::IsSplitBarEnabled()) {
-            if (car == 1)
-                dy = (int)g_pGraphics->resY / 2;
+            dy = View_ShiftY(car, 0);
         } else {
             rect[2] = (short)((int)(g_pGraphics->resX * 0x2acc) >> 16) + 11;
             rect[0] = (short)((int)(g_pGraphics->resX * 0xc934) >> 16) - 10;
-            if (car == 0)
-                dx = -((int)g_pGraphics->resX / 2);
+            dx = View_ShiftX(car, 1);
+            dy = View_ShiftY(car, 0);
         }
     }
     rect[0] += (short)dx;

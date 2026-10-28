@@ -610,6 +610,18 @@ unsigned int StageTiming_GetDriverSplitClock(int index, int split);
 int GetStageSplitCount(void);
 extern char g_minSecMSECFormatString[];
 
+
+// PORT: distance between the result columns of the players: the original's
+// 0x166 of 640 for one or two players; with 3 or 4 the columns share the
+// width (the times then sit closer to their labels in the same proportion).
+static int GameMenu_ResultColumnStep(void)
+{
+    int players = (BYTE)RallyDataState();
+    if (players > 2)
+        return ((int)g_pGraphics->resX - (int)(g_pGraphics->resX * 60) / 640) / players;
+    return (int)(g_pGraphics->resX * 0x166) / 640;
+}
+
 // Split times of the two drivers of the current arcade knockout match, side
 // by side: name, split times, total.
 // FUNCTION: CMR2 0x0044cdb0
@@ -637,7 +649,7 @@ void GameMenu_DrawKnockoutSplitComparison(void)
         sprintf(names[1], CAIHelper::GetNameForID(RallyData_GetUsableRecordCategory(g_pKnockoutMatch->flags & 0x1f)));
     }
     for (car = 0; car < 2; car++) {
-        x = (int)(g_pGraphics->resX * 30) / 640 + ((int)(g_pGraphics->resX * 0x166) / 640) * car;
+        x = (int)(g_pGraphics->resX * 30) / 640 + GameMenu_ResultColumnStep() * car;
         Font_DrawText(1, CFrontend::GetTextString(0x89), x, (int)(g_pGraphics->resY * 0xe6) / 480,
                       (int *)g_menuFrameColour, 0x11);
         sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(0x9b), names[car]);
@@ -648,7 +660,7 @@ void GameMenu_DrawKnockoutSplitComparison(void)
                       (int)(g_pGraphics->resY * 0x19) / 480 + (int)(g_pGraphics->resY * 0xe6) / 480 +
                           (int)(GetStageSplitCount() * g_pGraphics->resY * 0x1e) / 480,
                       (int *)g_menuFrameColour, 0x11);
-        x = (int)(g_pGraphics->resX * 0xb1) / 640 + ((int)(g_pGraphics->resX * 0x166) / 640) * car;
+        x = (int)(g_pGraphics->resX * 30) / 640 + GameMenu_ResultColumnStep() * car + GameMenu_ResultColumnStep() * 0x9f / 0x166;
         for (split = 0; split < GetStageSplitCount(); split++) {
             FormatCentisecondsAsMinSecMSec(StageTiming_GetDriverSplitClock(car, split + 1) - StageTiming_GetDriverSplitClock(car, split),
                                            CFrontend::m_stringDest);
@@ -763,7 +775,7 @@ void GameMenu_DrawSplitTimes(Menu *pMenu)
         if ((BYTE)RallyData_GetSelectionBits16To19() == 10)
             yOffset += (int)(g_pGraphics->resY * -10) / 480;
         for (car = 0; car < (int)(RallyDataState() & 0xff); car++) {
-            x = (int)(g_pGraphics->resX * 30) / 640 + ((int)(g_pGraphics->resX * 0x166) / 640) * car;
+            x = (int)(g_pGraphics->resX * 30) / 640 + GameMenu_ResultColumnStep() * car;
             if ((BYTE)RallyData_GetSelectionBits16To19() != 10)
                 Font_DrawText(1, CFrontend::GetTextString(0xac), x, (int)(g_pGraphics->resY * 0x91) / 480 + yOffset,
                               (int *)g_menuFrameColour, 0x11);
@@ -777,7 +789,7 @@ void GameMenu_DrawSplitTimes(Menu *pMenu)
                               ((RallyData_GetSelectionBits16To19() & 0xff) + 1) * ((int)(g_pGraphics->resY * 0x1e) / 480),
                           (int *)g_menuFrameColour, 0x11);
             total = 0;
-            x = (int)(g_pGraphics->resX * 0xb1) / 640 + ((int)(g_pGraphics->resX * 0x166) / 640) * car;
+            x = (int)(g_pGraphics->resX * 30) / 640 + GameMenu_ResultColumnStep() * car + GameMenu_ResultColumnStep() * 0x9f / 0x166;
             if (!(!CGameInfo::GetGameModeOptionBit19())) {
                 for (split = 1; split <= NetRace_GetLastSentStageIndex(); split++) {
                     FormatCentisecondsAsMinSecMSec(StageTiming_GetCarSplitTime(0, split), CFrontend::m_stringDest);
@@ -826,7 +838,7 @@ void GameMenu_DrawSplitTimes(Menu *pMenu)
                 pColour = g_menuFrameColour;
                 isGhost = FALSE;
             }
-            x = (int)(g_pGraphics->resX * 30) / 640 + ((int)(g_pGraphics->resX * 0x166) / 640) * car;
+            x = (int)(g_pGraphics->resX * 30) / 640 + GameMenu_ResultColumnStep() * car;
             if (GetStageSplitCount() == 2) {
                 yAdjust = (int)(g_pGraphics->resY * -0x1e) / 480;
                 header = (int)(g_pGraphics->resY * 0xe6) / 480 - (int)(g_pGraphics->resY * 0x91) / 480;
@@ -853,7 +865,7 @@ void GameMenu_DrawSplitTimes(Menu *pMenu)
                           (int)(g_pGraphics->resY * 0x19) / 480 + base / 480 +
                               (int)(GetStageSplitCount() * g_pGraphics->resY * 0x1e) / 480 + header,
                           (int *)pColour, 0x11);
-            x = (int)(g_pGraphics->resX * 0xb1) / 640 + ((int)(g_pGraphics->resX * 0x166) / 640) * car;
+            x = (int)(g_pGraphics->resX * 30) / 640 + GameMenu_ResultColumnStep() * car + GameMenu_ResultColumnStep() * 0x9f / 0x166;
             if (!CGameInfo::GetGameModeOptionBit19() || isGhost) {
                 for (split = 0; split < GetStageSplitCount(); split++) {
                     if (isGhost)

@@ -4,6 +4,12 @@
 #include "GenericFileLoader.h"
 #include "Texture.h"
 
+// PORT: text ids of the strings the port adds (CFrontend::GetTextString).
+#define PORT_TEXT_FIRST 0x1000
+#define PORT_TEXT_THREE_PLAYER (PORT_TEXT_FIRST + 0)
+#define PORT_TEXT_FOUR_PLAYER (PORT_TEXT_FIRST + 1)
+#define PORT_TEXT_SPLIT_CONTACT (PORT_TEXT_FIRST + 2)
+
 // TODO: no idea if this is the right thing to call this
 class CFrontend
 {

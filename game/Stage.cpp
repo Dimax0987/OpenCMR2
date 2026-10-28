@@ -55,6 +55,12 @@ int g_fixedGridStartPositions[8][3];
 unsigned char RallyData_GetSelectionFlag26(void);
 unsigned int RallyData_GetFlag31(void);
 unsigned int RallyData_GetSelectionFlag27(void);
+// PORT: for the grid start of the "contact" split screen.
+#include <math.h>
+unsigned char RallyDataState(void);
+int RallyData_GetRouteAvailabilityState(void);
+void RallyData_GetRouteNodeGroundPosition(int index, int *pOut);
+int StageObject_IsSplitContact(void);
 
 // Start x/z of a car: from the grid table, or one of the stage's start
 // points (pStarts, 3 ints each) depending on the mode.
@@ -64,6 +70,42 @@ void Stage_GetCarStartXZ(int car, int *pStarts, int *pOut)
     int i;
 
     if (!(BYTE)RallyData_GetSelectionFlag26() && !(BYTE)RallyData_GetFlag31()) {
+        // PORT: in the "contact" split screen the player cars share the stage,
+        // so they start on a grid of two rows (cars 1-2 side by side at the
+        // start point, 3-4 six metres behind), laid along the route. In the
+        // ghost split screen (the original's) they all start at the point.
+        if (!(BYTE)RallyData_GetSelectionFlag27() && StageObject_IsSplitContact() && car > 0 &&
+            car < (int)(BYTE)RallyDataState()) {
+            int p0[3];
+            int p1[3];
+            int nodes = RallyData_GetRouteAvailabilityState();
+            int k = 1;
+            double dx = 0.0;
+            double dz = 0.0;
+            double len;
+            double back = 9.0 * (car / 2);                 // row
+            double side = (car & 1) ? 2.6 : -2.6;          // column
+
+            RallyData_GetRouteNodeGroundPosition(0, p0);
+            while (k < nodes) {
+                RallyData_GetRouteNodeGroundPosition(k, p1);
+                dx = (double)(p1[0] - p0[0]) / 65536.0;
+                dz = (double)(p1[2] - p0[2]) / 65536.0;
+                if (dx * dx + dz * dz >= 4.0)
+                    break;
+                k++;
+            }
+            len = sqrt(dx * dx + dz * dz);
+            pOut[0] = pStarts[0];
+            pOut[2] = pStarts[2];
+            if (len > 0.0) {
+                dx /= len;
+                dz /= len;
+                pOut[0] += (int)((-dx * back + dz * side) * 65536.0);
+                pOut[2] += (int)((-dz * back - dx * side) * 65536.0);
+            }
+            return;
+        }
         if ((BYTE)RallyData_GetSelectionFlag27()) {
             if (CGameInfo::GetGameModeOptionBit19()) {
                 i = g_playerStartLane[car];

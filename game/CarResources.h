@@ -44,7 +44,7 @@ extern BYTE g_knockoutPlayerCarDetail;
 // GLOBAL: CMR2 0x005429c5
 extern BYTE g_knockoutOpponentCarDetail;
 // GLOBAL: CMR2 0x005429c6
-extern BYTE g_unk0x005429c6[2];
+extern BYTE g_unk0x005429c6[4];
 // GLOBAL: CMR2 0x005429c8
 extern CarInfoDirectory *g_carInfoBuffers[8];
 // GLOBAL: CMR2 0x005429e8

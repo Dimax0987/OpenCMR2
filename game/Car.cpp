@@ -18,36 +18,41 @@
 Car *g_cars[40];
 int g_carCount;
 Car *g_carBuffer;
+// PORT: per car (by index), whether each of the four views rejected it
+// (see Car_MarkHiddenFromCameras).
+int g_portCameraBlocked[16][4];
 Car *g_pCurrentCar;
 CarTransforms g_carTransforms[8];
 FixMatrix g_carWheelTransforms[8][4];
 short g_carOrderCount;
 short g_carOrder[48];
-int g_carViewScale[15][2];
-SceneNode *g_viewNodes[3];
+int g_carViewScale[15][4];  // PORT: 4 views
+// PORT: the per-view tables below hold 4 views for the 4-player split screen
+// (the original has 2).
+SceneNode *g_viewNodes[4];
 // Previous camera state of each view, laid out like the view records.
 // GLOBAL: CMR2 0x00538e38
-CameraRecord g_viewPreviousStates[2];
+CameraRecord g_viewPreviousStates[4];
 // GLOBAL: CMR2 0x00538e04
-int g_viewFarPlanes[2];
+int g_viewFarPlanes[4];
 // GLOBAL: CMR2 0x00538e0c
 BYTE g_activeViewRecord[4];
 // Blended camera state of each view, laid out like the view records.
 // GLOBAL: CMR2 0x00538d28
-CameraRecord g_viewStates[2];
+CameraRecord g_viewStates[4];
 // GLOBAL: CMR2 0x00538df0
-int g_viewNearPlanes[2];
+int g_viewNearPlanes[4];
 // GLOBAL: CMR2 0x00538df8
-short g_unk0x00538df8[2];
+short g_unk0x00538df8[4];
 // GLOBAL: CMR2 0x00538c98
-int g_unk0x00538c98[2];
+int g_unk0x00538c98[4];
 // GLOBAL: CMR2 0x00538f00
-int g_unk0x00538f00[2];
+int g_unk0x00538f00[4];
 // View camera records: 2 per player (the player's two view modes).
 // GLOBAL: CMR2 0x00539018
-CameraRecord g_viewRecords[4];
+CameraRecord g_viewRecords[8];
 // GLOBAL: CMR2 0x00538ca0
-FixMatrix g_unk0x00538ca0[2];
+FixMatrix g_unk0x00538ca0[4];
 
 // Difference between the two stored view positions for one car slot.
 // FUNCTION: CMR2 0x004220d0
@@ -175,6 +180,8 @@ void Car_BuildViewOrder(void)
             pCar->field_0xb70 = 0;
             pCar->field_0xb6c = 0;
             pCar->firstCameraBlocked = 0;
+            g_portCameraBlocked[pCar->index][0] = g_portCameraBlocked[pCar->index][1] = 0;   // PORT
+            g_portCameraBlocked[pCar->index][2] = g_portCameraBlocked[pCar->index][3] = 0;
             if (pCar->field_0xc18 == 0) {
                 if (pCar->simulationStepsRemaining > 0) {
                     g_unk0x0053b4f0[g_unk0x0053a310] = *p;
@@ -228,10 +235,17 @@ void Car_MarkHiddenFromCameras(Car *pCar)
     int rejected;
     int i;
 
+    int flag;   // PORT
+
     pRejected = &pCar->firstCameraBlocked;
     pCar->field_0xb70 = 0;
     pCar->field_0xb6c = 0;
     *pRejected = 0;
+    // PORT: the car record only has the two words for the views of the
+    // original (the third is "rejected by every camera"); views 3 and 4 of
+    // the split screen keep theirs here.
+    for (i = 0; i < 4; i++)
+        g_portCameraBlocked[pCar->index][i] = 0;
     if ((char)RallyData_GetSelectionFlag26() != 0 && (char)((CallbackStateMachine *)StageUI_GetRaceResultTable())->records[0].packedState != '\n' &&
         (char)((CallbackStateMachine *)StageUI_GetRaceResultTable())->records[0].packedState != '\t' && (char)((CallbackStateMachine *)StageUI_GetRaceResultTable())->records[0].packedState != '\r') {
         rejected = 0;
@@ -240,25 +254,36 @@ void Car_MarkHiddenFromCameras(Car *pCar)
         for (i = 0; i < count; i++, pView = (FixMatrix *)((BYTE *)pView + 100)) {
             FixMatrix_GetPosition(&position, pView);
             FixMatrix_GetForward(&forward, pView);
-            if (*pRejected == 0) {
+            flag = 0;
+            {
                 delta.x = pCar->position.x - position.x;
                 delta.y = pCar->position.y - position.y;
                 delta.z = pCar->position.z - position.z;
                 if (FIX_ABS(delta.x) > 0x3c0000 || FIX_ABS(delta.y) > 0x3c0000 ||
                     FIX_ABS(delta.z) > 0x3c0000)
-                    *pRejected = 1;
-                if (*pRejected == 0 && FixVecDot(&delta, &delta) > 0xe100000)
-                    *pRejected = 1;
-                if (*pRejected == 0 && FixVecDot(&forward, &delta) < 0)
-                    *pRejected = 1;
+                    flag = 1;
+                if (flag == 0 && FixVecDot(&delta, &delta) > 0xe100000)
+                    flag = 1;
+                if (flag == 0 && FixVecDot(&forward, &delta) < 0)
+                    flag = 1;
             }
-            if (*pRejected != 0)
+            if (flag != 0)
                 rejected++;
-            pRejected++;
+            g_portCameraBlocked[pCar->index][i] = flag;
+            if (i < 2)
+                pRejected[i] = flag;
         }
         if (rejected == count)
             pCar->field_0xb70 = 1;
     }
+}
+
+// PORT: whether view `view` rejected the car (see Car_MarkHiddenFromCameras).
+int Car_IsBlockedFromView(Car *pCar, int view)
+{
+    if (view < 0 || view >= 4)
+        return 0;
+    return g_portCameraBlocked[pCar->index][view];
 }
 
 unsigned char RallyData_GetSelectionFlag26(void);
@@ -310,6 +335,9 @@ void View_SelectVisibleCars(unsigned int view, short *pRect)
     if ((char)RallyData_GetSelectionFlag26() && RallyData_IsHeadToHeadRaceMode() != 0) {
         StageObject_SetCarValuePendingFlag(0, 1);
         StageObject_SetCarValuePendingFlag(1, 1);
+        // PORT: players 3 and 4 of the split screen.
+        for (i = 2; i < (int)(RallyDataState() & 0xff) && i < 4; i++)
+            StageObject_SetCarValuePendingFlag(i, 1);
         return;
     }
     if (!((char)RallyData_GetSelectionFlag26() || CGameInfo::GetConfiguredGameMode() == 8 || CGameInfo::GetConfiguredGameMode() == 9 ||
@@ -3556,7 +3584,7 @@ void Car_BuildRaceOrder(int count)
     g_carOrder[44] = count;
     g_carOrder[25] = count;
     memset(g_carDrawnFlags, 0, 8);
-    for (j = 0; j < 2; j++) {
+    for (j = 0; j < 4; j++) {  // PORT: 4-player split screen (2 in the original)
         g_carDrawnFlags[j] = Input_GetControllerSlotMapping(j);
         if (!CGameInfo::GetGameModeOptionBit19() && j >= (int)(BYTE)RallyDataState())
             Car_SetDrawnFlag(j, -1);
@@ -5959,13 +5987,13 @@ void Car_FilterWheelSpin(void)
 }
 
 // GLOBAL: CMR2 0x00538d20
-int g_unk0x00538d20[2];
+int g_unk0x00538d20[4];
 // GLOBAL: CMR2 0x005391a8
-int g_unk0x005391a8[2];
+int g_unk0x005391a8[4];
 // GLOBAL: CMR2 0x005391b0
-int g_unk0x005391b0[2];
+int g_unk0x005391b0[4];
 // GLOBAL: CMR2 0x005391c4
-int g_unk0x005391c4[2];
+int g_unk0x005391c4[4];
 
 void ChaseCamera_Reset(BYTE index);
 int SceneNode_Destroy(SceneNode *pNode);
@@ -6215,7 +6243,7 @@ void Car_SmoothForceFeedback(void)
 }
 
 // GLOBAL: CMR2 0x005391cc
-int g_viewZooms[2];
+int g_viewZooms[4];
 
 extern const double g_fixedRadiansToAngle12;
 
@@ -8122,7 +8150,8 @@ void View_SetupCameras(void)
     CGame::RegisterCallback(View_ReleaseNodes, NULL);
     StageObject_InitCarSceneTables();
     CarInfo_CacheCameraOffsets();
-    for (i = 0; i < 4; i++) {
+    // PORT: 2 records per view, 4 views (the original has 2 views).
+    for (i = 0; i < 8; i++) {
         g_viewRecords[i].index = i;
         g_viewRecords[i].view = i >> 1;
         g_viewRecords[i].car = i >> 1;
@@ -8136,7 +8165,7 @@ void View_SetupCameras(void)
     angles.y = 0;
     angles.z = 0;
     i = 0;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 4; i++) {
         g_viewNodes[i] = SceneType2_Create(&position, &angles, NULL, RallyData_GetChallengeRenderState());
         g_viewStates[i].type = 0;
         g_unk0x00538d20[i] = -0x10000;

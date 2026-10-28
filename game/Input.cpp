@@ -1,4 +1,5 @@
 #include "Input.h"
+#include "port/sys.h"   // PORT: Sys_GetOption
 #include "GameInfo.h"
 #include "Graphics.h"
 #include "main.h"
@@ -495,17 +496,22 @@ void CInput::LoadControllerInfo(void) {
 
     fileBuffer = (ControllerData*)CFileBuffer::GetGenericFileBuffer(CFrontend::m_stringDest, TRUE);
     if (fileBuffer != NULL) {
-        if (CGenericFileLoader::GetGenericFileSize() == 0x11a4) {
+        // PORT: 0x11a8 = the original file plus the slots of players 3 and 4.
+        if (CGenericFileLoader::GetGenericFileSize() == 0x11a4 || CGenericFileLoader::GetGenericFileSize() == 0x11a8) {
             memcpy(&m_controllerInfo, fileBuffer, sizeof(m_controllerInfo));
 
             // write the first two elements of the array
             memcpy(m_unk0x005168f4, &((unsigned int*)fileBuffer)[0x468], 4);
+            if (CGenericFileLoader::GetGenericFileSize() == 0x11a8)
+                memcpy(&m_unk0x005168f4[2], &((unsigned int*)fileBuffer)[0x469], 4);
 
             CFileBuffer::FreeGenericFileBuffer(fileBuffer);
             m_hasLoadedControllerInfo = TRUE;
 
             ApplyControllerButtonBindings(0);
             ApplyControllerButtonBindings(1);
+            ApplyControllerButtonBindings(2);
+            ApplyControllerButtonBindings(3);
         }
     }
 }
@@ -577,6 +583,10 @@ void CInput::AssignUnmappedControllerActions(unsigned int param1, ControllerData
 // FUNCTION: CMR2 0x0049eb90
 void CInput::SetDeviceKeyBinding(int param1, unsigned int param2, unsigned int param3) {
     DeviceInfo* device = &m_availableDevices[param1];
+    // PORT: slots 3 and 4 have no keyboard of their own index; the record
+    // there is a joystick's, whose axis table shares the bytes.
+    if (device->field_0x0 != 1)
+        return;
     switch(param2) {
         case 1:
             device->keyboard.field_0x468 = param3;
@@ -1263,11 +1273,13 @@ void CInput::SaveControllerInfo(void)
 {
     unsigned int *buffer;
 
-    buffer = (unsigned int *)CFileBuffer::AllocateLockedBuffer(0x11a4);
+    // PORT: 4 more bytes for the slots of players 3 and 4.
+    buffer = (unsigned int *)CFileBuffer::AllocateLockedBuffer(0x11a8);
     memcpy(buffer, m_controllerInfo, sizeof(m_controllerInfo));
     buffer[0x468] = *(unsigned int *)m_unk0x005168f4;
+    buffer[0x469] = *(unsigned int *)&m_unk0x005168f4[2];
     sprintf(CFrontend::m_stringDest, m_strControllerInfoDir, CInstallInfo::GetGameHDPath());
-    CInstallInfo::WriteFileToDisk(CFrontend::m_stringDest, 2, buffer, 0x11a4);
+    CInstallInfo::WriteFileToDisk(CFrontend::m_stringDest, 2, buffer, 0x11a8);
     CFileBuffer::FreeGenericFileBuffer(buffer);
 }
 
@@ -1773,6 +1785,41 @@ void Input_MergeAssignedJoystickButtons(int slot, DeviceInfo *pOut)
             pOut->field_0xc |= pDev->field_0xc;
         }
     }
+}
+
+// PORT: the device whose presses drive a player's menu pages. The original
+// reads the device of the player's index: 0 and 1 are the two keyboards (the
+// player's joystick is merged in by the caller). Players 3 and 4 have no
+// keyboard of their index (2 and 3 are joysticks, usually other players'):
+// theirs is the device of their controller slot. A player without a device
+// of their own gets the keyboard, so their page is not stuck.
+DeviceInfo *Input_GetPlayerMenuDevice(int player)
+{
+    DeviceInfo *pDev;
+
+    if (player >= 2) {
+        unsigned int dev = Input_GetControllerSlotMapping((unsigned short)player);
+        pDev = CInput::GetAvailableDeviceRecord(dev < 8 ? (int)dev : 0);
+    } else {
+        pDev = CInput::GetAvailableDeviceRecord(player);
+    }
+    if (player != 0 && (int)pDev->field_0x0 <= 0)   // -1: no device
+        pDev = CInput::GetAvailableDeviceRecord(0);
+    return pDev;
+}
+
+// PORT: the presses that drive a player's menu page: the device's, plus the
+// keyboard's for players 2-4 when [input] menu_keyboard_shared = 1 (one page
+// is shown at a time; also what the headless probes rely on, since the
+// machine's pads are theirs otherwise).
+unsigned int Input_GetPlayerMenuPresses(int player, DeviceInfo *pDev)
+{
+    unsigned int presses = pDev->field_0x8;
+    DeviceInfo *pKeys = CInput::GetAvailableDeviceRecord(0);
+
+    if (player != 0 && pDev != pKeys && pKeys->field_0x0 == 1 && Sys_GetOption("input.menu_keyboard_shared", 0))
+        presses |= pKeys->field_0x8;
+    return presses;
 }
 
 // FUNCTION: CMR2 0x0040bdd0

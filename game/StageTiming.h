@@ -21,12 +21,14 @@ struct CarPartStateTables {
 CMR2_LAYOUT_CHECK(CarPartStateTablesSize, sizeof(CarPartStateTables) == 0x14);
 extern CarPartStateTables g_carPartStateTables;
 
+// PORT: one detail level per car and view; four views (the original: two).
+#define REPLAY_LEVEL_VIEWS 4
 struct ReplayLevelState {
-    int levels[16];
+    int levels[8 * REPLAY_LEVEL_VIEWS];
     int bufferCount;
     int pending[8];
 };
-CMR2_LAYOUT_CHECK(ReplayLevelSizeCheck, sizeof(ReplayLevelState) == 0x64);
+CMR2_LAYOUT_CHECK(ReplayLevelSizeCheck, sizeof(ReplayLevelState) == 0x64 + 4 * 8 * (REPLAY_LEVEL_VIEWS - 2));
 extern ReplayLevelState g_replayLevelState;
 
 int StageTiming_GetDriverIDForPosition(int positionIx);

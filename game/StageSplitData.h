@@ -13,17 +13,20 @@ struct StageSplitData {
 typedef unsigned char BYTE;
 // The reset routine also clears the DWORD immediately before the records.
 // Keep that observed field in the same allocation as the two records and flags.
+// PORT: room for the four cars of the split screen (the original: two).
+// Every car owns 0x28 colour words and one 0x48-byte record.
+#define STAGE_SPLIT_CARS 4
 struct StageSplitState {
     int resetPrefix;
-    BYTE recordBlock[0x94];
+    BYTE recordBlock[0x48 * STAGE_SPLIT_CARS + 4];
     int referenceTimes[13];
 };
 // The final colour DWORD at 0x536df8 is also the reset prefix. These are
 // overlapping views in the original, followed by the two records and references.
 union StageSplitRuntime {
-    int colourWords[0x3a];
+    int colourWords[0x28 * STAGE_SPLIT_CARS + 1];
     struct {
-        int colourPrefix[0x39];
+        int colourPrefix[0x28 * STAGE_SPLIT_CARS];
         StageSplitState state;
     } split;
 };

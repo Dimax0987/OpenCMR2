@@ -419,6 +419,58 @@ int g_controlsSelectedSlot;
 // Configuration of the device selected in the controls menu.
 #define CONTROLS_SEL (g_controlsDeviceSelection.slots[g_controlsSelectedSlot & 0xffff])
 
+// PORT: frames a new binding capture ignores the device's presses, so the
+// pad button that chose the entry is not what gets bound to it.
+int g_portCaptureArm;
+
+Menu *FrontendMenu_GetDeviceBindings(void);
+Menu *FrontendMenu_GetDeviceCalibration(void);
+Menu *FrontendMenu_GetControls(void);
+Menu *FrontendMenu_GetPadSettings(void);
+
+// PORT: merges the presses of joystick `dev` into the menu input.
+static void FrontendControls_MergeDevice(unsigned int dev, DeviceInfo *pOut, unsigned int mask)
+{
+    DeviceInfo *pDev;
+
+    if (dev < 2 || dev >= 8)
+        return;
+    pDev = CInput::GetAvailableDeviceRecord(dev);
+    if (pDev == pOut || (pDev->field_0x0 != 0 && pDev->field_0x0 != 3))
+        return;
+    pOut->field_0x8 |= pDev->field_0x8 & mask;
+    pOut->field_0x4 |= pDev->field_0x4 & mask;
+    pOut->field_0xc |= pDev->field_0xc & mask;
+}
+
+// PORT: the pages of the controls menu also take the pad of player 1 (as the
+// rest of the frontend) and the pad being set up. The original read only the
+// keyboard on the binding and calibration pages, so a pad's controls could
+// be changed only from the keyboard. While a binding is captured the pad's
+// presses belong to the capture; while an axis is calibrated the buttons
+// still confirm/cancel, and the directions adjust the marks unless the axis
+// under the cursor is one of the stick's own.
+// Returns whether pMenu is one of the pages (the caller merges otherwise).
+BOOL FrontendControls_MergeMenuInput(Menu *pMenu, DeviceInfo *pOut)
+{
+    unsigned int mask = ~0u;
+
+    if (pMenu == FrontendMenu_GetDeviceBindings()) {
+        if (g_controlsBindingCaptureState != 0)
+            return TRUE;
+    } else if (pMenu == FrontendMenu_GetDeviceCalibration()) {
+        if (g_controlsCalibrationState != 0 && pMenu->cursor < 2)
+            mask = ~0xfu;
+    } else if (pMenu != FrontendMenu_GetControls() && pMenu != FrontendMenu_GetDeviceConfiguration() &&
+               pMenu != FrontendMenu_GetPadSettings()) {
+        return FALSE;
+    }
+    FrontendControls_MergeDevice(Input_GetControllerSlotMapping(0), pOut, mask);
+    if ((g_controlsSelectedSlot & 0xffff) < 8)
+        FrontendControls_MergeDevice(CONTROLS_SEL, pOut, mask);
+    return TRUE;
+}
+
 // FUNCTION: CMR2 0x004fba80
 short FrontendControls_GetSelectedSlot(void)
 {
@@ -468,6 +520,7 @@ void FrontendControls_BeginBindingCapture(Menu *pMenu, int param)
     int i;
 
     g_controlsBindingCaptureState = 1;
+    g_portCaptureArm = 1;   // PORT
     Menu_SetFlags(pMenu, 0, 0, 0, 0);
     CInput::UpdateAllAvailableDevices();
     Input_TranslatePedalsToMenuKeys();
@@ -564,6 +617,11 @@ void FrontendControls_UpdateBindingCapture(Menu *pMenu)
     if (g_controlsBindingCaptureState == 0)
         return;
     Menu_SetFlags(pMenu, 0, 0, 0, 0);
+    // PORT: the press that chose the entry is still this frame's.
+    if (g_portCaptureArm > 0) {
+        g_portCaptureArm--;
+        return;
+    }
     pDevice = CInput::GetAvailableDeviceRecord(CONTROLS_SEL);
     key = CInput::GetFirstPressedKey();
     if (g_unk0x0082a7e0 != -1) {
@@ -789,6 +847,14 @@ void FrontendControls_FillDeviceConfiguration(void)
         dev = (unsigned short)g_controlsSelectedSlot;
         pDevice = CInput::UpdateDevice(g_controlsSelectedSlot & 0xffff);
     }
+    // PORT: slots 3 and 4 have no device of their own index (0 and 1 are
+    // the keyboards); without a joystick they show the keyboard.
+    if (pDevice == NULL) {
+        CONTROLS_SEL = 0;
+        dev = 0;
+        pDevice = CInput::UpdateDevice(0);
+    }
+    pMenu->items[0].max = (BYTE)dev;
     pMenu->items[1].enabled = pDevice->field_0x0 == 3;
     pMenu->items[1].max = (BYTE)g_controlsCopy[dev].field_0x110;
     pMenu->items[2].enabled = pDevice->field_0x0 == 3;
@@ -870,6 +936,14 @@ void FrontendControls_UpdateDeviceConfiguration(Menu *pMenu)
         pMenu->items[0].max = (char)g_controlsSelectedSlot;
     if (pMenu->items[0].max == 1 && (short)g_controlsSelectedSlot == 0)
         pMenu->items[0].max = g_controlsDeviceSelection.lastDevice != 0 ? 0 : 2;
+    // PORT: players 3 and 4 skip the two keyboards when a joystick exists
+    // (keyboard 1 is player 1's, keyboard 2 player 2's).
+    if ((short)g_controlsSelectedSlot >= 2 && pMenu->items[0].max < 2 && pMenu->items[0].min > 2) {
+        if (pMenu->items[0].max == 1 && g_controlsDeviceSelection.lastDevice == 2)
+            pMenu->items[0].max = pMenu->items[0].min - 1;   // down from the first joystick: wrap to the last
+        else
+            pMenu->items[0].max = 2;                          // up past the last, or from a keyboard
+    }
     CONTROLS_SEL = pMenu->items[0].max;
     FrontendControls_FillDeviceConfiguration();
     g_controlsDeviceSelection.lastDevice = pMenu->items[0].max;
@@ -1060,7 +1134,7 @@ void FrontendControls_DrawDeviceList(Menu *pMenu)
                 Sprite_Queue((SpriteRect *)&CFrontend::m_pAr640DTexture->field_0x11c, (SpriteRect *)icon,
                              CFrontend::m_pAr640DTexture, 1, 0, NULL, NULL, g_colourText0x0052496c, 8);
             }
-            if (i < 2)
+            if (i < 4)   // PORT: four player slots
                 sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(100), i + 1);
             else
                 sprintf(CFrontend::m_stringDest, CFrontend::GetTextString(0x67));
@@ -2100,6 +2174,11 @@ void FrontendMenu_DrawTransmissionChoice(Menu *pMenu);
 void FrontendMenu_UpdateTransmissionChoice(Menu *pMenu);
 void FrontendMenu_SelectTransmission(Menu *pMenu, int param);
 
+// PORT: the split screen with the players' cars visible to each other
+// (see StageObject_UsesExtendedMode); third entry of the pages below.
+extern int g_portSplitContact;
+#define PORT_SPLIT_CURSOR(choice) ((choice) ? 1 : (g_portSplitContact ? 2 : 0))
+
 // Two-choice page after a difficulty page.
 // FUNCTION: CMR2 0x004f7510
 void FrontendMenu_BuildSingleRallyTransmission(char choice)
@@ -2107,9 +2186,10 @@ void FrontendMenu_BuildSingleRallyTransmission(char choice)
     Menu_Init(&g_menu0x008230d8, 0, 0x1e, 0, &g_menu0x0081d318, NULL, 1, 0, 1);
     Menu_AddItemType2(&g_menu0x008230d8, 0, 0xd3, &g_menu0x008241b8, (MenuItemAction)FrontendMenu_SelectTransmission, -1);
     Menu_AddItemType2(&g_menu0x008230d8, 0, 0xd4, &g_menu0x008241b8, (MenuItemAction)FrontendMenu_SelectTransmission, -1);
+    Menu_AddItemType2(&g_menu0x008230d8, 0, PORT_TEXT_SPLIT_CONTACT, &g_menu0x008241b8, (MenuItemAction)FrontendMenu_SelectTransmission, -1);
     Menu_SetCallbacks(&g_menu0x008230d8, NULL, (MenuCallback)FrontendMenu_UpdateTransmissionChoice, (MenuCallback)FrontendMenu_DrawTransmissionChoice, NULL);
     Menu_ValidateCursor(&g_menu0x008230d8, 0);
-    g_menu0x008230d8.cursor = choice;
+    g_menu0x008230d8.cursor = PORT_SPLIT_CURSOR(choice);
     g_menu0x008230d8.items[0].enabled = 1;
 }
 
@@ -2120,9 +2200,10 @@ void FrontendMenu_BuildChampionshipTransmission(char choice)
     Menu_Init(&g_menu0x00824858, 0, 0x1e, 0, &g_menu0x00820978, NULL, 1, 0, 1);
     Menu_AddItemType2(&g_menu0x00824858, 0, 0xd3, &g_menu0x008241b8, (MenuItemAction)FrontendMenu_SelectTransmission, -1);
     Menu_AddItemType2(&g_menu0x00824858, 0, 0xd4, &g_menu0x008241b8, (MenuItemAction)FrontendMenu_SelectTransmission, -1);
+    Menu_AddItemType2(&g_menu0x00824858, 0, PORT_TEXT_SPLIT_CONTACT, &g_menu0x008241b8, (MenuItemAction)FrontendMenu_SelectTransmission, -1);
     Menu_SetCallbacks(&g_menu0x00824858, NULL, (MenuCallback)FrontendMenu_UpdateTransmissionChoice, (MenuCallback)FrontendMenu_DrawTransmissionChoice, NULL);
     Menu_ValidateCursor(&g_menu0x00824858, 0);
-    g_menu0x00824858.cursor = choice;
+    g_menu0x00824858.cursor = PORT_SPLIT_CURSOR(choice);
     g_menu0x00824858.items[0].enabled = 1;
 }
 
@@ -2133,9 +2214,10 @@ void FrontendMenu_BuildTimeTrialTransmission(char choice)
     Menu_Init(&g_menu0x008251b8, 0, 0x1e, 0, &g_menu0x0081f2f8, NULL, 1, 0, 1);
     Menu_AddItemType2(&g_menu0x008251b8, 0, 0xd3, &g_menu0x008241b8, (MenuItemAction)FrontendMenu_SelectTransmission, -1);
     Menu_AddItemType2(&g_menu0x008251b8, 0, 0xd4, &g_menu0x008241b8, (MenuItemAction)FrontendMenu_SelectTransmission, -1);
+    Menu_AddItemType2(&g_menu0x008251b8, 0, PORT_TEXT_SPLIT_CONTACT, &g_menu0x008241b8, (MenuItemAction)FrontendMenu_SelectTransmission, -1);
     Menu_SetCallbacks(&g_menu0x008251b8, NULL, (MenuCallback)FrontendMenu_UpdateTransmissionChoice, (MenuCallback)FrontendMenu_DrawTransmissionChoice, NULL);
     Menu_ValidateCursor(&g_menu0x008251b8, 0);
-    g_menu0x008251b8.cursor = choice;
+    g_menu0x008251b8.cursor = PORT_SPLIT_CURSOR(choice);
     g_menu0x008251b8.items[0].enabled = 1;
 }
 
@@ -2251,7 +2333,7 @@ void FrontendMenu_EnterArcadePlayerCount(Menu *pMenu, int param)
     p->count = pMenu->itemCount;
     for (k = 0; k < pMenu->itemCount; k++)
         p->widths[k] = Font_GetTextWidth(2, (BYTE *)CFrontend::GetTextString(pMenu->items[k].id));
-    if (CGameInfo::GetConfiguredPlayerCount() < 3)
+    if (CGameInfo::GetConfiguredPlayerCount() <= 4)  // PORT: 4 players (2 in the original)
         pMenu->cursor = CGameInfo::GetConfiguredPlayerCount() - 1;
     else
         pMenu->cursor = 0;
@@ -2264,6 +2346,10 @@ void FrontendMenu_SelectArcadePlayerCount(Menu *pMenu, int param)
     GameInfo_SetConfiguredPlayerCount(pMenu->cursor + 1);
     if (CGameInfo::GetConfiguredPlayerCount() == 1)
         RallyData_SetSecondarySelectionNibble(5);
+    else if (CGameInfo::GetConfiguredGameMode() == 5)
+        // PORT: the arcade championship with 2-4 players races the CPU
+        // drivers that fit the AI's six cars.
+        RallyData_SetSecondarySelectionNibble(6 - CGameInfo::GetConfiguredPlayerCount());
     else
         RallyData_SetSecondarySelectionNibble(0);
     FrontendProfile_SetPlayersRemaining(CGameInfo::GetConfiguredPlayerCount());
@@ -2285,6 +2371,9 @@ void FrontendMenu_BuildArcadeChampionshipPlayerCount(char players)
     Menu_Init(&g_menu0x008269c0, 0, 0x1c, 0, &g_menu0x00826600, NULL, 1, 0, 0);
     Menu_AddItemType4(&g_menu0x008269c0, 0, 0x19f, (MenuItemAction)FrontendMenu_SelectArcadePlayerCount, -1);
     Menu_AddItemType4(&g_menu0x008269c0, 0, 0x1a0, (MenuItemAction)FrontendMenu_SelectArcadePlayerCount, -1);
+    // PORT: 3 and 4 players in split screen.
+    Menu_AddItemType4(&g_menu0x008269c0, 0, PORT_TEXT_THREE_PLAYER, (MenuItemAction)FrontendMenu_SelectArcadePlayerCount, -1);
+    Menu_AddItemType4(&g_menu0x008269c0, 0, PORT_TEXT_FOUR_PLAYER, (MenuItemAction)FrontendMenu_SelectArcadePlayerCount, -1);
     Menu_SetCallbacks(&g_menu0x008269c0, (MenuCallback)FrontendMenu_EnterArcadePlayerCount, (MenuCallback)FrontendScroller_UpdateDifficulty,
                       (MenuCallback)FrontendMenu_DrawDifficulty, NULL);
     Menu_ValidateCursor(&g_menu0x008269c0, 0);
@@ -2305,6 +2394,9 @@ void FrontendMenu_BuildArcadePlayerCount(char players)
     Menu_Init(&g_menu0x008276e0, 0, 0x1c, 0, &g_menu0x008267e0, NULL, 1, 0, 0);
     Menu_AddItemType4(&g_menu0x008276e0, 0, 0x19f, (MenuItemAction)FrontendMenu_SelectArcadePlayerCount, -1);
     Menu_AddItemType4(&g_menu0x008276e0, 0, 0x1a0, (MenuItemAction)FrontendMenu_SelectArcadePlayerCount, -1);
+    // PORT: 3 and 4 players in split screen.
+    Menu_AddItemType4(&g_menu0x008276e0, 0, PORT_TEXT_THREE_PLAYER, (MenuItemAction)FrontendMenu_SelectArcadePlayerCount, -1);
+    Menu_AddItemType4(&g_menu0x008276e0, 0, PORT_TEXT_FOUR_PLAYER, (MenuItemAction)FrontendMenu_SelectArcadePlayerCount, -1);
     Menu_SetCallbacks(&g_menu0x008276e0, (MenuCallback)FrontendMenu_EnterArcadePlayerCount, (MenuCallback)FrontendMenu_UpdateArcadePlayerCount,
                       (MenuCallback)FrontendMenu_DrawDifficulty, NULL);
     Menu_ValidateCursor(&g_menu0x008276e0, 0);
@@ -2328,9 +2420,12 @@ void FrontendMenu_SetupSinglePlayerArcade(void)
 void FrontendMenu_BuildArcadeGameType(char unused)
 {
     Menu_Init(&g_menu0x00826600, 0, 0x1d, 0, &g_menu0x008267e0, NULL, 1, 0, 1);
-    Menu_AddItemType2(&g_menu0x00826600, 0, 0xd0, FrontendMenu_GetMultiplayerProfile(), (MenuItemAction)FrontendMenu_SelectCarClass, 0);
-    Menu_AddItemType2(&g_menu0x00826600, 0, 0xd1, FrontendMenu_GetMultiplayerProfile(), (MenuItemAction)FrontendMenu_SelectCarClass, 0);
-    Menu_AddItemType2(&g_menu0x00826600, 0, 0xd2, FrontendMenu_GetMultiplayerProfile(), (MenuItemAction)FrontendMenu_SelectCarClass, 0);
+    // PORT: the arcade championship's difficulties go on to its "Number of
+    // Players" page (built by the original under this page but never
+    // reached: it went to the one player's profile).
+    Menu_AddItemType2(&g_menu0x00826600, 0, 0xd0, &g_menu0x008269c0, (MenuItemAction)FrontendMenu_SelectCarClass, 0);
+    Menu_AddItemType2(&g_menu0x00826600, 0, 0xd1, &g_menu0x008269c0, (MenuItemAction)FrontendMenu_SelectCarClass, 0);
+    Menu_AddItemType2(&g_menu0x00826600, 0, 0xd2, &g_menu0x008269c0, (MenuItemAction)FrontendMenu_SelectCarClass, 0);
     Menu_SetCallbacks(&g_menu0x00826600, (MenuCallback)FrontendMenu_EnterArcadeCarClass, NULL, (MenuCallback)FrontendMenu_DrawCarClass, NULL);
     Menu_ValidateCursor(&g_menu0x00826600, 0);
 }
@@ -2365,6 +2460,9 @@ void FrontendMenu_BuildQuickRaceAdvancedSettings(void)
     Menu_Init(&g_menu0x00827aa0, 0, 0x1a7, 0, FrontendMenu_GetArcadeRallySelection(), NULL, 1, 0, 1);
     Menu_AddItemType3(&g_menu0x00827aa0, 0, -1, 3, 0, 0, 0, 0, 3);
     Menu_AddItemType3(&g_menu0x00827aa0, 0, -1, 5, 0, 0, 0, 0, -1);
+    // PORT: the CPU drivers of the multiplayer race (the original ran it
+    // between the players only).
+    Menu_AddItemType3(&g_menu0x00827aa0, 0, -1, 5, 0, 0, 0, 0, 7);
     Menu_AddItemType3(&g_menu0x00827aa0, 0, -1, 5, 0, 0, 0, 0, 2);
     Menu_AddItemType4(&g_menu0x00827aa0, 0, 0x67, (MenuItemAction)FrontendMenu_StartAdvancedQuickRace, -1);
     Menu_SetCallbacks(&g_menu0x00827aa0, (MenuCallback)FrontendMenu_EnterQuickRaceAdvancedSettings, (MenuCallback)FrontendMenu_UpdateQuickRaceAdvancedSettings,
@@ -3518,6 +3616,9 @@ void FrontendControls_DrawDeviceList(Menu *pMenu);
 void FrontendMenu_BuildControls(void)
 {
     Menu_Init(&g_menu0x00828c80, 0, 0x18, 0, FrontendMenu_GetOptions(), NULL, 1, 0, 1);
+    Menu_AddItemType2(&g_menu0x00828c80, 0, -1, &g_menu0x00829140, (MenuItemAction)FrontendControls_SelectDevice, 0);
+    Menu_AddItemType2(&g_menu0x00828c80, 0, -1, &g_menu0x00829140, (MenuItemAction)FrontendControls_SelectDevice, 0);
+    // PORT: players 3 and 4 of the split screen.
     Menu_AddItemType2(&g_menu0x00828c80, 0, -1, &g_menu0x00829140, (MenuItemAction)FrontendControls_SelectDevice, 0);
     Menu_AddItemType2(&g_menu0x00828c80, 0, -1, &g_menu0x00829140, (MenuItemAction)FrontendControls_SelectDevice, 0);
     Menu_AddItemType1(&g_menu0x00828c80, 0, 0x67, 0, 0);

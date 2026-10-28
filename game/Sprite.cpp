@@ -943,6 +943,8 @@ struct HudFrame {
 
 static HudFrame g_hud;
 
+int View_IsQuadSplit(void);  // PORT: StageObjects.cpp
+
 #define HUD_MIN(a, b) ((a) < (b) ? (a) : (b))
 #define HUD_MAX(a, b) ((a) > (b) ? (a) : (b))
 
@@ -1002,15 +1004,31 @@ static struct {
     int resX, resY;
 } g_hudLayout;
 
+// PORT: a quarter of the 3- and 4-player split screen lays out as a whole
+// screen, which Hud_Element then draws at the quarter's size (half); the
+// fonts' sizes do not follow the screen's width, so the screen itself
+// keeps its size. StageObjects.cpp.
+extern int g_portHudQuadLayout;
+
+static void Hud_BeginQuadLayout(void)
+{
+    if (View_IsQuadSplit())
+        g_portHudQuadLayout = 1;
+}
+
 void Hud_BeginLayout(void)
 {
-    if (!g_hud.active && !g_hudLayout.active)
+    if (!g_hud.active && !g_hudLayout.active) {
         g_hudLayout.active = Hud_SetScreen(&g_hudLayout.resX, &g_hudLayout.resY);
+        if (g_hudLayout.active)
+            Hud_BeginQuadLayout();
+    }
 }
 
 void Hud_EndLayout(void)
 {
     if (g_hudLayout.active) {
+        g_portHudQuadLayout = 0;
         g_pGraphics->resX = g_hudLayout.resX;
         g_pGraphics->resY = g_hudLayout.resY;
         g_hudLayout.active = 0;
@@ -1034,6 +1052,10 @@ void Hud_BeginView(int view)
     g_hud.ry1 = pReal[1] + pReal[3];
     if (!Hud_SetScreen(&g_hud.resX, &g_hud.resY))
         return;
+    // PORT: in a quarter of the 2x2 split screen the game lays the HUD out
+    // as on the whole screen, drawn into the quarter: the panels keep the
+    // original's places (left and right) at half their size, text too.
+    Hud_BeginQuadLayout();
     pVirtual = (short *)RallyData_GetViewScreenRectangle(view);
     g_hud.vx0 = pVirtual[0];
     g_hud.vy0 = pVirtual[1];
@@ -1052,6 +1074,10 @@ void Hud_BeginView(int view)
     if ((g_hud.ry1 - g_hud.ry0) / (g_hud.vy1 - g_hud.vy0) < k)
         k = (g_hud.ry1 - g_hud.ry0) / (g_hud.vy1 - g_hud.vy0);
     g_hud.scale = X87S_DIV(X87S_MUL(k, X87S_FILD(float, Sys_GetOption("video.hud_scale", 100))), 100.0f);
+    // PORT: in a quarter of the 3- and 4-player split screen the HUD is drawn
+    // at half its size, times video.hud_scale_quad (percent).
+    if (View_IsQuadSplit())
+        g_hud.scale = g_hud.scale * (float)Sys_GetOption("video.hud_scale_quad", 100) / 100.0f;
     g_hud.view = view;
     g_hud.active = 1;
     Hud_MarkQueues();
@@ -1148,6 +1174,7 @@ void Hud_EndView(void)
     if (!g_hud.active)
         return;
     Hud_Element();
+    g_portHudQuadLayout = 0;   // PORT
     g_pGraphics->resX = g_hud.resX;
     g_pGraphics->resY = g_hud.resY;
     g_hud.active = 0;

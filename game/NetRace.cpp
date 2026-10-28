@@ -129,7 +129,7 @@ void GameMenu_FinishNetworkCloseFade(BYTE index);
 void GameMenu_FinishNetworkRestartFade(BYTE index);
 void GameMenu_FinishNetworkResultsQuitFade(BYTE index);
 void NetRace_FadeOutPlayerScreen(BYTE index, FadeCallback pfnDone, int param3, int param4, int param5, char force);
-extern int g_unk0x00537f34[2];
+extern int g_unk0x00537f34[4];
 extern int g_unk0x005199b0;
 
 // Split (type 8) or stage (type 9) time of a player in the in-race stream.
@@ -354,7 +354,7 @@ FixVector g_unk0x00539f00;
 FixMatrix *Car_GetCameraReferenceMatrix(BYTE index);
 int Race_IsMultiplayerRecordMode10(void);
 unsigned int FixVec_Length(FixVector *pV);
-extern CameraRecord g_viewStates[2];
+extern CameraRecord g_viewStates[4];
 
 // Loudness of a view's sounds by distance to the listener: 1 up to 2 units,
 // fading to 0 at 100.
@@ -576,7 +576,7 @@ unsigned int NetRace_InterpolateWordCurve(int value, SoundCurve *pCurve)
 void NetRace_InitializeRaceSoundVolumes(void)
 {
     if (CGameInfo::GetConfiguredGameMode() != 4 && CGameInfo::GetConfiguredGameMode() != 5 && CGameInfo::GetConfiguredGameMode() != 6 &&
-        (CGameInfo::GetConfiguredPlayerCount() != 2 || CGameInfo::IsConfiguredMultiplayer()) &&
+        (CGameInfo::GetConfiguredPlayerCount() < 2 || CGameInfo::IsConfiguredMultiplayer()) &&
         ((BYTE)RallyDataState() != 1 || !(BYTE)RallyData_GetFlag25() || CGameInfo::GetGameModeOptionBit19() ||
          CGameInfo::GetConfiguredGameMode() == 3))
         g_netRaceSoundMode = 0;

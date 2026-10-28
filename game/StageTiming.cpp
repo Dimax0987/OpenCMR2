@@ -800,7 +800,7 @@ short g_unk0x0053d1a0;
 // GLOBAL: CMR2 0x0053d1a2
 short g_pendingDriverCount;
 // GLOBAL: CMR2 0x0053d1a4
-char g_pendingDrivers[2];
+char g_pendingDrivers[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0053d1a6
 BYTE g_unk0x0053d1a6;
 // GLOBAL: CMR2 0x0053d1a7
@@ -842,7 +842,7 @@ void StageTiming_QueueDriverSlot(int index)
     }
 }
 // GLOBAL: CMR2 0x0053e18d
-BYTE g_unk0x0053e18d[2];
+BYTE g_unk0x0053e18d[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0053e18f
 BYTE g_unk0x0053e18f;
 // GLOBAL: CMR2 0x0053e190
@@ -1374,7 +1374,7 @@ struct Unk0x00539278 {
 
 // Force-feedback state of the two local players.
 // GLOBAL: CMR2 0x00539200
-Unk0x00539278 g_forceFeedbackSlots[2];
+Unk0x00539278 g_forceFeedbackSlots[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x00539278
 Unk0x00539278 *g_pForceFeedbackSlot;
 
@@ -1419,7 +1419,7 @@ void ForceFeedback_ActivateIdleSlots(void)
     int i;
     int slot;
 
-    for (slot = 0; slot < 2; slot++) {
+    for (slot = 0; slot < 4; slot++) {   // PORT: 4 players
         g_pForceFeedbackSlot = &g_forceFeedbackSlots[slot];
         if (g_pForceFeedbackSlot->field_0x34 == 0) {
             if (g_pForceFeedbackSlot->field_0x2c >= 0) {
@@ -1442,7 +1442,7 @@ void ForceFeedback_DeactivateSlots(void)
     int slot;
     int i;
 
-    for (slot = 0; slot < 2; slot++) {
+    for (slot = 0; slot < 4; slot++) {   // PORT: 4 players
         g_pForceFeedbackSlot = &g_forceFeedbackSlots[slot];
         if (g_pForceFeedbackSlot->field_0x34 != 0) {
             if (g_pForceFeedbackSlot->field_0x2c >= 0) {
@@ -1463,7 +1463,7 @@ void ForceFeedback_StopSlotForces(void)
     int slot;
     int i;
 
-    for (slot = 0; slot < 2; slot++) {
+    for (slot = 0; slot < 4; slot++) {   // PORT: 4 players
         g_pForceFeedbackSlot = &g_forceFeedbackSlots[slot];
         if (g_pForceFeedbackSlot->field_0x34 != 0 && g_pForceFeedbackSlot->field_0x2c >= 0) {
             ForceFeedback_CacheAppliedForces();
@@ -1764,15 +1764,15 @@ int StageTiming_ConsumeDashRefreshLatch(void)
 }
 
 
-extern int g_dashGearMarker[2];
-extern int g_dashIdle[2];
-extern int g_dashRev[2];
+extern int g_dashGearMarker[4];
+extern int g_dashIdle[4];
+extern int g_dashRev[4];
 
 // FUNCTION: CMR2 0x00445db0
 void StageTiming_ResetDashGearMarkers(void)
 {
     int i;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 4; i++) {   // PORT: 4 players
         g_dashGearMarker[i] = -1;
         g_dashIdle[i] = 0;
     }
@@ -2535,7 +2535,7 @@ BYTE g_knockoutPlayerCarDetail;
 // GLOBAL: CMR2 0x005429c5
 BYTE g_knockoutOpponentCarDetail;
 // GLOBAL: CMR2 0x005429c6
-BYTE g_unk0x005429c6[2];
+BYTE g_unk0x005429c6[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x005429c8
 CarInfoDirectory *g_carInfoBuffers[8];
 // GLOBAL: CMR2 0x005429e8
@@ -3990,9 +3990,9 @@ void StageTiming_StartLoadedPartSwing(void)
 
 // Cooldown timestamps for the two local players.
 // GLOBAL: CMR2 0x00588a80
-int g_deformImpactTicks[2];
+int g_deformImpactTicks[8];  // PORT: indexed by car
 // GLOBAL: CMR2 0x00588a88
-int g_deformPulseTicks[2];
+int g_deformPulseTicks[8];  // PORT: indexed by car
 
 // Resets every car's replay recording record.
 // FUNCTION: CMR2 0x004668d0
@@ -4002,9 +4002,9 @@ void StageTiming_ResetAllCarReplayRecords(void)
 
     for (i = g_carPartSetCount - 1; i >= 0; i--)
         StageTiming_ResetCarReplayRecord((g_carDamageRecords + i));
-    for (i = 0; i < 2; i++)
+    for (i = 0; i < 8; i++)   // PORT: every car
         g_deformPulseTicks[i] = 0;
-    for (i = 0; i < 2; i++)
+    for (i = 0; i < 8; i++)
         g_deformImpactTicks[i] = 0;
 }
 
@@ -5108,7 +5108,7 @@ void StageTiming_InitForceFeedbackSlots(void)
     int i;
 
     CInput::ResetForceFeedbackEffects();
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 4; i++) {  // PORT: 4-player split screen
         g_forceFeedbackSlots[i].field_0x2c = -1;
         g_forceFeedbackSlots[i].field_0x34 = 0;
     }
@@ -7344,7 +7344,7 @@ int Track_GetGroundHeight(FixVector *pPoint, FixVector *pNormal, short *pTri,
                           unsigned short *pSurface, int defaultY);
 
 // Blended camera state of each view (View_UpdateCamera).
-extern CameraRecord g_viewStates[2];
+extern CameraRecord g_viewStates[4];
 
 
 // GLOBAL: CMR2 0x00543fb0
@@ -9361,6 +9361,7 @@ void Race_ResetPlayerCallState(void);
 // Pushes the stage state to the graphics layer after a device reset: updates
 // every subsystem, then re-uploads each live texture with a dummy triangle.
 // FUNCTION: CMR2 0x00424c50
+
 void StageTiming_RestoreDeviceStageResources(void)
 {
     GfxTLVertex verts[3];

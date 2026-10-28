@@ -1487,8 +1487,10 @@ fail:
         }
     } else {
         if ((BYTE)RallyData_IsChampionshipFinalStage() == 0 && state > 1) {
-            if (CGameInfo::GetConfiguredGameMode() != 3 && 2 >= state && CGameInfo::IsConfiguredMultiplayer() == 0) {
-                state = 2;
+            // PORT: up to 4 players share the stage in split screen (the
+            // original allowed 2); 3 and 4 play in turn only when the
+            // alternate mode was chosen (IsConfiguredMultiplayer).
+            if (CGameInfo::GetConfiguredGameMode() != 3 && 4 >= state && CGameInfo::IsConfiguredMultiplayer() == 0) {
                 level = 1;
                 goto done;
             }
@@ -1519,7 +1521,7 @@ done:
     InitializeCallbackStateMachine(&g_raceCallbackStorage.machine, state, g_raceCallbackStorage.records,
                  g_raceStateCallbacks, g_raceStateRules);
     if (g_raceEndPending != 0) {
-        Car_BuildRaceOrder(2);
+        Car_BuildRaceOrder(state > 2 ? state : 2);  // PORT: 4-player split screen
         Dash_Reset();
     }
     g_raceEndLatch = 1;

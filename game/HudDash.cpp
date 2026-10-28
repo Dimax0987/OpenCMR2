@@ -30,39 +30,39 @@ struct DashGearNames {
 };
 
 // GLOBAL: CMR2 0x0053ce10
-int g_dashGearMarkerY[2];       // gear marker position drawn last frame
+int g_dashGearMarkerY[4];  // PORT: 4-player split screen       // gear marker position drawn last frame
 // GLOBAL: CMR2 0x0053ce18
-int g_dashGearFlash[2];         // counts down after a gear change
+int g_dashGearFlash[4];  // PORT: 4-player split screen         // counts down after a gear change
 // GLOBAL: CMR2 0x0053ce38
-int g_dashSpeed[2];             // interpolated speed
+int g_dashSpeed[4];  // PORT: 4-player split screen             // interpolated speed
 // GLOBAL: CMR2 0x0053ce40
 int g_dashAspect;
 // GLOBAL: CMR2 0x0053ce44
-int g_dashSpeedNext[2];
+int g_dashSpeedNext[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0053ce4c
 int g_dashSimple;               // plain rectangles instead of the textured bar
 // GLOBAL: CMR2 0x0053ce50
 unsigned short *g_dashRevTicks;
 // GLOBAL: CMR2 0x0053ce54
-int g_dashRev[2];               // interpolated revs (1.0 = red line)
+int g_dashRev[4];  // PORT: 4-player split screen               // interpolated revs (1.0 = red line)
 // GLOBAL: CMR2 0x0053ce5c
 int g_dashLastResX;
 // GLOBAL: CMR2 0x0053ce60
-int g_dashRevPrev[2];
+int g_dashRevPrev[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0053ce68
-int g_dashSpeedPrev[2];
+int g_dashSpeedPrev[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0053ce70
-int g_dashGear[2];              // index into g_dashGearNames
+int g_dashGear[4];  // PORT: 4-player split screen              // index into g_dashGearNames
 // GLOBAL: CMR2 0x0053ce78
 int g_dashDigital[8];           // per car: digital bar rather than the dial
 // GLOBAL: CMR2 0x0053ce98
-int g_dashGearMarker[2];        // gear marker position, eased towards the gear
+int g_dashGearMarker[4];  // PORT: 4-player split screen        // gear marker position, eased towards the gear
 // GLOBAL: CMR2 0x0053cfa0
-int g_dashRevNext[2];
+int g_dashRevNext[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0053cfa8
-int g_dashIdle[2];              // steps spent standing still
+int g_dashIdle[4];  // PORT: 4-player split screen              // steps spent standing still
 // GLOBAL: CMR2 0x0053cfb0
-int g_dashLastGear[2];
+int g_dashLastGear[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0053cfd0
 Texture *g_dashMphTexture;
 // GLOBAL: CMR2 0x0053cfd4
@@ -149,6 +149,12 @@ DashGearNames g_dashGearNames = {"RN123456"};
 char g_strDashSpeedDigits[] = "%03d";
 
 // Screen coordinates as a fraction of the resolution.
+// PORT: 4-player split screen helpers (StageObjects.cpp).
+int View_IsQuadSplit(void);
+int View_ShiftX(int view, int end);
+int View_ShiftY(int view, int end);
+int RallyData_IsHeadToHeadRaceMode(void);
+
 #define DASH_X(f) (short)(FixMul(g_pGraphics->resX << 16, (f)) >> 16)
 #define DASH_Y(f) (short)(FixMul(g_pGraphics->resY << 16, (f)) >> 16)
 #define DASH_HIRES()                                                                                   \
@@ -278,7 +284,7 @@ void Dash_Update(int player)
     int d;
     int lim;
 
-    if (player >= 2)
+    if (player >= 4)   // PORT: 4-player split screen (2 in the original)
         return;
     if (g_dashGearFlash[player] > 0)
         g_dashGearFlash[player] = g_dashGearFlash[player] - 1;
@@ -420,11 +426,9 @@ void Dash_DrawBar(int player, int *pViewRect)
     } else {
         scale = (int)FTOI(__int64, X87S_MUL((double)((g_pGraphics->resX * 0x4b) / 640), CGraphics::m_65536));
         len = FixMul(g_dashRevNext[player], scale) >> 16;
-        if (CGameInfo::IsSplitBarEnabled() == 0) {
-            if (player == 0)
-                dx = -(short)(g_pGraphics->resX / 2);
-        } else if (player == 0) {
-            dy = -(short)(g_pGraphics->resY / 2);
+        if (RallyData_IsHeadToHeadRaceMode()) {  // PORT: from the view (also 2x2)
+            dx = (short)View_ShiftX(player, 1);
+            dy = (short)View_ShiftY(player, 1);
         }
         split = (g_pGraphics->resY * 0x41) / 480;
         if (len > split) {
@@ -700,7 +704,7 @@ void Dash_DrawDial(int player, int *pViewRect)
 // FUNCTION: CMR2 0x00446210
 void Dash_Draw(int player, int *pViewRect)
 {
-    if (player < 2 && (*RallyData_GetDriverHudFlags(StageUI_GetRaceEndEventCount() + (char)player) & 0x10) != 0) {
+    if (player < 4 && (*RallyData_GetDriverHudFlags(StageUI_GetRaceEndEventCount() + (char)player) & 0x10) != 0) {  // PORT: 4 players
         if (g_dashDigital[StageUI_GetRaceEndEventCount() + player] != 0) {
             Dash_DrawBar(player, pViewRect);
             return;
@@ -720,7 +724,7 @@ extern BYTE g_playerCameraMode[8];
 // Chase camera pitch of each player, and from index 2 the copy reduced with
 // the camera's distance that ChaseCamera_BuildMatrix applies.
 // GLOBAL: CMR2 0x0053d090
-short g_chaseCameraPitch[4];
+short g_chaseCameraPitch[8];  // PORT: 4 views + 4 reduced copies
 // Follow time of each player's chase camera (ChaseCameraSettings::lag).
 // GLOBAL: CMR2 0x0053d098
 int g_chaseCameraLag[4];
@@ -731,7 +735,7 @@ short ChaseCamera_GetPitch(BYTE index)
     return g_chaseCameraPitch[index];
 }
 
-extern FixVector g_chaseCameraOffsets[6];
+extern FixVector g_chaseCameraOffsets[12];
 
 // Sets a player's chase camera pitch and the copy of it reduced as the camera
 // moves away from the car (index + 2).
@@ -740,7 +744,7 @@ void ChaseCamera_SetPitch(BYTE index, short value)
 {
 
     g_chaseCameraPitch[index] = value;
-    g_chaseCameraPitch[index + 2] =
+    g_chaseCameraPitch[index + 4] =
         (short)FixMul(0x10000 - FixMul(FixDiv(g_chaseCameraOffsets[index].z - 0x50000, 0x50000), 0xcccc), value);
 }
 
@@ -759,7 +763,7 @@ void ChaseCamera_SetLag(BYTE index, int value)
 // Chase camera offset of each player (entries 0, 1), then the up vector of
 // each view record's chase camera (2 + record index).
 // GLOBAL: CMR2 0x0053d048
-FixVector g_chaseCameraOffsets[6];
+FixVector g_chaseCameraOffsets[12];  // PORT: 2 + 8 view records
 
 // FUNCTION: CMR2 0x00447cf0
 void ChaseCamera_GetOffset(FixVector *pOut, BYTE index)
@@ -776,13 +780,14 @@ BYTE g_playerCameraMode[8];
 // eased with the distance, z negated: behind the car), then the forward vector
 // of each view record's chase camera (2 + record index).
 // GLOBAL: CMR2 0x0053d000
-FixVector g_chaseCameraViewOffsets[6];
+FixVector g_chaseCameraViewOffsets[12];  // PORT: 2 + 8 view records
 // Default view offsets of the fixed camera modes.
 // GLOBAL: CMR2 0x00519ea0
 FixVector g_fixedCameraDefaultOffsets[3] = { { 0, 0x13333, -0x50000 }, { 0, 0x13333, -0x50000 }, { 0, 0x13333, -0x50000 } };
 
 int Race_IsMultiplayerRecordMode10(void);
 int RallyData_IsHeadToHeadRaceMode(void);
+int View_IsQuadSplit(void);
 
 // View offset of a player's camera (lowered in the split-screen cockpit view).
 // FUNCTION: CMR2 0x00447ee0
@@ -797,7 +802,8 @@ void ChaseCamera_GetViewOffset(FixVector *pOut, CameraRecord *pSel)
     else
         p = &g_fixedCameraDefaultOffsets[mode];
     *pOut = *p;
-    if (Race_IsMultiplayerRecordMode10() == 0 && RallyData_IsHeadToHeadRaceMode() != 0 && CGameInfo::IsSplitBarEnabled()) {
+    if (Race_IsMultiplayerRecordMode10() == 0 && RallyData_IsHeadToHeadRaceMode() != 0 && CGameInfo::IsSplitBarEnabled() &&
+        !View_IsQuadSplit()) {  // PORT: a quarter is not a short view
         pOut->y -= 0x3333;
         pOut->z -= 0x9999;
     }
@@ -816,13 +822,13 @@ void ChaseCamera_BeginEnter(CameraRecord *pRecord, CameraRecord *pOther, FixMatr
     if (pOther->car == pRecord->car) {
         mode = pOther->type;
         if (mode == 4 || mode == 5 || mode == 6) {
-            g_chaseCameraOffsets[2 + pRecord->index] = g_chaseCameraOffsets[2 + pOther->index];
-            g_chaseCameraViewOffsets[2 + pRecord->index] = g_chaseCameraViewOffsets[2 + pOther->index];
+            g_chaseCameraOffsets[4 + pRecord->index] = g_chaseCameraOffsets[4 + pOther->index];
+            g_chaseCameraViewOffsets[4 + pRecord->index] = g_chaseCameraViewOffsets[4 + pOther->index];
             return;
         }
     }
-    FixMatrix_GetUp(&g_chaseCameraOffsets[2 + pRecord->index], pRef);
-    FixMatrix_GetRight(&g_chaseCameraViewOffsets[2 + pRecord->index], pRef);
+    FixMatrix_GetUp(&g_chaseCameraOffsets[4 + pRecord->index], pRef);
+    FixMatrix_GetRight(&g_chaseCameraViewOffsets[4 + pRecord->index], pRef);
 }
 
 // Sets a player's chase camera offset and the view offset derived from it, then
@@ -908,8 +914,8 @@ void ChaseCamera_Update(CameraRecord *param_1, FixMatrix *param_2, int param_3)
     int index;
 
     index = param_1->index;
-    pUp = &g_chaseCameraOffsets[2 + index];
-    pRight = &g_chaseCameraViewOffsets[2 + index];
+    pUp = &g_chaseCameraOffsets[4 + index];
+    pRight = &g_chaseCameraViewOffsets[4 + index];
     FixVecCross(&cross, pUp, pRight);
     FixMatrix_Identity(&mat);
     FixMatrix_SetRight(&cross, &mat);
@@ -987,14 +993,14 @@ extern char g_splitLeaders[108][8];
 extern int g_carSplitTimes[8][12][5];
 extern int g_driverSplitClocks[82];
 extern BYTE g_finishedDriverCount;
-extern BYTE g_unk0x0053e18d[2];
+extern BYTE g_unk0x0053e18d[4];   // PORT: 4-player split screen
 extern BYTE g_unk0x0053e18f;
 extern CarStageTiming g_carStageTiming[8];
 extern BYTE g_unk0x0053d1da[8];
 extern BYTE g_unk0x0053d1d8;
 extern BYTE g_unk0x0053d1d9;
 extern int g_unk0x0053d1b4;
-extern char g_pendingDrivers[2];
+extern char g_pendingDrivers[4];   // PORT: 4-player split screen
 extern BYTE g_unk0x0053d1a6;
 extern BYTE g_unk0x0053d1a7;
 extern char g_unk0x0053dda8[8];

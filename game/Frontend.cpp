@@ -553,9 +553,29 @@ void CFrontend::BuildLocalizedTextStringTable(int languages, int count, BYTE **p
     }
 }
 
+// PORT: strings the port adds to the game's text (ids from PORT_TEXT_FIRST,
+// see Frontend.h), per language in the order of the language files:
+// English, French, Spanish, Italian, German.
+static const char *const g_portTextStrings[][5] = {
+    { "three player", "trois joueurs", "tres jugadores", "tre giocatori", "drei Spieler" },
+    { "four player", "quatre joueurs", "cuatro jugadores", "quattro giocatori", "vier Spieler" },
+    { "Split Screen - Contact", "Ecran Partage - Contact", "Pantalla Dividida - Contacto",
+      "Schermo Diviso - Contatto", "Splitscreen - Kontakt" },
+};
+
 // FUNCTION: CMR2 0x004a3c60
 char *CFrontend::GetTextString(int index)
 {
+    if (index >= PORT_TEXT_FIRST) {
+        int language = m_unk0x0065aa70;
+        if (index - PORT_TEXT_FIRST >= (int)(sizeof(g_portTextStrings) / sizeof(g_portTextStrings[0])))
+            return m_strInvalidTextString;
+        // Regions 0 and 1 load the languages in that order (region 1 the
+        // first three); the others load English only.
+        if (language < 0 || language >= 5 || CGameInfo::GetGameRegion() > 1)
+            language = 0;
+        return (char *)g_portTextStrings[index - PORT_TEXT_FIRST][language];
+    }
     if (index >= m_textCount || index < 0)
         return m_strInvalidTextString;
     return m_textStrings[m_textFirstId + index];

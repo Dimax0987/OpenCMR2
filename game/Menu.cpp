@@ -4,7 +4,7 @@
 
 // Shared byte state is defined apart from its callers to preserve byte loads.
 // GLOBAL: CMR2 0x0052af58
-BYTE g_unk0x0052af58[2];
+BYTE g_unk0x0052af58[4];  // PORT: 4-player split screen
 
 // GLOBAL: CMR2 0x0059f8fc
 char g_unk0x0059f8fc;

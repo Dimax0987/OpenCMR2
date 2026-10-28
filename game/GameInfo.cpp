@@ -550,6 +550,8 @@ void CGameInfo::SetSessionPassword(char *name)
 
 void Input_TranslatePedalsToMenuKeys(void);
 void Input_MergeAssignedJoystickButtons(int slot, DeviceInfo *pOut);
+DeviceInfo *Input_GetPlayerMenuDevice(int player);   // PORT
+unsigned int Input_GetPlayerMenuPresses(int player, DeviceInfo *pDev);   // PORT
 void Sound_UpdateMusicStreaming(void);
 int Sound_GetSampleTableState(void);
 BOOL OptionMovie_PlayFrame(BYTE skipOnSpace);
@@ -1068,6 +1070,13 @@ int CGameInfo::GetGraphicsOptionBits21To24(void)
 // FUNCTION: CMR2 0x00406410
 bool CGameInfo::IsRecordFlagSet(int param1) {
     bool response = m_gameInfo.field_0x38f0 & (1 << param1);
+    // PORT: with two or more players every car (flag 0xc) and every stage,
+    // class and difficulty (flag 0xd) is available, as if those two cheats
+    // were on, without the cheats' effects on the records ([game]
+    // multiplayer_unlock_all = 0 turns this off).
+    if ((param1 == 0xc || param1 == 0xd) && GetConfiguredPlayerCount() >= 2 &&
+        Sys_GetOption("game.multiplayer_unlock_all", 1))
+        return true;
     return response;
 }
 
@@ -2227,14 +2236,16 @@ void OptionMenu_UpdateActivePage(void)
     Sound_UpdateMusicStreaming();
     CInput::UpdateAllAvailableDevices();
     input = 0;
-    if (CGameInfo::GetActiveOptionSlot() == 1) {
+    // PORT: the pages of players 2-4 in the split screen read their own
+    // device (the original: player 2's only).
+    if (CGameInfo::GetActiveOptionSlot() >= 1 && CGameInfo::GetActiveOptionSlot() < 4) {
         if (CGameInfo::IsConfiguredMultiplayer() == 0)
-            input = 1;
+            input = CGameInfo::GetActiveOptionSlot();
     }
     Input_TranslatePedalsToMenuKeys();
-    pDevice = CInput::GetAvailableDeviceRecord(input);
+    pDevice = Input_GetPlayerMenuDevice(input);
     Input_MergeAssignedJoystickButtons(input, pDevice);
-    pNextMenu = (Menu *)Menu_Update(g_pMenu0x00831778, pDevice->field_0x8);
+    pNextMenu = (Menu *)Menu_Update(g_pMenu0x00831778, Input_GetPlayerMenuPresses(input, pDevice));   // PORT
     if (pNextMenu != NULL)
         g_pMenu0x0083177c = pNextMenu;
 }
@@ -3740,7 +3751,7 @@ Menu *g_pMenu0x0052af44;
 Texture *g_inRaceMenuRoundBoxTexture;
 // GLOBAL: CMR2 0x0052af50
 Texture *g_inRaceMenuCurtainTexture;
-extern BYTE g_unk0x0052af58[2];
+extern BYTE g_unk0x0052af58[4];
 
 // In-race network menus (built by 0x402c40..0x404000).
 // GLOBAL: CMR2 0x00529918
@@ -4428,7 +4439,7 @@ short g_cameraMenuCurrentPitch;
 int g_cameraMenuLagStep;
 // GLOBAL: CMR2 0x0052aa6c
 short g_cameraMenuPitchStep;
-extern int g_unk0x00537f34[2];
+extern int g_unk0x00537f34[4];
 
 extern BYTE g_unk0x0053811e;
 extern BYTE g_unk0x0053811f;
@@ -4477,6 +4488,7 @@ static SysStepClock g_cameraPreviewClock;
 // FUNCTION: CMR2 0x00404f40
 void InRaceMenu_UpdateStateMachineFrame(CallbackStateMachine *param1)
 {
+    unsigned int presses;   // PORT
     int first;
     int second;
     int result;
@@ -4556,9 +4568,10 @@ updateMenus:
     g_pMenu0x0052af44 = g_pMenu0x0052af48;
     CInput::UpdateAllAvailableDevices();
     Input_TranslatePedalsToMenuKeys();
-    pDev = CInput::GetAvailableDeviceRecord(g_unk0x0052af58[0]);
+    pDev = Input_GetPlayerMenuDevice(g_unk0x0052af58[0]);   // PORT: the player's own device
     Input_MergeAssignedJoystickButtons(*(unsigned int *)&g_unk0x0052af58[0] & 0xff, pDev);
-    if ((pDev->field_0x8 & (unsigned short)g_unk0x0052a0b8) != 0) {
+    presses = Input_GetPlayerMenuPresses(g_unk0x0052af58[0], pDev);   // PORT
+    if ((presses & (unsigned short)g_unk0x0052a0b8) != 0) {
         g_unk0x0052a0b8 = 0;
         if (g_pMenu0x0052af44 != NULL)
             Menu_CallCallback3(g_pMenu0x0052af44);
@@ -4566,7 +4579,7 @@ updateMenus:
     } else {
         if (g_pMenu0x0052af44 != NULL)
             Menu_SetFlags(g_pMenu0x0052af44, 1, 1, 1, 1);
-        pNext = Menu_Update(g_pMenu0x0052af44, pDev->field_0x8);
+        pNext = Menu_Update(g_pMenu0x0052af44, presses);
         if (pNext != NULL)
             g_pMenu0x0052af48 = pNext;
     }
@@ -4775,7 +4788,7 @@ void DrawRectOutline(short *pRect, BYTE *pColour)
 }
 
 void View_SetShake(int view, int start);
-extern BYTE g_unk0x0052af58[2];
+extern BYTE g_unk0x0052af58[4];
 
 // ---------------------------------------------------------------------------
 // In-race network menu: the drawing helpers and the menu constructors.

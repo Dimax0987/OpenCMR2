@@ -55,12 +55,12 @@ Quad2DInputVertex g_debrisTri[3];
 // GLOBAL: CMR2 0x00592d80
 FixVector g_glassShards[10][3];
 // GLOBAL: CMR2 0x00592ee8
-BYTE g_windowSmash[2][10];          // queued windows to break
+BYTE g_windowSmash[4][10];  // PORT: 4 player cars          // queued windows to break
 // Break-up grid of a window (11 rows of 8 points).
 // GLOBAL: CMR2 0x00592f38
 FixVector g_windowGrid[11][8];
 // GLOBAL: CMR2 0x00593358
-FixVector g_windowSmashDir[2][10];  // impact direction of each queued break
+FixVector g_windowSmashDir[4][10];  // impact direction of each queued break
 // Triangle of a glass shard.
 // GLOBAL: CMR2 0x00593718
 Quad2DInputVertex g_shardTri[3];
@@ -1107,7 +1107,7 @@ void WheelSpray_Update(int player)
 
 BYTE StageObject_GetViewWeatherStateByte(int index);
 int StageObject_GetViewWeatherField54(int index);
-extern CameraRecord g_viewStates[2];
+extern CameraRecord g_viewStates[4];
 
 #define EFFECT_RAND_NEG() (int)FTOI(__int64, X87S_MUL(X87S_MUL(X87S_FILD(float, rand()), g_oneOverRandMax), g_minus65536))
 extern double g_minus65536;

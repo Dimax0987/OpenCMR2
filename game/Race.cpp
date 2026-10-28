@@ -25,6 +25,11 @@
 #include "Sound.h"
 #include "NetworkLeaderboards.h"
 #include "RegKey.h"
+// PORT: 4-player split screen helpers (StageObjects.cpp).
+int View_IsQuadSplit(void);
+int View_ShiftX(int view, int end);
+int View_ShiftY(int view, int end);
+int View_ShiftCentreX(int view);
 
 // Race session state (0x41e210-0x420190)
 
@@ -135,15 +140,15 @@ BYTE g_unk0x0053811c;
 // GLOBAL: CMR2 0x00537f00
 int g_unk0x00537f00;
 // GLOBAL: CMR2 0x00537f34
-int g_unk0x00537f34[2];
+int g_unk0x00537f34[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x00537f98
 int g_unk0x00537f98[8];
 // GLOBAL: CMR2 0x00537fbc
-BYTE g_unk0x00537fbc[2];
+BYTE g_unk0x00537fbc[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x00537fcc
 int g_unk0x00537fcc;
 // GLOBAL: CMR2 0x00537ff8
-BYTE g_unk0x00537ff8[2];
+BYTE g_unk0x00537ff8[4];
 // GLOBAL: CMR2 0x00538128
 int g_unk0x00538128;
 // GLOBAL: CMR2 0x0053823c
@@ -249,7 +254,7 @@ int Replay_LoadCpuOpponentRun(int player)
 void Replay_InitRaceSlots(void)
 {
     int headToHead;
-    int loaded[2];
+    int loaded[4];  // PORT: 4-player split screen
     int count;
     int i;
     int flag;
@@ -257,6 +262,8 @@ void Replay_InitRaceSlots(void)
     count = RallyDataState() & 0xff;
     loaded[0] = 0;
     loaded[1] = 0;
+    loaded[2] = 0;
+    loaded[3] = 0;
     if (CGameInfo::GetConfiguredGameMode() == 4 || (char)RallyData_GetFlag25())
         headToHead = 1;
     else
@@ -833,9 +840,9 @@ int Race_IsFlag24Clear(void)
 }
 
 // GLOBAL: CMR2 0x0053708c
-int g_unk0x0053708c[2];
+int g_unk0x0053708c[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x00537198
-int g_unk0x00537198[2];
+int g_unk0x00537198[4];
 
 #include "Car.h"
 #include "RallyRouteNode.h"
@@ -853,7 +860,7 @@ void Race_StorePlayerRouteAndClearSlots(int player)
     // PORT: only the two players have these entries. The original writes the
     // computer cars' positions past both arrays, over neighbouring globals
     // that differ here; nothing reads entries past the second.
-    if (player < 2) {
+    if (player < 4) {  // PORT: 4-player split screen
         g_unk0x0053708c[player] = RallyData_GetActiveCarRaceRecordField0(Car_Get(player));
         g_unk0x00537198[player] = RallyData_GetActiveCarRaceRecordField0(Car_Get(player));
     }
@@ -867,12 +874,12 @@ void Race_StorePlayerRouteAndClearSlots(int player)
 // GLOBAL: CMR2 0x005371a0
 int g_unk0x005371a0;
 // GLOBAL: CMR2 0x005371a4
-int g_unk0x005371a4[10];
+int g_unk0x005371a4[20];  // PORT: 4 players
 
 // GLOBAL: CMR2 0x005371d0
-RaceCallRecord g_raceCallRecords[10];
+RaceCallRecord g_raceCallRecords[20];  // PORT: 5 per player, 4 players
 // GLOBAL: CMR2 0x00537248
-int g_raceWrongWayFlags[2];
+int g_raceWrongWayFlags[4];
 
 // Queues a race call (radio message) of the given call id and player.
 extern unsigned int *g_coDriverCalls;
@@ -959,13 +966,13 @@ void Race_ResetPlayerCallState(void)
     int i;
     RaceCallRecord *p;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 4; i++) {   // PORT: 4-player split screen
         g_unk0x0053708c[i] = -1;
         g_raceWrongWayFlags[i] = 0;
         g_unk0x00537198[i] = 9999;
     }
     memset(g_unk0x005371a4, 0, sizeof(g_unk0x005371a4));
-    for (p = g_raceCallRecords; p < &g_raceCallRecords[10]; p += 5) {
+    for (p = g_raceCallRecords; p < &g_raceCallRecords[20]; p += 5) {  // PORT: 4 players
         for (i = 0; i < 5; i++) {
             p[i].flags &= 0xfffffc00;
             p[i].secondaryCallId = 0;
@@ -1063,16 +1070,13 @@ void Race_DrawPlayerCallSlots(unsigned int player, int *pViewRect)
     } else {
         iVar = 1;
         if (CGameInfo::IsSplitBarEnabled()) {
-            if (player == 1)
-                yOff = (int)g_pGraphics->resY / 2;
+            yOff = View_ShiftY(player, 0);  // PORT: from the view's rectangle
             yOff += (int)g_pGraphics->resY / 8 + (int)g_pGraphics->resY * 10 / 0x1e0;
             xOff = (int)g_pGraphics->resX * 46 / 0x280 - ((int)g_pGraphics->resX * 29 << 10 >> 16);
         } else {
-            if (player == 0)
-                xOff = -((int)g_pGraphics->resX / 4);
-            else
-                xOff = (int)g_pGraphics->resX / 4;
-            yOff = (int)g_pGraphics->resY * 9011 >> 16;
+            // PORT: centred on the view (also a quarter of the 2x2 split screen).
+            xOff = View_ShiftCentreX(player);
+            yOff = ((int)g_pGraphics->resY * 9011 >> 16) + View_ShiftY(player, 0);
         }
     }
 
@@ -1256,15 +1260,13 @@ void Race_DrawPlayerMessage(char *pText, int *pColour, int player, int shadow, i
     pViewRect = (short *)StageObject_GetPlayerViewRectangle(player);
     if (RallyData_IsHeadToHeadRaceMode() != 0) {
         if (CGameInfo::IsSplitBarEnabled()) {
-            if (player == 1)
-                pos = (int)g_pGraphics->resY / 2;
+            pos = View_ShiftY(player, 0);  // PORT: from the view's rectangle
             pos -= (int)g_pGraphics->resY * 9011 >> 16;
-        } else if (player == 0) {
+        } else {
             // The original duplicates the tail under a `player == 0` test
             // (MSVC6 leaves the dead test in the else branch).
-            pos = (int)g_pGraphics->resY * 9011 >> 16;
-        } else {
-            pos = (int)g_pGraphics->resY * 9011 >> 16;
+            // PORT: a quarter of the 2x2 split screen takes its own top.
+            pos = ((int)g_pGraphics->resY * 9011 >> 16) + View_ShiftY(player, 0);
         }
     } else {
         race = 0;
@@ -2858,7 +2860,7 @@ void Race_UpdateDriverReadyAndRecordState(CallbackStateMachine *param1, unsigned
     if (g_unk0x0053811c < 100)
         g_unk0x0053811c = g_unk0x0053811c + 1;
     hold = 400;
-    if ((char)RallyData_GetSelectionFlag26() != 0 && CGameInfo::GetConfiguredPlayerCount() == 2)
+    if ((char)RallyData_GetSelectionFlag26() != 0 && CGameInfo::GetConfiguredPlayerCount() >= 2)
         hold = 800;
     index = param2 & 0xff;
     if ((unsigned int)(CMain::GetFrameDelta() - g_unk0x00537f34[index]) >= (unsigned int)hold &&
@@ -2928,10 +2930,11 @@ void Race_UpdateDriverReadyAndRecordState(CallbackStateMachine *param1, unsigned
     if ((char)RallyData_GetFlag22() != 0 || (char)RallyData_GetFlag24() != 0)
         StageTiming_EstimateRemainingDriverTimes();
     if ((char)RallyData_GetSelectionFlag27() != 0 && CGameInfo::GetGameModeOptionBit19() == 0) {
-        if (g_unk0x00537fbc[0] != 0)
-            StageTiming_InsertDriverSplitRanking(StageTiming_GetDriverSlot(0), StageTiming_GetValidStartTime(0), GetStageSplitCount());
-        if (g_unk0x00537fbc[1] != 0)
-            StageTiming_InsertDriverSplitRanking(StageTiming_GetDriverSlot(1), StageTiming_GetValidStartTime(1), GetStageSplitCount());
+        // PORT: every player car (the original has the two).
+        for (i = 0; i < (BYTE)RallyDataState() && i < 4; i++) {
+            if (g_unk0x00537fbc[i] != 0)
+                StageTiming_InsertDriverSplitRanking(StageTiming_GetDriverSlot(i), StageTiming_GetValidStartTime(i), GetStageSplitCount());
+        }
     }
     if (((char)RallyData_GetFlag22() != 0 || (char)RallyData_GetFlag24() != 0) &&
         (char)RallyData_GetSelectionFlag27() != 0 && CGameInfo::GetGameModeOptionBit19() == 0 &&
@@ -5256,7 +5259,7 @@ void Race_UpdatePlayerViewAndDrivenCars(BYTE param1, int param2)
         // The opponent can run at a different rate. Only consume a device's
         // presses when its player runs; axes/held buttons still poll each step.
         unsigned int readyDevices = 0;
-        for (int inputPlayer = 0; inputPlayer < count && inputPlayer < 2; ++inputPlayer) {
+        for (int inputPlayer = 0; inputPlayer < count && inputPlayer < 4; ++inputPlayer) {
             if (Car_Get(inputPlayer)->simulationStepsRemaining > 0) {
                 readyDevices |= 1u << inputPlayer; // keyboard fallback
                 unsigned int device = Input_GetControllerSlotMapping(inputPlayer);

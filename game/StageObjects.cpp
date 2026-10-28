@@ -477,6 +477,7 @@ char *StageObject_FormatAnimatedLapTime(int *p, int index, int mode);
 void RallyData_SetSelectionBits14To15(BYTE param1);
 unsigned short Input_GetControllerSlotMapping(unsigned short slot);
 void Car_SetDrawnFlag(int index, char value);
+int Car_IsBlockedFromView(Car *pCar, int view);   // PORT
 int StageTiming_GetCarReplayTailEntry(void *pCar, int index);
 void CarInterior_UpdateWiperSweep(int index);
 Texture *InRaceMenu_GetRoundBoxTexture(void);
@@ -553,10 +554,24 @@ unsigned int RallyData_GetSelectionFlag27(void);
 unsigned char RallyData_GetSelectionFlag28(void);
 float StageTiming_GetSelectedStartTableFloat(void);
 
+// PORT: "Split Screen - Contact": in the rally modes' split screen the
+// players' cars are drawn for each other and collide (the original hides
+// them from each other, like ghosts, and so does the "Split Screen Mode"
+// entry still).
+int g_portSplitContact;
+
+int StageObject_IsSplitContact(void)
+{
+    return g_portSplitContact != 0 && (BYTE)RallyDataState() > 1 && CGameInfo::IsConfiguredMultiplayer() == 0 &&
+           CGameInfo::GetGameModeOptionBit19() == 0;
+}
+
 // Chooses the stage object path for the current game mode and rally state.
 // FUNCTION: CMR2 0x0046bd50
 int StageObject_UsesExtendedMode(void)
 {
+    if (StageObject_IsSplitContact())   // PORT
+        return true;
     if (CGameInfo::GetConfiguredGameMode() == 8 ||
         CGameInfo::GetConfiguredGameMode() == 9 ||
         CGameInfo::GetConfiguredGameMode() == 10)
@@ -924,9 +939,51 @@ struct Block6 { int data[6]; };
 
 struct StageTableEntry { int flag; short a; short b; };
 // GLOBAL: CMR2 0x0051b9f0
-StageTableEntry g_unk0x0051b9f0[5] = {
-    {0, 2, 2}, {0, 2, 1}, {0x10000, 2, 1}, {0, 1, 2}, {1, 1, 2}
+StageTableEntry g_unk0x0051b9f0[9] = {
+    {0, 2, 2}, {0, 2, 1}, {0x10000, 2, 1}, {0, 1, 2}, {1, 1, 2},
+    // PORT: the four quarters of the 4-player split screen (top left, top
+    // right, bottom left, bottom right).
+    {0, 1, 1}, {0, 1, 1}, {0, 1, 1}, {0, 1, 1}
 };
+
+// PORT: the 3- and 4-player split screen is a 2x2 grid; a view's quarter
+// is entry 5 + view of the table above.
+int Race_IsMultiplayerRecordMode10(void);
+BYTE *StageObject_GetPlayerViewRectangle(int view);
+
+int View_IsQuadSplit(void)
+{
+    return (BYTE)RallyDataState() > 2 && Race_IsMultiplayerRecordMode10() == 0;
+}
+
+// PORT: shift of a HUD element laid out on the whole screen into a player's
+// view: `end` anchors it to the view's right/bottom edge (the original
+// subtracts half the screen for the first player), otherwise to its left/top
+// edge (the original adds half the screen for the second player). With one
+// or two players this gives the original's offsets; with a 2x2 grid the
+// quarter's.
+int View_ShiftX(int view, int end)
+{
+    short *pRect = (short *)StageObject_GetPlayerViewRectangle(view);
+    if (end)
+        return pRect[0] + pRect[2] - (int)g_pGraphics->resX;
+    return pRect[0];
+}
+
+int View_ShiftY(int view, int end)
+{
+    short *pRect = (short *)StageObject_GetPlayerViewRectangle(view);
+    if (end)
+        return pRect[1] + pRect[3] - (int)g_pGraphics->resY;
+    return pRect[1];
+}
+
+// PORT: shift of an element centred on the screen into the view's centre.
+int View_ShiftCentreX(int view)
+{
+    short *pRect = (short *)StageObject_GetPlayerViewRectangle(view);
+    return pRect[0] + pRect[2] / 2 - (int)g_pGraphics->resX / 2;
+}
 
 // FUNCTION: CMR2 0x00464b00
 StageTableEntry *StageObject_GetScreenRectangleEntry(int index)
@@ -1477,7 +1534,7 @@ void StageObject_ResetPairedCarValues(void)
 // FUNCTION: CMR2 0x0046b740
 void StageObject_SetPairedCarValue(int i, int value, int j)
 {
-    g_replayLevelState.levels[j + i * 2] = value;
+    g_replayLevelState.levels[j + i * REPLAY_LEVEL_VIEWS] = value;   // PORT: four views
 }
 
 // FUNCTION: CMR2 0x0046b760
@@ -1493,7 +1550,7 @@ void StageObject_SetCarValuePendingFlag(int index, int reset)
 // FUNCTION: CMR2 0x0046bd20
 int StageObject_GetPairedCarValue(int i, int j)
 {
-    return g_replayLevelState.levels[j + i * 2];
+    return g_replayLevelState.levels[j + i * REPLAY_LEVEL_VIEWS];   // PORT: four views
 }
 
 // FUNCTION: CMR2 0x0046bd40
@@ -2060,7 +2117,7 @@ void Knockout_ApplyCarGroundMaterials(void)
         break;
     }
     RallyData_SetSelectionBits14To15(value);
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 4; i++) {  // PORT: 4-player split screen
         Car_SetDrawnFlag(i, (BYTE)Input_GetControllerSlotMapping((unsigned short)i));
         if (i >= (int)(RallyDataState() & 0xff))
             Car_SetDrawnFlag(i, -1);
@@ -2223,8 +2280,8 @@ void Knockout_UpdateRaceStateAndFades(CallbackStateMachine *param_1, unsigned in
             return;
         }
         NetRace_FadeOutPlayerScreen(0, (FadeCallback)StageUI_ReleaseSceneAndFadeStage, 1, 0, g_unk0x0051c9a8, 0);
-        if ((char)RallyDataState() == 2)
-            NetRace_FadeOutPlayerScreen(1, NULL, 1, 0, g_unk0x0051c9a8, 0);
+        for (i = 1; i < (int)(BYTE)RallyDataState() && i < 4; i++)   // PORT: every split-screen view
+            NetRace_FadeOutPlayerScreen(i, NULL, 1, 0, g_unk0x0051c9a8, 0);
         break;
     case 5:
         if ((*pState & 0x400000) == 0) {
@@ -2285,8 +2342,8 @@ void Knockout_UpdateRaceStateAndFades(CallbackStateMachine *param_1, unsigned in
         break;
     case 7:
         NetRace_FadeOutPlayerScreen(0, (FadeCallback)StageUI_RetireFromRace, 1, 0, g_unk0x0051c9a8, 0);
-        if ((char)RallyDataState() == 2)
-            NetRace_FadeOutPlayerScreen(1, NULL, 1, 0, g_unk0x0051c9a8, 0);
+        for (i = 1; i < (int)(BYTE)RallyDataState() && i < 4; i++)   // PORT: every split-screen view
+            NetRace_FadeOutPlayerScreen(i, NULL, 1, 0, g_unk0x0051c9a8, 0);
         break;
     }
     g_unk0x0058cf64 = 0;
@@ -2493,6 +2550,10 @@ void CarInterior_ResetDriverPoseOnNextUpdate(CameraRecord *pRecord)
 // FUNCTION: CMR2 0x00476520
 int CarInterior_IsLoaded(BYTE index)
 {
+    // PORT: only the first two cars have an interior (and a flag); players
+    // 3 and 4 of the split screen have no cockpit view.
+    if (index >= 2)
+        return 0;
     return g_carInteriorLoaded[index];
 }
 
@@ -2706,17 +2767,17 @@ FixVector g_unk0x005914c8;
 // Per view record, the trackside camera's state: the point it turns to (the
 // car plus a speed lead) and the aim that steps towards it.
 // GLOBAL: CMR2 0x005916a0
-FixVector g_tracksideAimTargets[4];
+FixVector g_tracksideAimTargets[8];   // PORT: 8 camera records (4 views)
 // The aim has reached its target and follows it directly.
 // GLOBAL: CMR2 0x005916f0
-int g_tracksideAimLocked[4];
+int g_tracksideAimLocked[8];   // PORT: 8 camera records (4 views)
 // Smoothed lead of the aim ahead of the car (View_BuildTracksideAimLead).
 // GLOBAL: CMR2 0x00591868
-FixVector g_tracksideAimLeads[4];
+FixVector g_tracksideAimLeads[8];   // PORT: 8 camera records (4 views)
 // GLOBAL: CMR2 0x00591898
-FixVector g_tracksideAims[4];
+FixVector g_tracksideAims[8];   // PORT: 8 camera records (4 views)
 // GLOBAL: CMR2 0x00591740
-int g_viewCameraSpot[4];
+int g_viewCameraSpot[8];   // PORT: 8 camera records (4 views)
 // GLOBAL: CMR2 0x00591750
 // Trackside camera spot of the stage (0x6c bytes); the stage file lists them
 // after a count (StageObject_SelectNonemptyRecordList).
@@ -3308,7 +3369,7 @@ int StageObject_GetCarCameraSpotIndex(CameraRecord *pRecord)
     return g_viewCameraSpot[pRecord->index];
 }
 
-extern int g_tracksideZoomTargets[4];
+extern int g_tracksideZoomTargets[8];
 void View_BuildTracksideAimLead(FixVector *pOut, CameraRecord *pRecord, Car *pCar, FixMatrix *pMatrix);
 
 // Aim target of a trackside camera: decays the smoothed lead by 0.9, adds 0.1 of
@@ -3673,7 +3734,7 @@ void CarDamage_UpdateOrderedCarsOffRoadState(short *param_1, short param_2, int 
         p = param_1 + i;
         pCar = Car_Get(*p);
         if (pCar->isGhost == 0 &&
-            (&pCar->firstCameraBlocked)[param_4] == 0) {
+            Car_IsBlockedFromView(pCar, param_4) == 0) {   // PORT: four views
             if (Race_IsMultiplayerRecordMode10() != 0) {
                 if ((char)RallyData_GetSelectionFlag27() || (char)RallyData_GetSelectionFlag26() ||
                     (unsigned int)i == (View_GetActiveCameraFlags(1) & 0xff))
@@ -4350,7 +4411,7 @@ BYTE StageObject_IsWheelOnActiveEffectSurface(int index, int wheel)
 
 // Fraction (0..1.0) of the spot's dolly track the camera has moved along.
 // GLOBAL: CMR2 0x00591730
-int g_tracksideDollyProgress[4];
+int g_tracksideDollyProgress[8];   // PORT: 8 camera records (4 views)
 
 // Moves a trackside camera along its dolly track (progress clamped to 1.0).
 // FUNCTION: CMR2 0x0048dca0
@@ -5988,9 +6049,9 @@ void StageObject_ResetAttachedCarNodes(BYTE *pCar)
 // Per-car values eased towards their targets (0x591710) by a step.
 // Zoom of the trackside camera and the zoom it steps towards.
 // GLOBAL: CMR2 0x00591690
-int g_tracksideZooms[4];
+int g_tracksideZooms[8];   // PORT: 8 camera records (4 views)
 // GLOBAL: CMR2 0x00591710
-int g_tracksideZoomTargets[4];
+int g_tracksideZoomTargets[8];   // PORT: 8 camera records (4 views)
 
 // Steps a trackside camera's aim toward its target by `step`, locking it on
 // (and snapping to the target) once it is closer than that.
@@ -7342,7 +7403,7 @@ struct EventRec {
 // GLOBAL: CMR2 0x00588ed8
 EventRec g_eventRecords[11];
 // GLOBAL: CMR2 0x00589210
-int g_eventScales[2];
+int g_eventScales[4];  // PORT: one per player car (4-player split screen)
 #define g_eventScale (g_eventScales[0])
 // GLOBAL: CMR2 0x00589318
 int g_unk0x00589318;
@@ -7353,7 +7414,7 @@ int g_unk0x00589320[4];
 // GLOBAL: CMR2 0x00589330
 BYTE g_eventsDirty;
 // GLOBAL: CMR2 0x00588ed0
-Texture *g_eventTextures[2];
+Texture *g_eventTextures[4];  // PORT: one per player car (4-player split screen)
 #define g_eventTexture (g_eventTextures[0])
 
 // Scales the event steps by their share of the largest a*b product.
@@ -8185,6 +8246,18 @@ void StageObject_InitScreenRectangles(void)
     p[16] = (short)half;
     p[18] = (short)(pSize[0] / 2);
     p[19] = (short)pSize[1];
+    // PORT: the quarters of the 4-player split screen (entries 5..8).
+    {
+        short w = (short)(pSize[0] / 2);
+        short h = (short)(pSize[1] / 2);
+        int q;
+        for (q = 0; q < 4; q++) {
+            p[20 + q * 4] = (q & 1) ? w : 0;
+            p[21 + q * 4] = (q & 2) ? h : 0;
+            p[22 + q * 4] = w;
+            p[23 + q * 4] = h;
+        }
+    }
 }
 
 #define FIXVEC_EQ(a, b) ((a).x == (b).x && (a).y == (b).y && (a).z == (b).z)
@@ -8363,10 +8436,19 @@ int Race_IsMultiplayerRecordMode10(void);
 // Screen rectangle of a view: full screen with one player, else the half
 // for the split direction.
 // FUNCTION: CMR2 0x00464b10
+// PORT: set while the HUD of a quarter of the 2x2 split screen is laid out
+// (Hud_BeginView): the quarter is then a whole screen of half the size, so
+// every view's rectangle is the screen's and the split-screen shifts are 0.
+int g_portHudQuadLayout;
+
 BYTE *StageObject_GetPlayerViewRectangle(int view)
 {
     StageObject_InitScreenRectangles();
+    if (g_portHudQuadLayout)
+        return (BYTE *)g_unk0x0051b9f0;
     if ((BYTE)RallyDataState() != 1 && Race_IsMultiplayerRecordMode10() == 0) {
+        if (View_IsQuadSplit())  // PORT: 4-player split screen
+            return (BYTE *)&g_unk0x0051b9f0[5 + (view & 3)];
         if (CGameInfo::IsSplitBarEnabled())
             return (BYTE *)&g_unk0x0051b9f0[1 + view];
         return (BYTE *)&g_unk0x0051b9f0[3 + view];
@@ -8920,8 +9002,13 @@ void StageObject_ResetCarNodeViewFlags(Car *pCar)
     *(short *)(g_unk0x00588ba4 + 12) = 0;
     g_unk0x00588ba4[14] = 0;
     g_unk0x00588ba4[pCar->index] = 0;
-    StageObject_SetCarVisibilityBits(g_replayLevelState.levels[pCar->index * 2], 0, pCar->index);
-    StageObject_SetCarVisibilityBits(g_replayLevelState.levels[pCar->index * 2 + 1], 1, pCar->index);
+    // PORT: the bits of the four views (the original set two, so the cars
+    // were invisible in views 3 and 4).
+    {
+        int view;
+        for (view = 0; view < REPLAY_LEVEL_VIEWS; view++)
+            StageObject_SetCarVisibilityBits(g_replayLevelState.levels[pCar->index * REPLAY_LEVEL_VIEWS + view], view, pCar->index);
+    }
     pCar->pSceneRoot->viewMask = 0xff;
     SceneNode_SetViewMaskTree(pCar->pWheelNodes[0], g_unk0x00588ba4[9]);
     SceneNode_SetViewMaskTree(pCar->pWheelNodes[1], g_unk0x00588ba4[9]);
@@ -8969,7 +9056,7 @@ void StageObject_ResetCarNodeViewFlags(Car *pCar)
 // FUNCTION: CMR2 0x0046bb40
 void StageObject_RebuildOrderedWheelVisibility(void)
 {
-    int flags[2];
+    int flags[REPLAY_LEVEL_VIEWS];   // PORT: four views
     short *pOrder;
     Car *pCar;
     int i;
@@ -9002,12 +9089,12 @@ void StageObject_RebuildOrderedWheelVisibility(void)
             flags[i] = 0;
         }
         i++;
-    } while (i < 2);
+    } while (i < REPLAY_LEVEL_VIEWS);   // PORT: four views
     pOrder = Car_GetOrder();
     for (n = Car_GetOrderCount() - 1; n >= 0; n--) {
         pCar = Car_Get(pOrder[n]);
         swap = (((Mesh *)pCar->pBodyNode->pObject)->flags >> 0x12) & 1;
-        for (i = 0; i < 2; i++) {
+        for (i = 0; i < REPLAY_LEVEL_VIEWS; i++) {
             index = pCar->index;
             if ((View_GetActiveCameraFlags(i) & 0xff) == index) {
                 if (flags[i] == 1 && g_carPairValuePending[index] != 0) {
@@ -10889,7 +10976,7 @@ int Replay_InitCarStreamState(ReplayStream *p, int unused, BYTE car)
     if (p == NULL || p->recording != 0 || p->playing != 0)
         return 0;
     p->steeringModeOption = 0;
-    if (car < 2)
+    if (car < 4)   // PORT: the four players' controller slots
         p->steeringModeOption = CInput::GetControllerField124(car);
     p->car = car;
     p->recording = 1;
@@ -11034,7 +11121,7 @@ void Car_SpawnDebris(int size, FixVector *pPos, Car *pCar, FixVector *pAxes, int
 void ForceFeedback_UpdateSlot(Car *pCar, FixVector *pIn, int nonzero);
 void Race_PlayImpactAndShakeCar(unsigned int view, int volume, char heavy, int listener);
 // Shared cooldown timestamps are defined and annotated in StageTiming.cpp.
-extern int g_deformImpactTicks[2];
+extern int g_deformImpactTicks[8];
 
 // Car impact update: checks the four axle travel limits, samples the current
 // suspension extremes per object type and, when one of this car's objects is
@@ -12056,12 +12143,12 @@ void Sound_SetPan(unsigned int handle, int pan);
 void CarPart_ResolveLocalPointGroundContact(unsigned int param_1);
 struct SoundCurve;
 extern struct SoundCurve g_engineWhineSoundCurve;
-extern CameraRecord g_viewStates[2];
+extern CameraRecord g_viewStates[4];
 extern int g_unk0x0058ddc8Pair[2]; // two sound handles (0x58ddc8, 0x58ddcc)
 // ---- GLOBALS nuevos ----
 // First engine sample slot of each loaded car sound set.
 // GLOBAL: CMR2 0x0058ddb4
-int g_unk0x0058ddb4[2];
+int g_unk0x0058ddb4[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0051f27c
 int g_unk0x0051f27c = 0x10000;
 // Loop start of the second gear-whine sample, per car (one entry per
@@ -12228,7 +12315,7 @@ void Replay_InterpolatePoseStream(ReplayStream *p)
 // FUNCTION: CMR2 0x004765e0
 void StageObject_DispatchActiveCarObjectUpdate(CameraRecord *pObj, FixMatrix *pRef, int b)
 {
-    if (g_carInteriorLoaded[pObj->car] != 0) {
+    if (CarInterior_IsLoaded(pObj->car) != 0) {   // PORT: guarded for cars 3-4
         CarInterior_IntegrateDriverPose(pObj, pRef, b);
         StageObject_BlendCarMountTransform(pObj->car);
         CarInterior_AnimateWipers(pObj->car);
@@ -12459,7 +12546,9 @@ void StageObject_UpdatePlayerControlIndicators(int player, int device)
     }
     StageObject_ReadCarControllerMapping(player);
     pDev = CInput::GetAvailableDeviceRecord(device);
-    if (pDev->field_0x0 != 1) {
+    // PORT: the keyboard fallback exists for players 1 and 2 only (devices 0
+    // and 1 are the keyboards; 2 and 3 would be other players' pads).
+    if (pDev->field_0x0 != 1 && player < 2) {
         pSrc = CInput::GetAvailableDeviceRecord(player);
         pDev->field_0x4 |= pSrc->field_0x4;
         pDev->field_0x8 |= pSrc->field_0x8;
@@ -12720,7 +12809,7 @@ void StageObject_DrawListedCarLightBeams(short *pOrder, short count, int view)
         car = pOrder[i];
         g_partCar = (Car *)Car_Get(car);
         if (g_partCar->isGhost != 0 || (inCar != 0 && self == car) ||
-            (&g_partCar->firstCameraBlocked)[view] != 0)
+            Car_IsBlockedFromView(g_partCar, view) != 0)   // PORT: four views
             continue;
         Scene_GetLightColour((DWORD *)colour, g_partCar->field_0xa70);
         g_frameColourGainRed = FixMul(colour[0] << 16, 0x106);
@@ -13278,17 +13367,17 @@ int Collision_ResolveSectorFaceContact(int *param_1, int *param_2, int param_3, 
 
 // The car has come within the spot's range: the camera turns to follow it.
 // GLOBAL: CMR2 0x005916d0
-int g_tracksideFollowing[4];
+int g_tracksideFollowing[8];   // PORT: 8 camera records (4 views)
 // Distance from the camera to the car (for the shake).
 // GLOBAL: CMR2 0x005916e0
-int g_tracksideCarDistances[4];
+int g_tracksideCarDistances[8];   // PORT: 8 camera records (4 views)
 // Smoothed per-frame steps of the dolly, the zoom and the aim.
 // GLOBAL: CMR2 0x00591700
-int g_tracksideDollySpeeds[4];
+int g_tracksideDollySpeeds[8];   // PORT: 8 camera records (4 views)
 // GLOBAL: CMR2 0x00591720
-int g_tracksideZoomSpeeds[4];
+int g_tracksideZoomSpeeds[8];   // PORT: 8 camera records (4 views)
 // GLOBAL: CMR2 0x00591754
-int g_tracksideAimSpeeds[4];
+int g_tracksideAimSpeeds[8];   // PORT: 8 camera records (4 views)
 
 extern float g_oneOverRandMax;
 extern double g_minus65536;
@@ -14675,7 +14764,7 @@ int Collision_TestCarAgainstSectorObjects(Car *pCar)
                     position = pObject->position;
                 else
                     RallyData_CopyRaisedElementVector((int *)&position, &pEntry);
-                if ((pObject->flags & 0x8000) == 0 && (BYTE)RallyDataState() == 2)
+                if ((pObject->flags & 0x8000) == 0 && (BYTE)RallyDataState() >= 2)   // PORT: as drawn
                     continue;
                 g_wallScrapeCount = pEntry->pBounds->pProjection != 0;
                 result = Collision_DoSpheresOverlap(pCar->collisionRadius, pEntry->pBounds->radius, (int *)&pCar->position, (int *)&position);

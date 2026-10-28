@@ -363,9 +363,9 @@ extern short g_carOrderCount;
 // GLOBAL: CMR2 0x0053b500
 extern short g_carOrder[48];
 // GLOBAL: CMR2 0x0053a324
-extern int g_carViewScale[15][2];
+extern int g_carViewScale[15][4];
 // GLOBAL: CMR2 0x00538e2c
-extern SceneNode *g_viewNodes[3];
+extern SceneNode *g_viewNodes[4];
 
 // arccos as a 12-bit angle: 4096 entries for a dot product in [-1, 1]
 extern short g_acosTable[4096];

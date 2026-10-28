@@ -705,12 +705,13 @@ void FixBasis_Integrate(FixVector *pRows, FixVector *pW)
     }
 }
 
-extern int g_viewNearPlanes[2];
-extern int g_viewFarPlanes[2];
-extern int g_viewZooms[2];
+extern int g_viewNearPlanes[4];
+extern int g_viewFarPlanes[4];
+extern int g_viewZooms[4];
 int Race_IsMultiplayerRecordMode10(void);
 int RallyData_IsChampionshipFinalStage(void);
 int RallyData_IsHeadToHeadRaceMode(void);
+int View_IsQuadSplit(void);
 
 // PORT (SilentPatchCMR2): the field of view from video.fov in degrees, 70 being
 // the original's 0x275c2; like SilentPatch, the scale is inversely
@@ -731,8 +732,8 @@ static int View_GetFovScale(void)
 // the horizon. The far plane drawn now follows that distance, closing half the
 // gap in about a third of a second. It starts at the distance, without
 // sliding, on a new view and after a pause of the frames (a load or a hitch).
-static int g_viewShownFarPlanes[2];
-static int g_viewFarPlaneTimes[2];
+static int g_viewShownFarPlanes[4];
+static int g_viewFarPlaneTimes[4];
 
 void View_ResetShownFarPlane(BYTE view)
 {
@@ -770,7 +771,9 @@ void View_SetPlayerProjection(unsigned int player)
     // PORT: the far plane eases to the view distance (View_GetShownFarPlane).
     int farPlane = View_GetShownFarPlane(i);
 
-    if (Race_IsMultiplayerRecordMode10() == 0 && RallyData_IsHeadToHeadRaceMode()) {
+    // PORT: a quarter of the 2x2 split screen keeps the screen's shape, so
+    // its projection is the whole screen's.
+    if (Race_IsMultiplayerRecordMode10() == 0 && RallyData_IsHeadToHeadRaceMode() && !View_IsQuadSplit()) {
         if (CGameInfo::IsSplitBarEnabled())
             fovY *= 2;
         else
@@ -806,7 +809,7 @@ struct Unk0x00539278 {
     int field_0x30;
     int field_0x34;                 // slot in use
 };
-extern Unk0x00539278 g_forceFeedbackSlots[2];
+extern Unk0x00539278 g_forceFeedbackSlots[4];
 extern Unk0x00539278 *g_pForceFeedbackSlot;
 extern Car *g_pForceFeedbackCar;
 
@@ -889,9 +892,9 @@ void ForceFeedback_UpdateSlot(Car *pCar, FixVector *pIn, int nonzero)
 // Chase camera state (HudDash.cpp): mode per view record, the records' up and
 // forward vectors (entries 2..5) and the pitch.
 extern BYTE g_playerCameraMode[8];
-extern FixVector g_chaseCameraViewOffsets[6];
-extern FixVector g_chaseCameraOffsets[4];
-extern short g_chaseCameraPitch[4];
+extern FixVector g_chaseCameraViewOffsets[12];
+extern FixVector g_chaseCameraOffsets[12];
+extern short g_chaseCameraPitch[8];
 void ChaseCamera_GetViewOffset(FixVector *pOut, CameraRecord *pSel);
 
 void ChaseCamera_BuildMatrix(CameraRecord *pObj, FixMatrix *pRef);
@@ -901,8 +904,8 @@ void ChaseCamera_BuildMatrix(CameraRecord *pObj, FixMatrix *pRef);
 // FUNCTION: CMR2 0x00447a00
 void ChaseCamera_Restart(CameraRecord *pObj, FixMatrix *pRef)
 {
-    FixMatrix_GetUp(&g_chaseCameraOffsets[2 + pObj->index], pRef);
-    FixMatrix_GetRight(&g_chaseCameraViewOffsets[2 + pObj->index], pRef);
+    FixMatrix_GetUp(&g_chaseCameraOffsets[4 + pObj->index], pRef);
+    FixMatrix_GetRight(&g_chaseCameraViewOffsets[4 + pObj->index], pRef);
     ChaseCamera_BuildMatrix(pObj, pRef);
 }
 
@@ -928,11 +931,11 @@ void ChaseCamera_BuildMatrix(CameraRecord *pObj, FixMatrix *pRef)
     FixMatrix_SetPosition(&base, &identity);
     index = sel & 0xff;
 
-    FixVecCross(&right, &g_chaseCameraOffsets[2 + index], &g_chaseCameraViewOffsets[2 + index]);
+    FixVecCross(&right, &g_chaseCameraOffsets[4 + index], &g_chaseCameraViewOffsets[4 + index]);
     pM = &pObj->matrix;
     FixMatrix_SetRight(&right, pM);
-    FixMatrix_SetUp(&g_chaseCameraOffsets[2 + index], pM);
-    FixMatrix_SetForward(&g_chaseCameraViewOffsets[2 + index], pM);
+    FixMatrix_SetUp(&g_chaseCameraOffsets[4 + index], pM);
+    FixMatrix_SetForward(&g_chaseCameraViewOffsets[4 + index], pM);
     pObj->matrix.position.x = 0;
     pObj->matrix.position.y = 0;
     pObj->matrix.position.z = 0;
@@ -944,7 +947,7 @@ void ChaseCamera_BuildMatrix(CameraRecord *pObj, FixMatrix *pRef)
     pos.z += off.z;
     FixMatrix_SetPosition(&pos, pM);
     if (g_playerCameraMode[index] == 4)
-        FixMatrix_RotateAboutRight(pM, (unsigned short)g_chaseCameraPitch[2 + pObj->view]);
+        FixMatrix_RotateAboutRight(pM, (unsigned short)g_chaseCameraPitch[4 + pObj->view]);
 
     pObj->carLift = 0;
     pObj->nearPlane = 0x10000;
@@ -1117,7 +1120,8 @@ void View_PositionFromCarProfile(CameraRecord *pObj, FixMatrix *pRef)
     unsigned int mode;
     int base;
 
-    if (RallyData_IsHeadToHeadRaceMode() != 0 && CGameInfo::IsSplitBarEnabled() != 0 && Race_IsMultiplayerRecordMode10() == 0) {
+    if (RallyData_IsHeadToHeadRaceMode() != 0 && CGameInfo::IsSplitBarEnabled() != 0 && Race_IsMultiplayerRecordMode10() == 0 &&
+        !View_IsQuadSplit()) {  // PORT: a quarter is not a short view
         if (g_carPartStateTables.modes[pObj->index] == 0)
             mode = 3;
         else if (g_carPartStateTables.modes[pObj->index] == 2)

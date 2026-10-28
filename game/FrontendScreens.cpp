@@ -1584,6 +1584,9 @@ void FrontendMenu_ResetActiveMenu(void)
 extern int g_frontendOverlayMode;
 void Input_TranslatePedalsToMenuKeys(void);
 void Input_MergeAssignedJoystickButtons(int slot, DeviceInfo *pOut);
+BOOL FrontendControls_MergeMenuInput(Menu *pMenu, DeviceInfo *pOut);   // PORT
+DeviceInfo *Input_GetPlayerMenuDevice(int player);   // PORT
+unsigned int Input_GetPlayerMenuPresses(int player, DeviceInfo *pDev);   // PORT
 unsigned short Input_GetControllerSlotMapping(unsigned short slot);
 void Sound_UpdateMusicStreaming(void);
 
@@ -1600,14 +1603,17 @@ void FrontendMenu_UpdateAndSwitchActive(void)
     unsigned int input;
     Menu *pNext;
 
-    pDevice = CInput::GetAvailableDeviceRecord(g_frontendOverlayMode);
+    // PORT: the player's own device (see Input_GetPlayerMenuDevice).
+    pDevice = Input_GetPlayerMenuDevice(g_frontendOverlayMode);
     FrontendMenu_ResetActiveMenu();
     CInput::UpdateAllAvailableDevices();
     Input_TranslatePedalsToMenuKeys();
     Sound_UpdateMusicStreaming();
-    if (g_pMenu0x00818abc != FrontendMenu_GetDeviceBindings() && g_pMenu0x00818abc != FrontendMenu_GetDeviceCalibration())
+    // PORT: the controls pages also take the pad being set up (the original
+    // read only the keyboard on the binding and calibration pages).
+    if (!FrontendControls_MergeMenuInput(g_pMenu0x00818abc, pDevice))
         Input_MergeAssignedJoystickButtons(g_frontendOverlayMode, pDevice);
-    input = pDevice->field_0x8;
+    input = Input_GetPlayerMenuPresses(g_frontendOverlayMode, pDevice);   // PORT
     if (g_frontendOverlayMode == 1)
         input |= CInput::GetAvailableDeviceRecord(Input_GetControllerSlotMapping(0))->field_0x8 & 0x20;
     pNext = (Menu *)Menu_Update(g_pMenu0x00818abc, input);
@@ -3068,7 +3074,7 @@ void Frontend_SetDebugOverlayChannels(BYTE param1, BYTE param2, BYTE param3);
 // FUNCTION: CMR2 0x004ef590
 void FrontendMenu_UpdateRallyStartTransition(Menu *pMenu)
 {
-    if (CGameInfo::GetConfiguredPlayerCount() == 2 && CGameInfo::GetConfiguredGameMode() == 6)
+    if (CGameInfo::GetConfiguredPlayerCount() >= 2 && CGameInfo::GetConfiguredGameMode() == 6)
         RallyData_SetSetupFlag11(1);
     else
         RallyData_SetSetupFlag11(0);
@@ -6313,7 +6319,9 @@ void FrontendMenu_SelectDifficulty(Menu *pMenu, int param)
     if (CGameInfo::GetConfiguredPlayerCount() == 1) {
         GameInfo_SetConfiguredMultiplayer(0);
     } else {
-        if (CGameInfo::GetConfiguredGameMode() != 3 && CGameInfo::GetConfiguredPlayerCount() == 2) {
+        // PORT: 3 and 4 players also choose between split screen and
+        // alternate play (the original offers the page to 2 players only).
+        if (CGameInfo::GetConfiguredGameMode() != 3 && CGameInfo::GetConfiguredPlayerCount() >= 2) {
             switch (CGameInfo::GetConfiguredGameMode()) {
             case 0:
                 Menu_SetNextAction(FrontendMenu_GetSingleRallyTransmission());
@@ -6451,9 +6459,13 @@ void FrontendMenu_UpdateTransmissionChoice(Menu *pMenu)
 // Item callback of the two-choice pages: stores the choice and goes to the
 // next screen of the mode.
 // FUNCTION: CMR2 0x004efb20
+extern int g_portSplitContact;
 void FrontendMenu_SelectTransmission(Menu *pMenu, int param)
 {
-    GameInfo_SetConfiguredMultiplayer(pMenu->cursor);
+    // PORT: entry 2 is the split screen with the cars visible to each other
+    // (a split screen for the game, with the contact flag set).
+    g_portSplitContact = pMenu->cursor == 2;
+    GameInfo_SetConfiguredMultiplayer(pMenu->cursor == 1);
     g_pProfileReturnMenu = pMenu;
     Menu_SetParent(FrontendMenu_GetMultiplayerProfile(), pMenu);
     g_profilePlayersRemaining = CGameInfo::GetConfiguredPlayerCount();
@@ -7203,8 +7215,8 @@ void FrontendMenu_SetupSinglePlayerArcade(void);
 void FrontendMenu_SelectCarClass(Menu *pMenu, int param)
 {
     GameInfo_SetConfiguredDifficulty(pMenu->cursor);
-    if (CGameInfo::GetConfiguredGameMode() == 5)
-        FrontendMenu_SetupSinglePlayerArcade();
+    // PORT: the arcade championship chooses its players on the next page
+    // (the original set up the one player here).
 }
 
 // GLOBAL: CMR2 0x00524d48
@@ -7380,6 +7392,10 @@ void FrontendMenu_DrawQuickRaceAdvancedSettings(Menu *pMenu)
             sprintf(CFrontend::m_stringDest, g_strLabelNumber, CFrontend::GetTextString(0x1a2), pMenu->items[i].max + 1);
             Font_DrawText(1, CFrontend::m_stringDest, (int)(g_pGraphics->resX * 0x7a) / 640, (int)(g_pGraphics->resY * 24) / 480 + g_frontendDrawRect[1], (int *)pColour, 0x11);
             break;
+        case 7:   // PORT: CPU drivers of the multiplayer race, from 0
+            sprintf(CFrontend::m_stringDest, g_strLabelNumber, CFrontend::GetTextString(0x196), pMenu->items[i].max);
+            Font_DrawText(1, CFrontend::m_stringDest, (int)(g_pGraphics->resX * 0x7a) / 640, (int)(g_pGraphics->resY * 24) / 480 + g_frontendDrawRect[1], (int *)pColour, 0x11);
+            break;
         case 2:
             sprintf(CFrontend::m_stringDest, g_strLabelColon, CFrontend::GetTextString(0x19e));
             Font_DrawText(1, CFrontend::m_stringDest, (int)(g_pGraphics->resX * 0x7a) / 640, (int)(g_pGraphics->resY * 24) / 480 + g_frontendDrawRect[1], (int *)pColour, 0x11);
@@ -7399,11 +7415,15 @@ void FrontendMenu_DrawQuickRaceAdvancedSettings(Menu *pMenu)
 
 // Item callback of "start" on the first quick race page.
 // FUNCTION: CMR2 0x004f0090
+// PORT: CPU drivers chosen for the multiplayer quick race (see
+// FrontendMenu_EnterQuickRaceSettings).
+int g_portArcadeCpuDrivers;
+
 void FrontendMenu_StartQuickRace(Menu *pMenu, int param)
 {
     RallyData_SetSelectionBits16To19(pMenu->items[0].max + 1);
     GameInfo_SetNetworkOptionBits3To7(pMenu->items[0].max + 1);
-    if (CGameInfo::GetConfiguredPlayerCount() == 2) {
+    if (CGameInfo::GetConfiguredPlayerCount() >= 2) {
         RallyData_SetSecondarySelectionNibble(0);
         GameInfo_SetNetworkOptionBit11(pMenu->items[1].max);
     } else {
@@ -7419,7 +7439,7 @@ void FrontendMenu_StartQuickRace(Menu *pMenu, int param)
 void FrontendMenu_EnterQuickRaceSettings(Menu *pMenu, int param)
 {
     pMenu->items[0].max = GameInfo_GetNetworkOptionBits3To7() - 1;
-    if (CGameInfo::GetConfiguredPlayerCount() == 2) {
+    if (CGameInfo::GetConfiguredPlayerCount() >= 2) {
         pMenu->items[1].value = 2;
         pMenu->items[1].max = 0;
         pMenu->items[1].min = 2;
@@ -7462,9 +7482,12 @@ void FrontendMenu_EnterQuickRaceSettings(Menu *pMenu, int param)
 // FUNCTION: CMR2 0x004f0110
 void FrontendMenu_StartAdvancedQuickRace(Menu *pMenu, int param)
 {
-    RallyData_SetSecondarySelectionNibble(0);
+    // PORT: CPU drivers with the players (entry 2); the AI's tables hold six
+    // cars, so at most 6 - players of them. "Catch up" moved to entry 3.
+    g_portArcadeCpuDrivers = pMenu->items[2].max;
+    RallyData_SetSecondarySelectionNibble(g_portArcadeCpuDrivers);
     RallyData_SetSetupModeBits(pMenu->items[0].max);
-    GameInfo_SetNetworkOptionBit11(pMenu->items[2].max);
+    GameInfo_SetNetworkOptionBit11(pMenu->items[3].max);
     switch (RallyData_GetSetupModeBits()) {
     case 0:
         RallyData_SetSelectionBits16To19(pMenu->items[1].max + 1);
@@ -7492,13 +7515,24 @@ void FrontendMenu_EnterQuickRaceAdvancedSettings(Menu *pMenu, int param)
     pMenu->items[0].max = RallyData_GetSetupModeBits();
     type = RallyData_GetSetupModeBits();
     QUICKRACE_TYPE_SETTING(pMenu, type)
+    // PORT: entry 2 the CPU drivers (0 .. 6 - players), entry 3 "catch up".
+    {
+        int maxCpu = 6 - CGameInfo::GetConfiguredPlayerCount();
+        if (maxCpu < 0)
+            maxCpu = 0;
+        if (g_portArcadeCpuDrivers > maxCpu)
+            g_portArcadeCpuDrivers = maxCpu;
+        pMenu->items[2].min = (char)(maxCpu + 1);
+        pMenu->items[2].max = (char)g_portArcadeCpuDrivers;
+        pMenu->items[2].enabled = maxCpu > 0;
+    }
     if ((BYTE)CGameInfo::GetNetworkOptionBit11() != 0) {
-        pMenu->items[2].max = 1;
-        pMenu->cursor = 3;
+        pMenu->items[3].max = 1;
+        pMenu->cursor = 4;
         return;
     }
-    pMenu->items[2].max = 0;
-    pMenu->cursor = 3;
+    pMenu->items[3].max = 0;
+    pMenu->cursor = 4;
 }
 
 // Update callback of the second quick race page: when the game type changes
@@ -7674,7 +7708,7 @@ void FrontendChampionship_ApplySharedRouteEntry(Menu *pMenu, int param)
 {
     RallyData_SetDriverAutomaticGearbox(CGameInfo::GetConfiguredPlayerCount() + (0xff - g_profilePlayersRemaining), pMenu->items[0].max);
     if (g_profilePlayersRemaining == 0) {
-        if (CGameInfo::GetConfiguredPlayerCount() == 2) {
+        if (CGameInfo::GetConfiguredPlayerCount() >= 2) {
             FrontendMenu_GetMultiplayerProfile()->pParent = pMenu;
             FrontendMenu_GetArcadeRallySelection()->pParent = pMenu;
             Menu_SetNextAction(FrontendMenu_GetArcadeRallySelection());
@@ -7684,7 +7718,7 @@ void FrontendChampionship_ApplySharedRouteEntry(Menu *pMenu, int param)
             Menu_SetNextAction(FrontendMenu_GetArcadeCarClass());
         }
     } else {
-        if (CGameInfo::GetConfiguredPlayerCount() == 2)
+        if (CGameInfo::GetConfiguredPlayerCount() >= 2)
             FrontendMenu_GetMultiplayerProfile()->pParent = pMenu;
         Menu_SetNextAction(FrontendMenu_GetMultiplayerProfile());
     }
@@ -7870,12 +7904,12 @@ void FrontendMenu_SelectArcadeRallyRow(Menu *pMenu, MenuItem *unused)
 {
     RallyData_SetSelectionBits10To11(pMenu->cursor / 3);
     RallyData_SetSelectionBits12To13(pMenu->cursor % 3);
-    if (CGameInfo::GetConfiguredPlayerCount() == 2)
+    if (CGameInfo::GetConfiguredPlayerCount() >= 2)
         RallyData_SetSecondarySelectionNibble(0);
     else
         RallyData_SetSecondarySelectionNibble(5);
     if (CGameInfo::GetConfiguredGameMode() == 6) {
-        if (CGameInfo::GetConfiguredPlayerCount() == 2)
+        if (CGameInfo::GetConfiguredPlayerCount() >= 2)
             Menu_SetNextAction(FrontendMenu_GetQuickRaceAdvancedSettings());
         else
             Menu_SetNextAction(FrontendMenu_GetQuickRaceSettings());
@@ -10336,7 +10370,7 @@ void FrontendMenu_SelectRallyStage(Menu *pMenu, int param)
             return;
         }
         if (CGameInfo::GetConfiguredGameMode() == 6) {
-            if (CGameInfo::GetConfiguredPlayerCount() == 2) {
+            if (CGameInfo::GetConfiguredPlayerCount() >= 2) {
                 Menu_SetNextAction(FrontendMenu_GetQuickRaceAdvancedSettings());
                 return;
             }

@@ -390,15 +390,15 @@ int Surface_GetTransitionBlend(int surface, int t)
 
 // Per-player surface sound state (two entries each).
 // GLOBAL: CMR2 0x0058dd70
-int g_surfaceSoundState[2];
+int g_surfaceSoundState[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058ddc0
-int g_unk0x0058ddc0[2];
+int g_unk0x0058ddc0[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058de00
-int g_unk0x0058de00[2];
+int g_unk0x0058de00[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058de08
-int g_unk0x0058de08[2];
+int g_unk0x0058de08[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058df20
-int g_unk0x0058df20[2];
+int g_unk0x0058df20[4];  // PORT: 4-player split screen
 
 int Sound_IsPlaying(unsigned int handle);
 void Sound_Free(unsigned int handle);
@@ -534,37 +534,37 @@ char g_carSoundShort[14][0x14] = {
 // PORT: section placement only mattered for the matching build.
 int g_cmr2ZeroDataSeed = 1;
 // GLOBAL: CMR2 0x0058dd68
-int g_unk0x0058dd68[2];
+int g_unk0x0058dd68[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058dd78
-int g_unk0x0058dd78[2];
+int g_unk0x0058dd78[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058dd80
-int g_unk0x0058dd80[2];
+int g_unk0x0058dd80[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058dd88
-int g_unk0x0058dd88[2];
+int g_unk0x0058dd88[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058dd90
-int g_unk0x0058dd90[2];
+int g_unk0x0058dd90[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058dd98
-int g_unk0x0058dd98[2];
+int g_unk0x0058dd98[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058ddac
-int g_unk0x0058ddac[2];
+int g_unk0x0058ddac[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058ddd0
-int g_unk0x0058ddd0[2];
+int g_unk0x0058ddd0[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058ddd8
-int g_unk0x0058ddd8[2];
+int g_unk0x0058ddd8[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058dde0
-int g_unk0x0058dde0[2];
+int g_unk0x0058dde0[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058dde8
-int g_unk0x0058dde8[2];
+int g_unk0x0058dde8[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058ddf0
-int g_unk0x0058ddf0[2];
+int g_unk0x0058ddf0[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058ddf8
-int g_unk0x0058ddf8[2];
+int g_unk0x0058ddf8[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058de10
-int g_unk0x0058de10[2];
+int g_unk0x0058de10[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058de18
-int g_unk0x0058de18[2];
+int g_unk0x0058de18[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058df30
-int g_unk0x0058df30[2];
+int g_unk0x0058df30[4];  // PORT: 4-player split screen
 // Two sound handles; the release loop walks them as one block.
 // GLOBAL: CMR2 0x0058ddc8
 int g_unk0x0058ddc8Pair[2];
@@ -667,9 +667,9 @@ char g_strCarFrontSlowWav[] = "%s\\car\\%s\\fs-%s.wav";
 char g_strCarSoundBfl[] = "%s\\car\\%s.bfl";
 // Sound archives of the loaded car sound sets.
 // GLOBAL: CMR2 0x0058df48
-GenericFile g_carEngineSoundArchives[2];
+GenericFile g_carEngineSoundArchives[4];  // PORT: 4-player split screen
 
-extern int g_unk0x0058ddb4[2];
+extern int g_unk0x0058ddb4[4];
 BYTE RallyData_GetDriverSelectGridSlot(int param1);
 BYTE StageUI_GetRaceEndEventCount(void);
 int StageTiming_GetSplitSecondaryEntry(int iSplit);
@@ -783,23 +783,23 @@ int g_gearWhineLoopStart[14] = {
 };
 // Per player: when the random one-shot surface sound last started or stopped.
 // GLOBAL: CMR2 0x0058dd60
-unsigned int g_oneShotSoundLastTime[2];
+unsigned int g_oneShotSoundLastTime[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058dda0
-unsigned int g_unk0x0058dda0[2];
+unsigned int g_unk0x0058dda0[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058df28
-unsigned int g_unk0x0058df28[2];
+unsigned int g_unk0x0058df28[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058df60
-int g_unk0x0058df60[2];
+int g_unk0x0058df60[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058df68
-int g_unk0x0058df68[2];
+int g_unk0x0058df68[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058df70
-int g_unk0x0058df70[2];
+int g_unk0x0058df70[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058df78
-int g_unk0x0058df78[2];
+int g_unk0x0058df78[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058df80
-int g_unk0x0058df80[2];
+int g_unk0x0058df80[4];  // PORT: 4-player split screen
 // GLOBAL: CMR2 0x0058df88
-int g_unk0x0058df88[2];
+int g_unk0x0058df88[4];  // PORT: 4-player split screen
 
 extern int g_unk0x0058dda8;
 extern int g_unk0x0051f274;
