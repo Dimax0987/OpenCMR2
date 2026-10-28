@@ -2,6 +2,27 @@
   <img src="docs/logo.jpeg" width="320" alt="OpenCMR2 logo">
 </p>
 
+# OpenCMR2 – 3 and 4 player split screen mod
+
+> **This fork adds 3 and 4 player split screen to every mode of Colin McRae
+> Rally 2.0**: arcade single race and championship (with CPU drivers), and
+> rally single rally, championship and time trial, in ghost, alternate or
+> the new *Contact* mode (visible cars, collisions, 2+2 starting grid). Each
+> player has their own profile, car, controller and menus, and everything is
+> unlocked in multiplayer.
+>
+> - **Download**: the ready-to-play zip is in
+>   [Releases](https://github.com/Dimax0987/OpenCMR2/releases); extract it
+>   over a PC installation of the game.
+> - **How it works**: [README-mod-4-players.md](README-mod-4-players.md)
+>   (English) / [LEGGIMI-mod-4-giocatori.md](LEGGIMI-mod-4-giocatori.md)
+>   (Italiano).
+> - **Source changes**: every change is marked `// PORT:` in the `game/`
+>   folder, on the `Coop-Multiplayer` branch.
+>
+> The rest of this page is the README of the original OpenCMR2 project this
+> fork is based on.
+
 # OpenCMR2
 
 [![Build](https://github.com/pablocpas/OpenCMR2/actions/workflows/build.yml/badge.svg)](https://github.com/pablocpas/OpenCMR2/actions/workflows/build.yml)
