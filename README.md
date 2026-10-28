@@ -1,345 +1,179 @@
-<p align="center">
-  <img src="docs/logo.jpeg" width="320" alt="OpenCMR2 logo">
-</p>
+# Colin McRae Rally 2.0 – 3 and 4 player split screen mod
 
-# OpenCMR2 – 3 and 4 player split screen mod
+**Download**: the ready-to-play zip is in
+[Releases](https://github.com/Dimax0987/OpenCMR2/releases). Extract it over
+a PC installation of the game and run `opencmr2.exe`.
+**Versione italiana**: [LEGGIMI-mod-4-giocatori.md](LEGGIMI-mod-4-giocatori.md).
 
-> **This fork adds 3 and 4 player split screen to every mode of Colin McRae
-> Rally 2.0**: arcade single race and championship (with CPU drivers), and
-> rally single rally, championship and time trial, in ghost, alternate or
-> the new *Contact* mode (visible cars, collisions, 2+2 starting grid). Each
-> player has their own profile, car, controller and menus, and everything is
-> unlocked in multiplayer.
->
-> - **Download**: the ready-to-play zip is in
->   [Releases](https://github.com/Dimax0987/OpenCMR2/releases); extract it
->   over a PC installation of the game.
-> - **How it works**: [README-mod-4-players.md](README-mod-4-players.md)
->   (English) / [LEGGIMI-mod-4-giocatori.md](LEGGIMI-mod-4-giocatori.md)
->   (Italiano).
-> - **Source changes**: every change is marked `// PORT:` in the `game/`
->   folder, on the `Coop-Multiplayer` branch.
->
-> The rest of this page is the README of the original OpenCMR2 project this
-> fork is based on.
+This repository is a fork of [OpenCMR2](https://github.com/pablocpas/OpenCMR2),
+the native port of the game, with the mod on the `Coop-Multiplayer` branch;
+every change is marked `// PORT:` in the `game/` folder. OpenCMR2's own README,
+with the build instructions, is in [docs/README-OpenCMR2.md](docs/README-OpenCMR2.md).
+The license is GPL v3, as OpenCMR2's.
 
-# OpenCMR2
+This mod takes the game from 2 to 4 simultaneous players on one screen, in
+every mode, each with their own profile, car and controller. It is built on
+top of OpenCMR2, the modern port of the game
+(github.com/pablocpas/OpenCMR2), which already provides widescreen
+resolutions, high frame rates and modern gamepad support.
 
-[![Build](https://github.com/pablocpas/OpenCMR2/actions/workflows/build.yml/badge.svg)](https://github.com/pablocpas/OpenCMR2/actions/workflows/build.yml)
+## Contents of the zip
 
-OpenCMR2 is a work-in-progress native port of **Colin McRae Rally 2.0** (PC, 2000)
-to modern platforms, built on the [CMR2Decomp](https://github.com/pablocpas/CMR2Decomp)
-decompilation. It runs the original game code natively on Linux, Windows,
-macOS and Android. There is no emulation and no Wine or DirectX wrapper: DirectDraw,
-Direct3D 7, DirectSound, DirectInput, DirectPlay and Bink are replaced with
-SDL3, the SDL GPU API (Vulkan, Direct3D 12, Metal) or OpenGL 3.3 and the
-port's own code.
-
-https://github.com/user-attachments/assets/3c7322dc-576b-4fb0-8d6a-4d17de6fe17d
-
-*Colin McRae Rally 2.0 running on Linux with OpenCMR2.*
-
-> [!WARNING]
-> This repository contains no game assets. You need your own copy of the
-> original PC version of Colin McRae Rally 2.0 to play.
-
-## Status
-
-Everything tested so far works: the intro videos, the menus, the stages and
-network races over LAN. The project is still in development, so you may find
-bugs. If you do, please [report them](https://github.com/pablocpas/OpenCMR2/issues).
-The game code follows CMR2Decomp, and its progress is brought into the port
-as it is made.
-
-| Platform | Architecture | Status |
-| --- | --- | --- |
-| Linux | x86-64 | Plays stages and matches the original physics |
-| Linux | i686 | Plays stages, reference build with the original memory layout |
-| Linux | ARM64 | Builds and passes the tests, gameplay not yet tested |
-| Windows | x86-64 | Plays stages and matches the original physics (tested under Wine) |
-| macOS | ARM64 | Builds and passes the tests, gameplay not yet tested |
-| Android | ARM64, x86-64 | Plays stages with on-screen controls (Android 10 or later, Vulkan) |
-
-### Features
-
-* Native SDL3 platform layer for windowing, input, audio and files, with saves
-  and settings in the user directory
-* SDL GPU renderer (Vulkan, Direct3D 12, Metal) reproducing the Direct3D 7
-  fixed-function pipeline in shaders, and an OpenGL 3.3 renderer with the same
-  shaders for GPUs without Vulkan or Direct3D 12 (Linux and Windows)
-* Fullscreen on the desktop resolution or a resizable window, switched with
-  Alt+Enter
-* Keyboard, mouse and gamepads through SDL3, and on-screen controls on Android
-* Bink intro and country videos with a built-in decoder
-* Multiplayer over LAN and the internet using UDP instead of DirectPlay
-* Folder dialog on first launch to locate the game installation
-* In-race HUD scaled with the screen and kept at its edges on wide screens,
-  with a configurable size
-* Fixes for some original bugs, such as German in the language menu loading
-  Spanish
-
-The improvements of [SilentPatch](https://cookieplmonster.github.io/mods/colin-mcrae-rally-2/)
-are built in as well:
-
-* Widescreen resolutions up to the desktop resolution, with the correct
-  perspective instead of a stretched picture
-* Configurable field of view
-* High and variable frame rates without changing the game speed or the
-  physics, verified against the original game
-
-## Approach
-
-The game code in `game/` comes from CMR2Decomp and is kept as close to the
-original as possible. Every change the port needs is marked with a `PORT:`
-comment. The rest of the port (`src/`) implements the platform APIs the game
-expects on top of SDL3.
-
-Accuracy is tested against the original executable rather than assumed:
-
-* The fixed-point helpers are compared with the original x87 assembly
-* The startup math tables (16,896 entries) are compared with dumps from the
-  original game
-* 500 vehicle updates of a Finland stage, driven by recorded input, are
-  compared field by field with the original game + SilentPatch at 30, 60,
-  120, 144 and 240 FPS and at a variable frame rate. All of them match bit
-  for bit ([details](docs/PHYSICS_PARITY.md)).
-
-Graphical enhancements will be added one at a time and kept optional, so the
-original look stays available.
-
-## Running
-
-Download the package for your platform from
-[Releases](https://github.com/pablocpas/OpenCMR2/releases):
-
-| Platform | Package |
+| File | What it is |
 | --- | --- |
-| Windows x64 | `OpenCMR2-Windows-x64.zip` |
-| Linux x86-64 | `OpenCMR2-Linux-x86_64.tar.gz` |
-| Linux ARM64 | `OpenCMR2-Linux-arm64.tar.gz` |
-| Linux 32-bit | `OpenCMR2-Linux-i686.tar.gz` |
-| macOS (Apple silicon) | `OpenCMR2-macOS-arm64.zip` |
-| Android | `OpenCMR2-Android.apk` |
+| `opencmr2.exe` | the game with the mod |
+| `SDL3.dll`, `msvcp140.dll`, `vcruntime140*.dll` | libraries the exe needs |
+| `README-mod-4-players.md` | this document |
+| `LEGGIMI-mod-4-giocatori.md` | the same in Italian |
+| `OpenCMR2-4giocatori-NOTE.md` | short technical notes (Italian) |
+| `OpenCMR2-4giocatori-src/split-screen-4-giocatori.patch` | every change to the OpenCMR2 source |
 
-Extract it and run `opencmr2`. On first launch, choose the folder of your PC
-installation. The installation itself, a folder inside it or a parent folder
-all work. The location is checked and remembered, and the game files stay
-where they are.
+## Installation
 
-If you have the CD or an ISO, install the game or extract it first: OpenCMR2
-reads the installed folders `Game`, `FrontEnd`, `Sounds`, `CountrySpecific`
-and `SetupRep`, and does not start when one of them is missing.
+1. You need a PC installation of Colin McRae Rally 2.0 (the folders `Game`,
+   `FrontEnd`, `Sounds`, `CountrySpecific`, `SetupRep`).
+2. Extract the zip into the game folder, overwriting `opencmr2.exe` and
+   `SDL3.dll` if OpenCMR2 was already there.
+3. Run `opencmr2.exe`. On first launch it asks for the game folder if it
+   cannot find it by itself. Settings, saves and logs live in
+   `%APPDATA%\OpenCMR2\` (`opencmr2.ini`, `opencmr2.log`).
 
-On Android, install the APK and copy the installation folder to the
-device first. On first launch, choose it in the system's folder picker: the
-game files are copied into the app once (about 700 MB), as Android gives
-apps no direct access to other folders. The on-screen controls press the
-default keyboard keys, so they work in the menus and on the stages, and
-hide while a gamepad is used, external or built into a handheld. Android selects
-an SDL gamepad automatically; Start pauses the game. The launcher has a
-**Controls** screen, usable by touch before starting the game, to test a pad and
-correct individual buttons, sticks or triggers. These corrections are saved by
-device and preserve the rest of SDL’s automatic layout and analog input.
-**Restore automatic mapping** removes the corrections. You can also keep the
-touch controls visible or choose to play with touch controls only. Android Back
-pauses the game; a controller’s Back/Select follows its SDL mapping. Connect or
-disconnect controllers in the menus (or pause first during a stage) to rescan.
-Controller firmware must expose its input to Android; buttons intercepted by
-system shortcuts cannot be mapped by the app.
+To go back to the original, put back the `opencmr2.exe` and `SDL3.dll` from
+the official OpenCMR2 release.
 
-The Linux packages are built on Ubuntu 24.04 and need a distribution of
-similar age or newer. The macOS package is not signed: after extracting it,
-run `xattr -dr com.apple.quarantine OpenCMR2-macOS-arm64` once.
+## Before playing: assign the controllers
 
-Command-line options:
+**Options → Controllers** lists "Player 1 Controller" ... "Player 4
+Controller". Give each player their pad: with the default assignment the
+first pad belongs to player 3, so do this before starting. The assignment
+is saved in `Configuration\Controller.rcf`.
 
-| Option | Description |
-| --- | --- |
-| `--data <dir>` | Use this game installation and skip the folder dialog |
-| `--user-dir <dir>` | Keep saves, settings and logs in this directory |
+- Player 1: keyboard (arrow keys) or their pad.
+- Player 2: numeric keypad or their pad.
+- Players 3 and 4: pad only (the choice cycles through the available
+  joysticks).
 
-The installation can also be set with the `OPENCMR2_DATA` environment variable
-or `[paths] data` in `opencmr2.ini`, or copied into a `Data` folder next to the
-executable, which is found without asking.
+Remapping controls: the control pages (list, device, key redefinition,
+calibration) can be navigated with player 1's pad and with the pad being
+configured. To change a command, select the entry with the pad and press
+the new button or move the new axis. While calibrating an axis the pad
+buttons confirm or cancel and the directions move the markers, except when
+the axis being calibrated is the stick itself: use the keyboard there.
 
-## Configuration
+## The modes and how they work
 
-Settings are stored in `opencmr2.ini` in the user directory
-(`~/.local/share/OpenCMR2/` on Linux,
-`%APPDATA%\OpenCMR2\` on Windows; files from the older
-`OpenCMR2/OpenCMR2` folder are moved there).
-It is created with comments on first launch. The Screen page of the
-graphics options sets `hud_scale`, `menu_scale`, `vsync` and `fullscreen` in
-the game.
+### Arcade → Single Race
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| `[video] fullscreen` | `1` | Fullscreen (`1`) or window (`0`), changed and saved by Alt+Enter |
-| `[video] fov` | `70` | Field of view in degrees, 30 to 150 (70 is the original) |
-| `[video] run_in_background` | `0` | Keep running when the window loses focus |
-| `[video] car_detail` | `1` | Every car with the model and textures of the player's car (`1`), or the original's lower detail for the other cars (`0`); applies with Car Detail set to High |
-| `[video] hud_scale` | `100` | Size of the in-race HUD in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
-| `[video] hud_aspect` | `16:9` | Widest shape the HUD spreads over, centred on wider screens: an aspect ratio such as `16:9` or `21:9`, or `full` for the whole screen |
-| `[video] menu_scale` | `100` | Size of the menus in percent of the original's at the screen's height; `0` keeps the original's layout in pixels |
-| `[video] outline_fonts` | `1` | Draw the text from outlines, sharp at any size (`1`), or from the original's bitmaps (`0`) |
-| `[video] vector_flags` | `1` | Keep the original dotted menu flags, drawing each dot's circular edge at screen resolution when enlarged (`1`), or magnify the original dot bitmap (`0`); native-size dots and small statistics flags keep their original pixels |
-| `[video] vector_icons` | `1` | Trace the original co-driver arrows and menu arrows/checkmarks/crosses/boxes/circles for sharp enlarged edges (`1`), or keep the bitmaps (`0`); native-size icons keep their original pixels |
-| `[video] vector_maps` | `1` | Sharp enlarged arcade minimaps, car markers and circular points in circuit-selection maps (`1`), or keep the bitmaps (`0`); original routes, point grids, colours and native-size pixels are preserved |
-| `[video] vsync` | `1` | Wait for the display's refresh (`1`) or draw frames as soon as they are ready (`0`) |
-| `[video] graphics_api` | `auto` | Renderer: `sdl_gpu` (Vulkan, Direct3D 12, Metal), `opengl` (OpenGL 3.3, Linux and Windows), or `auto` for SDL GPU when the GPU has a Vulkan, Direct3D 12 or Metal driver (not a software one) and OpenGL otherwise |
-| `[video] window_scale` | `1` | Size of the window in multiples of the game's resolution, applied when leaving fullscreen |
-| `[video] smooth_scaling` | `1` | Smooth the picture when it is scaled to the window or screen (`1`), or keep sharp pixels (`0`) |
-| `[video] anisotropy` | `1` | Anisotropic texture filtering, `2` to `16`; `1` is off, as in the original |
-| `[video] stretch_movies` | `0` | Stretch the movies over the whole window (`1`) instead of keeping their 4:3 proportions |
-| `[input] key_repeat_delay` | `750` | Milliseconds before a key held in the menus repeats |
-| `[input] key_repeat_interval` | `100` | Milliseconds between the repeats of a held key |
-| `[install] language` | `English` | English, American, French, German, Italian, Spanish or Polish |
-| `[install] sku` | `EUROPE` | Game edition: `EUROPE`, `AMERICA`, `POLAND` or `JAPAN` |
-| `[install] menu_shortcut` | asked | Entry in the applications menu (Linux) or Start menu (Windows): `1` keeps it pointing at this copy, `0` removes it |
-| `[net] ...` | | Network play, see [NETWORK.md](docs/NETWORK.md) |
+The **Number of Players** page offers 1, 2, 3 or 4 players. With 2 or more
+players the advanced race settings page (race type, laps, ...) has the
+entry **Number Of CPU Drivers**: from 0 up to 6 − players (the AI tables
+hold six cars in total), and below it **Catch Up** as in the original
+2-player game. Everyone starts together from the grid, sees and hits each
+other.
 
-## Building
+### Arcade → Championship
 
-OpenCMR2 builds with Clang, CMake 3.24+, Ninja and glslang, using the presets
-in `CMakePresets.json`:
+After the difficulty the **Number of Players** page appears (1-4). In the
+original game this page existed but was not wired up, and the game went
+straight to single player. With 2-4 players, 6 − players CPU drivers race
+too and count for the championship points. The standings and score screens
+include every human player.
 
-| Preset | Target |
-| --- | --- |
-| `linux` | Linux, 64-bit (x86-64 or ARM64) |
-| `windows-x64` | Windows x64 (`clang++` with the MSVC runtime) |
-| `macos` | macOS, Apple silicon |
-| `linux-x86` | Linux, 32-bit x86 (reference build for the tests) |
+### Rally → Single Rally, Championship, Time Trial
 
-OpenCMR2 needs SDL 3.4 or later. An installed SDL3 of that version is used;
-otherwise CMake downloads and builds it and places it next to the executable
-(to force this, pass `-DOPENCMR2_VENDORED_SDL=ON`). Start by cloning the repository:
+Choosing 3 or 4 players brings up the **Split Screen Mode / Alternate
+Mode** page, which previously appeared only with 2. It has three entries:
 
-```sh
-git clone https://github.com/pablocpas/OpenCMR2.git
-cd OpenCMR2
-```
+- **Split Screen Mode** ("ghost", as in the original 2-player game):
+  everyone on the split screen, simultaneous start from the same point; the
+  players do not see or touch each other.
+- **Alternate Mode**: one player at a time, as always.
+- **Split Screen - Contact** (new): the players see and hit each other and
+  start on a 2+2 grid: players 1 and 2 side by side on the line, 3 and 4
+  nine metres behind. Simultaneous start.
 
-### Linux
+Each player picks a profile (or guest), car and transmission as usual;
+everyone's times go into the rally or championship standings as in the
+2-player mode. The Contact/ghost choice is not saved in the championship:
+reloading it returns to ghost mode. A championship saved with 3-4 players
+reloads with the same number of players.
 
-Install the dependencies.
+### Four-way split screen
 
-Fedora (SDL3-devel is used when it is 3.4 or later):
+With 3 or 4 players the screen is split into four quadrants (with 3 players
+the fourth stays empty): 1 top left, 2 top right, 3 bottom left, 4 bottom
+right. In each quadrant the HUD is laid out as on a full screen (times and
+positions top left and top right, gear counter, speedometer, co-driver
+notes) at half size; it is adjusted as a percentage with `hud_scale_quad`
+in the `[video]` section of `opencmr2.ini` (100 = half size, 120 = a bit
+bigger).
 
-```sh
-sudo dnf install clang cmake ninja-build glslang SDL3-devel
-```
+### Per-player menus
 
-Ubuntu 24.04 or Debian, where SDL3 is built from source with these
-development libraries:
+Each player's menu pages respond only to their own device: profile, car and
+transmission choice, car setup before the stage, and the in-race pause
+menu. Player 1 can no longer drive the other players' choices. If a
+player's pad is not connected, their page answers the keyboard. To let the
+keyboard also drive the pages of players 2-4: `menu_keyboard_shared = 1`
+in the `[input]` section of `opencmr2.ini`.
 
-```sh
-sudo apt install clang cmake ninja-build glslang-tools pkg-config \
-    libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
-    libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev \
-    libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
-```
+### Everything unlocked in multiplayer
 
-Then build:
+With 2 or more players every car (bonus cars included), every country and
+stage, the Expert class and every difficulty are available in every mode,
+as with the "all cars" and "all tracks" cheats but without their effect on
+records. Single player is unchanged. Turn it off with
+`multiplayer_unlock_all = 0` in the `[game]` section of `opencmr2.ini`.
 
-```sh
-cmake --preset linux
-cmake --build --preset linux
-```
+## Options added to `opencmr2.ini`
 
-The executable is `build/linux/src/opencmr2`.
+| Section | Option | Default | Effect |
+| --- | --- | --- | --- |
+| `[video]` | `hud_scale_quad` | 100 | HUD size in the quadrants, as a percentage of half size |
+| `[input]` | `menu_keyboard_shared` | 0 | 1: the keyboard also drives the menus of players 2-4 |
+| `[game]` | `multiplayer_unlock_all` | 1 | 0: the normal unlocks apply in multiplayer |
 
-### macOS
+## The work done (for anyone reading the patch)
 
-```sh
-brew install cmake ninja glslang sdl3
-cmake --preset macos
-cmake --build --preset macos
-```
+The original game was written for at most 2 players on screen: many tables
+had two slots and many checks said "== 2". The patch
+(`split-screen-4-giocatori.patch`, every change marked `// PORT:`):
 
-Metal needs MSL shaders, and the OpenGL renderer on Linux and Windows GLSL
-330 ones, so the build fetches SPIRV-Cross to translate them (or uses
-`spirv-cross` from the `PATH`). `-DOPENCMR2_RENDERER_GL=OFF` leaves the OpenGL
-renderer out.
+- **Menus**: Number of Players page with 1-4 in arcade; Number of Players
+  page wired up in the arcade championship; Split/Alternate page also with
+  3-4 players, with the third entry "Split Screen - Contact"; "Number Of
+  CPU Drivers" entry in the advanced arcade race settings; four entries in
+  Options → Controllers.
+- **Views**: four game views instead of two (detail level tables, node
+  visibility masks, trackside cameras, per-car camera state). Before this,
+  players 3 and 4 could not see the cars, and changing camera or crossing
+  the finish line crashed the game.
+- **Starts**: 2+2 grid along the route direction in Contact mode; same
+  point in ghost mode.
+- **HUD**: in four quadrants each view is laid out as a full screen scaled
+  to a quarter, with smaller fonts; gear counter and speedometer also work
+  for players 3 and 4; split time and record tables extended to 4 cars.
+- **Input**: controller slots 3 and 4 saved in `Controller.rcf` (the file
+  is 4 bytes longer, still readable by the original); each player drives
+  their own menus from their own device; control remapping from the pad;
+  force feedback and gear markers for 4 slots.
+- **Race logic**: stage finish counters, record messages, co-driver call
+  and "wrong way" resets for 4 cars; end-of-race fades for every view; CPU
+  drivers selectable in arcade.
+- **Unlocks**: with 2+ players the "all cars" and "all tracks" flags read
+  as set without touching the records.
+- **Performance**: the relief the original applies to the 2-way split
+  screen (it hides bushes, poles and minor trackside details) also applies
+  with 3 and 4 views; without it there were frame drops at the race start.
 
-### Windows
+Every change was tested with the project's headless probe (15 races with 1
+to 4 players in every mode) and on screen with four pads.
 
-Install Visual Studio 2022 with its "C++ Clang tools" component (or LLVM),
-Ninja and [glslang](https://github.com/KhronosGroup/glslang/releases). From an
-"x64 Native Tools" command prompt:
+## Known limits
 
-```bat
-cmake --preset windows-x64
-cmake --build --preset windows-x64
-```
-
-`clang-cl` is not supported, as the build uses GNU-style options. To
-cross-build from Linux with LLVM-MinGW, see [WINDOWS.md](docs/WINDOWS.md).
-
-### Android
-
-The Gradle project in `android/` builds the same CMake project with the
-Android NDK. It needs JDK 17 or later, the Android SDK (with `ANDROID_HOME`
-set or `sdk.dir` in `android/local.properties`) and glslang on the `PATH`.
-Gradle downloads SDL's source and fetches the NDK, CMake and SDK platform
-when the SDK licences are accepted:
-
-```sh
-cd android
-./gradlew assembleRelease
-```
-
-The APK is `android/app/build/outputs/apk/release/app-release.apk`. It is
-signed with the release key given by `OPENCMR2_KEYSTORE`,
-`OPENCMR2_KEYSTORE_PASSWORD`, `OPENCMR2_KEY_ALIAS` and
-`OPENCMR2_KEY_PASSWORD` (or the `opencmr2.keystore` Gradle properties), and
-with the debug key otherwise.
-
-### Tests
-
-```sh
-ctest --preset linux
-```
-
-The 32-bit `linux-x86` build keeps the original data layout and is the
-reference for the tests against the original game. Its dependencies and
-the rest of the development workflow are described in
-[DEVELOPMENT.md](docs/DEVELOPMENT.md).
-
-## Documentation
-
-| Document | Contents |
-| --- | --- |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Source layout, platform APIs and renderer design |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Tests, syncing with CMR2Decomp, repository conventions |
-| [PHYSICS_PARITY.md](docs/PHYSICS_PARITY.md) | Physics and timing comparison with the original game |
-| [ORIGINAL_REFERENCE.md](docs/ORIGINAL_REFERENCE.md) | Recording the original game for the comparisons |
-| [BASELINE.md](docs/BASELINE.md) | Stage capture, replay and CPU profiling |
-| [NETWORK.md](docs/NETWORK.md) | Network play setup and protocol |
-| [VIDEO.md](docs/VIDEO.md) | Bink decoder |
-| [WINDOWS.md](docs/WINDOWS.md) | Release packages and cross-building for Windows |
-| [64bit-raw-access.md](docs/64bit-raw-access.md) | 64-bit memory access audit |
-
-The full index is in [docs/README.md](docs/README.md).
-
-## Credits
-
-* [CMR2Decomp](https://github.com/pablocpas/CMR2Decomp), the decompilation
-  this port is built on
-* Silent, for [SilentPatch](https://cookieplmonster.github.io/mods/colin-mcrae-rally-2/),
-  whose improvements are built in and which is the reference for the
-  comparisons with the original game
-* The [SDL](https://libsdl.org) and [ENet](http://enet.bespin.org) projects
-* Filippo Scognamiglio for [RadialGamePad](https://github.com/Swordfish90/RadialGamePad),
-  the on-screen controls on Android
-* Konstantin Shishkov, Peter Ross and Daniel Verkamp for FFmpeg's Bink
-  decoder, which `src/video/` is adapted from
-
-## Licence
-
-OpenCMR2 is licensed under the [GPL-3.0](LICENSE). Bundled third-party code
-keeps its own licence: SDL3 (zlib), ENet (MIT), Potrace (GPL-2.0-or-later),
-the Bink decoder (LGPL-2.1) and RadialGamePad (GPL-3.0).
-
-OpenCMR2 is an unofficial project, not affiliated with or endorsed by
-Codemasters or Electronic Arts. Colin McRae Rally 2.0 is a trademark of its
-respective owners.
+- The interior (cockpit) view is available only for players 1 and 2.
+- Keyboard keys assigned in the pad configuration of players 3-4 are not
+  read during the race: use pad buttons and axes for them.
+- With 3 players the fourth quadrant stays black.
+- If frames still drop, lower `car_detail` in the `[video]` section of
+  `opencmr2.ini`.
